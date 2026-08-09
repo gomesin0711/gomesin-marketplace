@@ -592,3 +592,35 @@ Stage Summary:
 - Dark mode Lanjut bar fixed: bg-white → bg-background (adapts to theme)
 - Simpan Dulu button now blue (was orange)
 - Foto Mesin minimum reduced from 3 to 1 photo
+
+---
+Task ID: 16
+Agent: main (Z.ai Code)
+Task: Fix refresh persistence — "apabila di refresh maka posisi tetap dihalaman waktu di refresh" (when refreshed, stay on the same page/step). Also fix remaining issues from previous session: dark mode white line on Lanjut button, Simpan Dulu button color in dark mode, photo counter text.
+
+Work Log:
+- Read `/home/z/my-project/src/components/gomesin/views/post-ad.tsx` (1333 lines) to understand current state
+- Found that previous session already implemented: form data persistence (localStorage DRAFT_KEY), Reset button, min foto=1 validation, Simpan Dulu blue color
+- Identified ROOT CAUSE of refresh issue: Zustand store's `partialize` function in `/home/z/my-project/src/lib/store.ts` only persisted `favorites`, `favoritesSeenCount`, `recents`, `user` — did NOT persist `view`, so on refresh the view reset to "home"
+- Fix 1 (store.ts): Added `view`, `slug`, `sellerId`, `profilePanel`, `filters` to `partialize` so navigation state persists across refresh
+- Fix 2 (post-ad.tsx): Added `hydrated` state flag to prevent save effect from overwriting localStorage with empty initial values on mount before load effect's setState takes effect
+- Fix 3 (post-ad.tsx): Changed photo counter text from "(min. 3)" to "(min. 1)" at line 807
+- Fix 4 (post-ad.tsx): Added `dark:border-transparent` to sticky bottom action container to remove white line (list putih) in dark mode — border was `oklch(1 0 0 / 12%)` (semi-transparent white)
+- Fix 5 (post-ad.tsx): Changed Simpan Dulu button from `variant="outline"` to default variant — outline variant's `dark:bg-input/30 dark:border-input` was overriding `bg-blue-600` in dark mode, making button appear transparent instead of blue
+- Ran `bun run lint` — no errors/warnings in modified files (post-ad.tsx and store.ts clean)
+- Tested with Agent Browser:
+  * Set draft data (step=2) in localStorage, navigated to pasang iklan, reloaded → page stayed on "Pasang Iklan" step 2 with all form data restored ✓
+  * Filled step 1 (category=Mesin Cetak, title="Mesin Test Refresh 123", price=150000000, province=DKI Jakarta, city=Jakarta Pusat), navigated to step 2, reloaded → stayed on step 2, went back to step 1 → all data preserved ✓
+  * Verified dark mode: Simpan Dulu button is blue (lab(44... -86...)), Lanjut button border line is transparent ✓
+  * Verified light mode: Simpan Dulu is blue, Lanjut is green, border is subtle cream ✓
+  * Tested Reset button: clears all form data, returns to step 1 ✓
+  * Verified photo counter shows "0 foto diunggah (min. 1)" ✓
+
+Stage Summary:
+- Refresh persistence now works end-to-end: view (page) + step + form data all survive browser refresh
+- Root cause was Zustand store not persisting `view` state — fixed by adding nav state to `partialize`
+- Hydration race condition fixed with `hydrated` flag (save effect skips until after load effect completes)
+- Dark mode "list putih" (white line) removed via `dark:border-transparent` on sticky bottom container
+- Simpan Dulu button now properly blue in dark mode (removed `variant="outline"` which had dark mode overrides)
+- Photo counter text updated to "(min. 1)" matching the min foto=1 validation
+- All changes lint-clean, no new errors introduced

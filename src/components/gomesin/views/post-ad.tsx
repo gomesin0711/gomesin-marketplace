@@ -115,6 +115,10 @@ export function PostAdView() {
   // Wizard step
   const [step, setStep] = useState(1);
 
+  // Hydration flag — prevents the save effect from overwriting localStorage
+  // with empty initial values before the load effect's setState applies.
+  const [hydrated, setHydrated] = useState(false);
+
   // Draft form persistence key — data survives navigation/refresh.
   // Cleared only via Reset button or after successful post.
   const DRAFT_KEY = "gomesin-post-ad-draft";
@@ -179,10 +183,16 @@ export function PostAdView() {
         if (typeof d.step === "number" && d.step >= 1 && d.step <= 4) setStep(d.step);
       }
     } catch {}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Mark as hydrated so the save effect can start persisting.
+    // This prevents the save effect from overwriting localStorage with
+    // empty initial values before the loaded setState calls take effect.
+    setHydrated(true);
   }, []);
 
   useEffect(() => {
+    // Don't save until after the initial load is complete — otherwise the
+    // initial empty state would overwrite the saved draft on every mount.
+    if (!hydrated) return;
     try {
       localStorage.setItem(
         DRAFT_KEY,
@@ -208,7 +218,7 @@ export function PostAdView() {
         })
       );
     } catch {}
-  }, [step, title, categoryId, description, price, priceType, condition, availability, adType, brand, modelType, capacity, yearProduced, city, province, images, specs, selectedPackage]);
+  }, [hydrated, step, title, categoryId, description, price, priceType, condition, availability, adType, brand, modelType, capacity, yearProduced, city, province, images, specs, selectedPackage]);
 
   // --- Reset all form data ---
   const handleReset = () => {
@@ -794,14 +804,13 @@ export function PostAdView() {
             )}
 
             <p className="text-center text-xs text-muted-foreground">
-              {images.length} foto diunggah {images.length < 3 && "(min. 3)"}
+              {images.length} foto diunggah {images.length < 1 && "(min. 1)"}
             </p>
 
             {/* Simpan Dulu button */}
             <div className="flex flex-col items-center gap-1.5">
               <Button
                 type="button"
-                variant="outline"
                 className="w-fit gap-2 border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white"
                 disabled={mutation.isPending || savingDraft}
                 onClick={handleSaveDraft}
@@ -1067,7 +1076,7 @@ export function PostAdView() {
       </div>
 
       {/* Bottom action button */}
-      <div className="sticky bottom-0 left-0 right-0 -mx-4 mt-6 border-t border-border bg-background px-4 pb-4 pt-3">
+      <div className="sticky bottom-0 left-0 right-0 -mx-4 mt-6 border-t border-border bg-background px-4 pb-4 pt-3 dark:border-transparent">
         {step < 4 ? (
           <Button
             type="button"

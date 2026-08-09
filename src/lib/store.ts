@@ -369,6 +369,14 @@ export const useStore = create<NavState>()(
       name: "gomesin-store",
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
+        // Persist navigation state so a page refresh keeps the user on the
+        // same view (e.g. "post" wizard) instead of resetting to "home".
+        view: s.view,
+        slug: s.slug,
+        sellerId: s.sellerId,
+        profilePanel: s.profilePanel,
+        filters: s.filters,
+        // Persist personal data
         favorites: s.favorites,
         favoritesSeenCount: s.favoritesSeenCount,
         recents: s.recents,
