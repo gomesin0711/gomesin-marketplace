@@ -1536,3 +1536,46 @@ Stage Summary:
 - Lint: 17 pre-existing problems — 0 new errors
 - Deployed to: https://gomesin.vercel.app (production, commit 6f331d0)
 - Production verification: register → login → admin "Pengguna" page all work end-to-end. New users appear with role="user" and can be deleted by admin (admin account is protected from deletion).
+
+---
+Task ID: 9-realtime-delete-profile-banner
+Agent: Main (Z.ai Code)
+Task: Fix 5-second delete delay on admin Iklan Aktif (make realtime) + fix 'User tidak ditemukan' on Simpan Banner/Logo in profile settings
+
+Work Log:
+- BUG 1 (delete delay): Investigated admin.tsx IklanTab component. Found the optimistic update (onMutate) was already in place from a prior session, BUT the refetchInterval:3000 (3s polling) was causing a race condition:
+  1. T=0ms: User clicks delete → onMutate → optimistic update removes listing from cache → UI updates instantly (listing disappears, count 24→23)
+  2. T=~500ms: 3s polling refetch fires → fetches from Supabase → DELETE API hasn't committed yet → listing STILL in Supabase → refetch result includes it → cache overwritten → listing REAPPEARS (count 23→24)
+  3. T=~1500ms: DELETE API completes → onSuccess → invalidateQueries → refetch → listing finally gone (count 24→23)
+  Total perceived delay: ~1.5-5 seconds with a visible "flicker" (disappear → reappear → disappear).
+- FIX 1: Added `pendingDeletes` state (Set<string>) to IklanTab. In the query's `select` option, filter out any listing whose ID is in pendingDeletes. This prevents the polling refetch from EVER bringing back a deleted listing mid-mutation:
+  - onMutate: add ID to pendingDeletes + optimistic cache update (instant UI removal)
+  - onSuccess: remove ID from pendingDeletes + invalidate (refetch confirms)
+  - onError: remove ID from pendingDeletes + rollback cache
+  The `select` filter runs on EVERY refetch result (including background polls), so even if Supabase hasn't committed the delete yet, the listing stays hidden in the UI.
+
+- BUG 2 (User tidak ditemukan): Investigated /api/auth/profile/route.ts PATCH handler. Found it did NOT check isDbAvailable() before running Prisma. On Vercel:
+  1. db.user.findUnique({ where: { id: userId } }) runs against an empty/nonexistent SQLite file
+  2. Returns null (not an error — Prisma "successfully" found nothing)
+  3. `if (!existing) return 404 "User tidak ditemukan"` short-circuits
+  4. Supabase fallback NEVER runs → banner/logo save fails with "User tidak ditemukan"
+  Same bug existed in the GET handler.
+- FIX 2: Wrapped both GET and PATCH Prisma paths in `if (isDbAvailable())`. If Prisma returns null (user not found), now falls through to Supabase instead of returning 404. Added `updatedAt` timestamp to the Supabase PATCH payload. The "User tidak ditemukan" 404 is now only returned if the user doesn't exist in Prisma, Supabase, OR the in-memory fallback.
+
+- Verified via Agent Browser on production:
+  - Delete: BEFORE=24 listings → click Hapus → confirm → AFTER 500ms=23 → AFTER 2s=23 → AFTER 5s=23 (stable, no flicker back to 24). Delete is now INSTANT and STABLE.
+  - Profile PATCH: POST /api/auth/profile with bannerImage → returned updated user with bannerImage set ✅ (was returning 404 "User tidak ditemukan")
+  - Profile GET: returned correct user data ✅
+  - No console errors, no hydration errors.
+- Lint: 17 pre-existing problems (6 errors in .cjs + 11 warnings) — 0 new errors introduced.
+
+Stage Summary:
+- Files modified (2):
+  - src/components/gomesin/views/admin.tsx — IklanTab: added pendingDeletes state + query select filter to prevent polling refetch from bringing back deleted listings mid-mutation. Delete is now truly realtime (0ms delay, no flicker).
+  - src/app/api/auth/profile/route.ts — GET + PATCH: wrapped Prisma path in isDbAvailable() check; if Prisma returns null, falls through to Supabase instead of returning 404 "User tidak ditemukan". Added updatedAt to Supabase PATCH.
+- Lint: 17 pre-existing problems — 0 new errors
+- Deployed to: https://gomesin.vercel.app (production, commit 4d9061f)
+- Production verification:
+  - Delete: 24→23 listings instantly, stable at 23 across 5s of polling (no flicker) ✅
+  - Profile PATCH (Simpan Banner/Logo): returns updated user with bannerImage/logoImage set ✅
+  - Profile GET: returns correct user data ✅
