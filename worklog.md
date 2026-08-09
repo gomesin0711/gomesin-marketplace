@@ -624,3 +624,53 @@ Stage Summary:
 - Simpan Dulu button now properly blue in dark mode (removed `variant="outline"` which had dark mode overrides)
 - Photo counter text updated to "(min. 1)" matching the min foto=1 validation
 - All changes lint-clean, no new errors introduced
+
+---
+Task ID: 17
+Agent: main (Z.ai Code)
+Task: Multiple fixes for pasang iklan page + deploy to Vercel. 1) Kapasitas box should be expandable like description. 2) Auto-compress uploads to max 100KB. 3) Package selection should be portrait/1-column. 4) Fix "Kirim bukti pembayaran" showing "Format gambar tidak valid". 5) Create 3-digit unique code for payer identification, globally unique. 6) Deploy to https://gomesin.vercel.app.
+
+Work Log:
+- Read `/home/z/my-project/src/lib/image.ts` — found TARGET_BYTES was 120KB
+- Read `/home/z/my-project/src/app/api/listings/unique-code/route.ts` — old route checked Listing.uniqueCode but didn't store when no listingId (pre-listing creation), so codes could collide
+- Read `/home/z/my-project/src/lib/share-image.ts` — confirmed data URLs use `data:` prefix (single colon)
+- Read post-ad.tsx line 1227 — found ROOT CAUSE of "Format gambar tidak valid": regex was `/^data:\/\/(image\/\w+);base64,(.+)$/` (double slash `data://`) but actual data URLs are `data:image/jpeg;base64,...` (single colon). Fixed to `/^data:(image\/\w+);base64,(.+)$/`
+- Fix 1 (image.ts): Changed TARGET_BYTES from 120_000 to 100_000 (100KB max)
+- Fix 2 (post-ad.tsx): Changed Kapasitas field from `<Input>` (single-line) to `<Textarea>` with rows=3, maxLength=500, resize-none — now expandable like Deskripsi Mesin
+- Fix 3 (post-ad.tsx): Changed package grid from `grid-cols-2` to `grid-cols-1` (portrait, 1 baris saja)
+- Fix 4 (post-ad.tsx): Fixed regex `^data:\/\/` → `^data:` so payment proof upload works
+- Fix 5 (post-ad.tsx): Updated "maks 120KB" hint text to "maks 100KB"
+- Fix 6 (schema.prisma): Added new `UniqueCode` model with @unique code field (Int 1-999), userId, packageType, amount, expiresAt (24h), used flag
+- Fix 7 (unique-code/route.ts): Rewrote to use UniqueCode table — atomically reserves 3-digit codes (1-999), globally unique across ALL users, releases expired reservations (24h), idempotent (same user+package returns same code), handles race conditions with P2002 retry
+- Fix 8 (post-ad.tsx): Added `uniqueCode` state, passed `amount` to API, display code in payment modal with `padStart(3, "0")` formatting (003, 045, 999), updated BCA/QRIS instructions to show code
+- Ran `bunx prisma generate` + `bun run db:push` to sync new UniqueCode table
+- Restarted dev server (Prisma client cached in globalThis needs restart)
+- Tested with Agent Browser:
+  * Kapasitas is now Textarea (rows=3, maxLength=500) ✓
+  * Image compression: 582KB test image → 64KB (under 100KB) ✓
+  * Package selection: grid-cols-1, 4 cards full-width (736px each) portrait ✓
+  * Regex fix verified: old regex `^data:\/\/` = false, new regex `^data:` = true ✓
+  * Payment proof upload: "Bukti pembayaran diunggah" toast, image displays ✓
+  * "Kirim & Pasang Iklan" button: NO "Format gambar tidak valid" error, redirected to WhatsApp ✓
+  * Unique code API: test-user-1=code 3, test-user-2=code 4, test-user-3=code 5 (globally unique) ✓
+  * Payment modal shows: "Total Pembayaran Rp 50.006", "Harga paket Rp 50.000 + Kode unik 006", instructions mention "termasuk kode unik 006" ✓
+- Lint clean (only pre-existing daemon.cjs/start-chat.cjs require() errors)
+- Deployed to Vercel:
+  * Linked to existing `gomesin` project (prj_mJFlErTv5qJcEloX0EnCa2Scxxkt)
+  * Added DATABASE_URL=file:/tmp/custom.db to Vercel production env
+  * Updated package.json build command to `prisma generate && next build`
+  * Committed + pushed to GitHub (gomesin0711/gomesin-marketplace)
+  * `npx vercel --prod` deployed successfully to https://gomesin.vercel.app
+  * Verified deployed site: title correct, home page renders with listings, Pasang Iklan page works
+  * Verified on production: Kapasitas is Textarea (rows=3, maxLength=500), package grid is grid-cols-1 (4 cards portrait)
+  * Note: unique-code API returns error on production because Vercel /tmp SQLite is ephemeral (no persistent DB). Categories API works via fallback data. For full DB functionality, an external Postgres database (e.g. Supabase/Vercel Postgres) is needed — but the app deploys and UI works.
+
+Stage Summary:
+- All 5 UI/functional fixes implemented and verified locally with Agent Browser
+- Deployed to https://gomesin.vercel.app (production)
+- Payment proof "Format gambar tidak valid" bug FIXED (regex `data://` → `data:`)
+- Unique codes now globally unique 3-digit (1-999) via dedicated UniqueCode table with 24h expiry
+- Image compression target changed to 100KB
+- Kapasitas field is now a Textarea (expandable, like Deskripsi)
+- Package selection is portrait (1 column)
+- Production note: SQLite on Vercel /tmp is ephemeral — DB-dependent features (unique-code generation, listing creation) need an external Postgres database for production persistence. Static UI + fallback data works on deploy.
