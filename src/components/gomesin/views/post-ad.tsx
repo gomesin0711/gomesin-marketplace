@@ -36,6 +36,7 @@ import {
   Zap,
   TrendingUp,
   Check,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { compressImage } from "@/lib/image";
@@ -114,6 +115,10 @@ export function PostAdView() {
   // Wizard step
   const [step, setStep] = useState(1);
 
+  // Draft form persistence key — data survives navigation/refresh.
+  // Cleared only via Reset button or after successful post.
+  const DRAFT_KEY = "gomesin-post-ad-draft";
+
   // Form state
   const [title, setTitle] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -146,6 +151,90 @@ export function PostAdView() {
   const [savingDraft, setSavingDraft] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Persist form draft to localStorage (survives navigation/refresh) ---
+  // Load on mount, save on change. Cleared on Reset or successful post.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d.title) setTitle(d.title);
+        if (d.categoryId) setCategoryId(d.categoryId);
+        if (d.description) setDescription(d.description);
+        if (d.price) setPrice(d.price);
+        if (d.priceType) setPriceType(d.priceType);
+        if (d.condition) setCondition(d.condition);
+        if (d.availability) setAvailability(d.availability);
+        if (d.adType) setAdType(d.adType);
+        if (d.brand) setBrand(d.brand);
+        if (d.modelType) setModelType(d.modelType);
+        if (d.capacity) setCapacity(d.capacity);
+        if (d.yearProduced) setYearProduced(d.yearProduced);
+        if (d.city) setCity(d.city);
+        if (d.province) setProvince(d.province);
+        if (Array.isArray(d.images)) setImages(d.images);
+        if (Array.isArray(d.specs) && d.specs.length) setSpecs(d.specs);
+        if (d.selectedPackage) setSelectedPackage(d.selectedPackage);
+        if (typeof d.step === "number" && d.step >= 1 && d.step <= 4) setStep(d.step);
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({
+          step,
+          title,
+          categoryId,
+          description,
+          price,
+          priceType,
+          condition,
+          availability,
+          adType,
+          brand,
+          modelType,
+          capacity,
+          yearProduced,
+          city,
+          province,
+          images,
+          specs,
+          selectedPackage,
+        })
+      );
+    } catch {}
+  }, [step, title, categoryId, description, price, priceType, condition, availability, adType, brand, modelType, capacity, yearProduced, city, province, images, specs, selectedPackage]);
+
+  // --- Reset all form data ---
+  const handleReset = () => {
+    setStep(1);
+    setTitle("");
+    setCategoryId("");
+    setDescription("");
+    setPrice("");
+    setPriceType("negotiable");
+    setCondition("bekas");
+    setAvailability("tersedia");
+    setAdType("mesin");
+    setBrand("");
+    setModelType("");
+    setCapacity("");
+    setYearProduced("");
+    setCity("");
+    setProvince("");
+    setImages([]);
+    setSpecs([{ k: "", v: "" }]);
+    setSelectedPackage("colek");
+    setPaymentMethod("");
+    setProofImage("");
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+    toast.success("Form telah direset.");
+  };
 
   // Scroll to top on step change
   useEffect(() => {
@@ -184,7 +273,7 @@ export function PostAdView() {
         return true;
       }
       if (s === 3) {
-        if (images.length < 3) { toast.error("Upload minimal 3 foto mesin"); return false; }
+        if (images.length < 1) { toast.error("Upload minimal 1 foto mesin"); return false; }
         return true;
       }
       return true;
@@ -222,6 +311,8 @@ export function PostAdView() {
     onSuccess: (listing: any) => {
       const wasDraft = savingDraft;
       setSavingDraft(false);
+      // Clear persisted draft form data after successful post/draft-save
+      try { localStorage.removeItem(DRAFT_KEY); } catch {}
       toast.success(wasDraft ? "Iklan disimpan (Belum Aktif)." : tr("adPosted"));
       if (wasDraft) {
         goHome();
@@ -407,10 +498,21 @@ export function PostAdView() {
         onChange={handleFileSelect}
       />
 
-      {/* Green step title above header */}
-      <p className="text-sm font-semibold text-green-600">
-        Pasang Iklan (Step {step}/4)
-      </p>
+      {/* Green step title + Reset button */}
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-green-600">
+          Pasang Iklan (Step {step}/4)
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleReset}
+          className="h-8 gap-1.5 rounded-full border-red-300 px-3 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700"
+        >
+          <RotateCcw className="size-3.5" />
+          Reset
+        </Button>
+      </div>
 
       {/* Header with back arrow + centered title */}
       <div className="flex items-center gap-3 py-3">
@@ -607,7 +709,7 @@ export function PostAdView() {
           <div className="space-y-4">
             <h2 className="text-base font-bold text-foreground">Foto Mesin</h2>
             <p className="text-xs text-muted-foreground">
-              Upload foto mesin (min. 3 foto)
+              Upload foto mesin (min. 1 foto)
             </p>
 
             {/* Photo grid: 2 columns */}
@@ -700,7 +802,7 @@ export function PostAdView() {
               <Button
                 type="button"
                 variant="outline"
-                className="w-fit gap-2 border-orange-600 bg-orange-600 text-white hover:bg-orange-700 hover:text-white"
+                className="w-fit gap-2 border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white"
                 disabled={mutation.isPending || savingDraft}
                 onClick={handleSaveDraft}
               >
@@ -965,7 +1067,7 @@ export function PostAdView() {
       </div>
 
       {/* Bottom action button */}
-      <div className="sticky bottom-0 left-0 right-0 -mx-4 mt-6 border-t border-border bg-white px-4 pb-4 pt-3">
+      <div className="sticky bottom-0 left-0 right-0 -mx-4 mt-6 border-t border-border bg-background px-4 pb-4 pt-3">
         {step < 4 ? (
           <Button
             type="button"

@@ -539,3 +539,56 @@ Stage Summary:
 - Button width changed from w-full (full width) → w-fit (fits content: 140px wide)
 - Button centered with help text below, preserving orange styling
 - Step 2 is now cleaner (just description + specs), Step 3 has photo upload + Simpan Dulu option
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Persist form data, add Reset button, fix darkmode Lanjut bar, blue Simpan Dulu, min 1 foto
+
+Work Log:
+- User requested 4 fixes for pasang iklan page:
+  1. Form data must persist (not lost on navigation) unless Reset or posted
+  2. Add Reset button on pasang iklan page
+  3. In darkmode, Lanjut button has "white list" — remove it
+  4. Change Simpan Dulu button color to blue
+  5. Change Foto Mesin minimum from 3 to 1 photo
+
+File: /home/z/my-project/src/components/gomesin/views/post-ad.tsx
+
+Changes made:
+1. **Form data persistence** (localStorage):
+   - Added DRAFT_KEY constant = "gomesin-post-ad-draft"
+   - Added useEffect on mount: loads all form fields + step from localStorage
+   - Added useEffect on change: saves all form fields + step to localStorage
+   - Added localStorage.removeItem(DRAFT_KEY) in mutation onSuccess (clears after successful post/draft-save)
+
+2. **Reset button**:
+   - Imported RotateCcw icon from lucide-react
+   - Added handleReset() function: clears all state + removes localStorage draft + shows toast "Form telah direset."
+   - Added Reset button (red outline, rounded-full, with RotateCcw icon) next to "Pasang Iklan (Step X/4)" title
+
+3. **Dark mode fix** (white list on Lanjut bar):
+   - Changed sticky bottom bar className from "bg-white" → "bg-background"
+   - Now adapts to dark mode (oklch 0.18 dark) instead of staying white
+
+4. **Simpan Dulu button blue**:
+   - Changed className from "border-orange-600 bg-orange-600 hover:bg-orange-700" → "border-blue-600 bg-blue-600 hover:bg-blue-700"
+
+5. **Min 1 foto**:
+   - Changed validateStep s===3: images.length < 3 → < 1, error message "minimal 3" → "minimal 1"
+   - Changed Step 3 description text: "min. 3 foto" → "min. 1 foto"
+
+Verification via Agent Browser:
+- ✅ Form persistence: filled Step 1 (title "Test Persist Data", price 5jt, category, province, city) → navigated to Home → came back to Pasang Iklan → title & price still present, draftKey EXISTS in localStorage
+- ✅ Reset button: clicked → title & price cleared to empty, toast shown
+- ✅ Min 1 foto: navigated to Step 3, verified "min. 1 foto PRESENT" (no more "min. 3")
+- ✅ Simpan Dulu blue: verified button classes = ["bg-blue-600", "hover:bg-blue-700"]
+- ✅ Dark mode: toggled dark mode, sticky bar bg = oklch(0.18 0.02 55) (dark, NOT white)
+- Dev server compiled cleanly
+
+Stage Summary:
+- Form data now persists across navigation/refresh via localStorage (cleared only on Reset or successful post)
+- Reset button added next to step title (red outline, RotateCcw icon)
+- Dark mode Lanjut bar fixed: bg-white → bg-background (adapts to theme)
+- Simpan Dulu button now blue (was orange)
+- Foto Mesin minimum reduced from 3 to 1 photo
