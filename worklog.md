@@ -738,3 +738,63 @@ Stage Summary:
 - PATCH/POST/PUT/DELETE methods return `{ ok:false, error:"Database error" }` with status 500 so mutations surface an error toast to the admin user instead of silently failing or breaking the page.
 - Every route also short-circuits via `isDbAvailable()` to avoid throwing on cold-start requests when `DATABASE_URL` is missing on Vercel.
 - Next step for full production functionality (out of scope for this task): wire Vercel to an external persistent Postgres (Supabase or Vercel Postgres) so admin mutations actually persist. Until then, the admin panel will at least render and the public site (which already has fallback data for categories) will work.
+
+---
+Task ID: 18
+Agent: Main Agent (Z.ai Code)
+Task: 4 UI fixes + admin panel Vercel fix. 1) Ad package selection: 4 cards in 1 row. 2) Chat page redesign to match chat.jpg. 3) Remove Store icon from mobile header. 4) Fix admin panel content not appearing on Vercel.
+
+Work Log:
+- Analyzed uploaded images (chat.jpg, chat detail.jpg, 2 package screenshots) using VLM CLI
+- **Fix 1: Package selection 4 cards in 1 row** (post-ad.tsx + package-activate-dialog.tsx)
+  - Changed grid from `grid-cols-1` → `grid-cols-2 lg:grid-cols-4` (2 cols on mobile, 4 cols on desktop)
+  - Verified: desktop shows 4 cards in 1 horizontal row (matches reference image)
+  - Verified: mobile shows 2x2 grid (responsive)
+- **Fix 2: Chat page redesign** (profile.tsx)
+  - Conversation list: changed `bg-card` → `bg-background` (clean white)
+  - Search bar: changed `bg-[#f0f2f5]` → `bg-background` with `bg-muted` input, placeholder "Cari chat atau pengguna"
+  - Added mobile header with back arrow + centered "Chat" title
+  - Conversation rows: `font-semibold` → `font-bold`, green badge `bg-[#25D366]` → `bg-primary`
+  - Avatar fallback: `bg-[#075E54]/10` → `bg-primary/10`
+  - Active state: `bg-[#f0f2f5]` → `bg-accent`
+  - Timestamp: added bullet separator (•) before time
+  - Chat detail header: `bg-[#f0f2f5]` → `bg-background`, "online" → green "Online" with dot
+  - Send button: `bg-[#075E54]` → `bg-primary`
+  - Input area: `bg-[#f0f2f5]` → `bg-background`
+  - Emoji button: `text-[#075E54]` → `text-primary`
+  - Placeholder text: "Gomesin Web" → "Gomesin Chat"
+  - Listing price: `text-[#075E54]` → `text-primary`
+- **Fix 3: Remove Store icon from mobile header** (header.tsx)
+  - Removed the Store/Penjual icon button (lines 365-379) from mobile header top-right
+  - Mobile header now only has: Bahasa, Toggle theme, NotificationBell
+  - Verified locally: no Store icon in top-right corner
+- **Fix 4: Admin panel Vercel fix** (delegated to subagent - Task ID 4-admin-api)
+  - Added try-catch error handling to ALL 10 admin API route files
+  - Each GET returns empty/default data on error (not 500)
+  - Added `export const dynamic = "force-dynamic"` to prevent caching
+  - Added `isDbAvailable()` early return to avoid throwing on cold starts
+  - Root cause: Vercel ephemeral SQLite has no tables → Prisma throws → 500 → infinite skeleton
+  - **Additional fix**: vercel.json buildCommand changed from `next build` → `prisma generate && next build`
+    - This ensures Prisma client is generated during Vercel build (was missing, causing runtime errors)
+- **Verification (local)**:
+  - Mobile header: no Store icon ✓ (only Bahasa, Toggle theme, NotificationBell)
+  - Chat page: clean white header with "Chat" title, "Cari chat atau pengguna" search, primary green badges ✓
+  - Package layout: 4 cards in 1 row on desktop (1280px), 2x2 grid on mobile (390px) ✓
+  - Admin panel: content loads with stats cards, period sections, chart ✓
+  - Admin API locally: /api/admin/stats returns 200 with data, /api/admin/paket returns 200 with data ✓
+- **Vercel deployment status**:
+  - Code pushed to GitHub (2 commits: 2984a76 + a306cf5)
+  - Vercel site (gomesin.vercel.app) still serving OLD code as of last check
+  - GitHub auto-deploy may not be configured, or deployment still in progress
+  - Could not deploy directly via CLI (no VERCEL_TOKEN available in environment)
+  - User needs to either: (a) wait for GitHub auto-deploy, or (b) run `vercel --prod` manually with a valid token
+  - The vercel.json fix (prisma generate in build) is critical for admin APIs to work on Vercel
+
+Stage Summary:
+- All 4 fixes implemented and verified locally with Agent Browser
+- Package selection: 4 cards in 1 horizontal row (2 cols mobile, 4 cols desktop)
+- Chat page: clean white design with "Chat" title, "Cari chat atau pengguna" search, primary green accents
+- Store icon removed from mobile header top-right corner
+- Admin API: all 10 routes have try-catch error handling (returns empty data, not 500)
+- vercel.json: build command now includes `prisma generate` (fixes Prisma client missing on Vercel)
+- Code pushed to GitHub; Vercel deployment pending (no token available for direct CLI deploy)
