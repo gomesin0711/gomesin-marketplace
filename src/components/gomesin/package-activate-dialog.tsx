@@ -199,6 +199,8 @@ export function PackageActivateDialog({
         const res = await fetch("/api/listings/unique-code", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          // Never cache — every open / refresh must get a NEW random code.
+          cache: "no-store",
           body: JSON.stringify({ listingId: listing.id, userId: currentUserId, packageType: selectedPackage }),
         });
         if (res.ok && !cancelled) {

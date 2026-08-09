@@ -292,6 +292,8 @@ export function PostAdView() {
         const codeRes = await fetch("/api/listings/unique-code", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          // Never cache — every refresh / navigation must get a NEW random code.
+          cache: "no-store",
           body: JSON.stringify({
             userId: user.id,
             packageType: selectedPackage,
