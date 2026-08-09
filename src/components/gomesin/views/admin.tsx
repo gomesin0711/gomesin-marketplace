@@ -300,6 +300,7 @@ function IklanTab() {
   const mounted = useMounted();
   const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
   const qc = useQueryClient();
+  const { broadcastListings } = useChatSocket();
   const { data, isLoading } = useQuery({ queryKey: ["admin-listings"], queryFn: () => fetchJson("/api/admin/listings"), ...RT });
   const [previewListing, setPreviewListing] = useState<any>(null);
   const [activeImg, setActiveImg] = useState(0);
@@ -308,25 +309,39 @@ function IklanTab() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteCallback, setDeleteCallback] = useState<(() => void) | null>(null);
   const [search, setSearch] = useState("");
+  // Helper — invalidate BOTH admin-listings (this page) AND public ["listings"]
+  // (Beranda / homepage) so that any open homepage refetches immediately.
+  // Also fire a socket broadcast so OTHER browsers/tabs refetch in realtime.
+  const invalidateAllListings = () => {
+    qc.invalidateQueries({ queryKey: ["admin-listings"] });
+    qc.invalidateQueries({ queryKey: ["listings"] });
+    broadcastListings();
+  };
   const del = useMutation({
     mutationFn: (id: string) => fetch("/api/admin/listings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }),
-    onSuccess: () => { toast.success(tr("admDeleted")); qc.invalidateQueries({ queryKey: ["admin-listings"] }); },
+    onSuccess: () => { toast.success(tr("admDeleted")); invalidateAllListings(); },
     onError: () => { toast.error("Gagal menghapus iklan"); },
   });
   const setStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => fetch("/api/admin/listings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) }),
-    onSuccess: () => { toast.success(tr("admStatusUpdated")); qc.invalidateQueries({ queryKey: ["admin-listings"] }); },
+    onSuccess: () => { toast.success(tr("admStatusUpdated")); invalidateAllListings(); },
   });
   const setViolation = useMutation({
     mutationFn: ({ id, flag, reason }: { id: string; flag: boolean; reason?: string }) => fetch("/api/admin/listings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, violationFlag: flag, violationReason: reason }) }),
-    onSuccess: () => { toast.success(tr("admViolationStatusUpdated")); qc.invalidateQueries({ queryKey: ["admin-listings"] }); },
+    onSuccess: () => { toast.success(tr("admViolationStatusUpdated")); invalidateAllListings(); },
   });
   const markSold = useMutation({
     mutationFn: (id: string) => fetch("/api/admin/listings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status: "sold" }) }),
-    onSuccess: () => { toast.success("Iklan ditandai terjual"); qc.invalidateQueries({ queryKey: ["admin-listings"] }); },
+    onSuccess: () => { toast.success("Iklan ditandai terjual"); invalidateAllListings(); },
   });
 
-  const allListings = useMemo(() => (data?.listings || []) as any[], [data?.listings]);
+  // ACTIVE ADS ONLY — unpublished (pending/draft/rejected) listings belong on
+  // the "Iklan Baru" tab, not here. This is the fix for: "apabila iklan belum
+  // di publikasi maka iklan tersebut tidak masuk ke halaman iklan aktif".
+  const allListings = useMemo(
+    () => ((data?.listings || []) as any[]).filter((l) => l.status === "active"),
+    [data?.listings]
+  );
 
   // Tab counts
   const tabCounts = useMemo(() => {
@@ -696,6 +711,7 @@ function IklanBaruTab() {
   const mounted = useMounted();
   const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
   const qc = useQueryClient();
+  const { broadcastListings } = useChatSocket();
   const { data, isLoading } = useQuery({ queryKey: ["admin-listings"], queryFn: () => fetchJson("/api/admin/listings"), ...RT });
   const [previewListing, setPreviewListing] = useState<any>(null);
   const [activeImg, setActiveImg] = useState(0);
@@ -704,17 +720,25 @@ function IklanBaruTab() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteCallback, setDeleteCallback] = useState<(() => void) | null>(null);
   const [search, setSearch] = useState("");
+  // Helper — invalidate BOTH admin-listings AND public ["listings"] (Beranda),
+  // then fire a socket broadcast so any open homepage refetches in realtime.
+  const invalidateAllListings = () => {
+    qc.invalidateQueries({ queryKey: ["admin-listings"] });
+    qc.invalidateQueries({ queryKey: ["listings"] });
+    broadcastListings();
+  };
   const setStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => fetch("/api/admin/listings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) }),
-    onSuccess: () => { toast.success(tr("admListingStatusUpdated")); qc.invalidateQueries({ queryKey: ["admin-listings"] }); },
+    onSuccess: () => { toast.success(tr("admListingStatusUpdated")); invalidateAllListings(); },
   });
   const del = useMutation({
     mutationFn: (id: string) => fetch("/api/admin/listings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }),
-    onSuccess: () => { toast.success(tr("admDeleted")); qc.invalidateQueries({ queryKey: ["admin-listings"] }); },
+    onSuccess: () => { toast.success(tr("admDeleted")); invalidateAllListings(); },
     onError: () => { toast.error("Gagal menghapus iklan"); },
   });
 
-  const newListings = useMemo(() => (data?.listings || []).filter((l: any) => l.status === "pending"), [data?.listings]);
+  // New ads = unpublished (pending OR draft). Both have not been published yet.
+  const newListings = useMemo(() => (data?.listings || []).filter((l: any) => l.status === "pending" || l.status === "draft"), [data?.listings]);
 
   // Tab counts
   const tabCounts = useMemo(() => {

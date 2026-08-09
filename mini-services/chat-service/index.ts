@@ -163,6 +163,19 @@ io.on('connection', (socket) => {
     io.to(`user:${receiverId}`).emit('typing:update', { typerId: senderId, isTyping: false })
   })
 
+  // Listings broadcast — admin emits this when a listing is deleted/published/
+  // updated. The chat-service fans it out to ALL connected clients so that any
+  // open homepage (Beranda) refetches its listing queries in realtime.
+  socket.on(
+    'listings:broadcast',
+    (data: { kind?: 'invalidate' }, ack?: (res: any) => void) => {
+      const kind = data?.kind || 'invalidate'
+      io.emit('listings:invalidate', { kind })
+      console.log(`[chat-service] listings:broadcast kind=${kind} (from ${socket.id})`)
+      ack?.({ ok: true })
+    }
+  )
+
   socket.on('disconnect', (reason) => {
     const userId = socket.data.userId
     console.log(`[chat-service] disconnect ${socket.id} userId=${userId || 'n/a'} reason=${reason}`)

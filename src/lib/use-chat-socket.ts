@@ -65,30 +65,30 @@ const listeners: Record<string, Set<(payload: any) => void>> = {};
 function getSocket(): Socket {
   if (socketRef) return socketRef;
 
-  // Deteksi environment:
-  // - DEV langsung (localhost:3000): gateway Caddy TIDAK ada di port 3000,
-  //   jadi XTransformPort tidak berfungsi → connect LANGSUNG ke localhost:3003.
-  // - PROD / preview via gateway (port 81 / domain): pakai relative path
-  //   "/?XTransformPort=3003" agar Caddy forward ke chat-service port 3003.
-  const loc = typeof window !== "undefined" ? window.location : null;
-  const isDevDirect =
-    loc &&
-    (loc.hostname === "localhost" || loc.hostname === "127.0.0.1") &&
-    loc.port === "3000";
-  const socketUrl = isDevDirect ? "http://localhost:3003" : "/";
+  // ALWAYS use the Caddy gateway (relative path "/?XTransformPort=3003").
+  // The browser cannot connect directly to localhost:3003 (cross-origin port
+  // blocking), so we must go through the gateway which proxies based on the
+  // XTransformPort query param. This works for both the sandbox preview and
+  // production deployments behind the same gateway.
+  const socketUrl = "/";
   const socketOpts: any = {
-    transports: ["websocket", "polling"],
+    // Match the chat-service's `path: "/"` (NOT the default "/socket.io/").
+    // The Caddy gateway forwards based on the XTransformPort query param, so
+    // all requests must go to "/" with the query param attached.
+    path: "/",
+    // Polling first, then upgrade to websocket — more reliable across
+    // browsers/networks than starting with websocket directly.
+    transports: ["polling", "websocket"],
     forceNew: true,
     reconnection: true,
     reconnectionAttempts: 10,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
     timeout: 10000,
+    // XTransformPort tells the Caddy gateway to forward this request to
+    // the chat-service mini-service on port 3003.
+    query: { XTransformPort: "3003" },
   };
-  if (!isDevDirect) {
-    // Via gateway Caddy — XTransformPort di query supaya di-forward ke 3003.
-    socketOpts.query = { XTransformPort: "3003" };
-  }
 
   const socket = io(socketUrl, socketOpts);
 
@@ -101,6 +101,7 @@ function getSocket(): Socket {
   socket.on("message:new", (p: ChatMessage) => dispatch("message:new", p));
   socket.on("message:read-update", (p: ReadUpdate) => dispatch("message:read-update", p));
   socket.on("typing:update", (p: TypingUpdate) => dispatch("typing:update", p));
+  socket.on("listings:invalidate", (p: any) => dispatch("listings:invalidate", p));
 
   socket.on("connect", () => {
     // Re-join after reconnect if we have a user.
@@ -206,7 +207,10 @@ export function useChatSocket() {
   // subscribe helper — auto-cleans on unmount
   // -----------------------------------------------------------------------
   const subscribe = useCallback(
-    <T = any>(event: "message:new" | "message:read-update" | "typing:update", cb: (payload: T) => void) => {
+    <T = any>(
+      event: "message:new" | "message:read-update" | "typing:update" | "listings:invalidate",
+      cb: (payload: T) => void
+    ) => {
       if (!listeners[event]) listeners[event] = new Set();
       listeners[event].add(cb as (p: any) => void);
       const off = () => {
@@ -218,6 +222,26 @@ export function useChatSocket() {
     []
   );
 
+  // Broadcast a listings change to ALL connected clients (admin → everyone).
+  // Used after delete / publish / violation toggle so any open Beranda
+  // refetches its listing queries in realtime.
+  const broadcastListings = useCallback(
+    (): Promise<{ ok: boolean; error?: string }> => {
+      return new Promise((resolve) => {
+        if (!socket || !socket.connected) {
+          resolve({ ok: false, error: "Socket not connected" });
+          return;
+        }
+        socket.emit(
+          "listings:broadcast",
+          { kind: "invalidate" },
+          (ack: any) => resolve(ack || { ok: false, error: "No ack" })
+        );
+      });
+    },
+    [socket]
+  );
+
   return {
     socket,
     connected,
@@ -226,5 +250,6 @@ export function useChatSocket() {
     startTyping,
     stopTyping,
     subscribe,
+    broadcastListings,
   };
 }

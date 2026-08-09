@@ -1,9 +1,10 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useStore } from "@/lib/store";
 import { useLang, translations as i18nTranslations } from "@/lib/i18n";
 import { useMounted } from "@/lib/use-mounted";
+import { useChatSocket } from "@/lib/use-chat-socket";
 import { Button } from "@/components/ui/button";
 import { ListingCard, ListingCardSkeleton } from "../listing-card";
 import { ListingCardCarousel } from "../listing-card-carousel";
@@ -26,6 +27,52 @@ async function fetchJson(url: string) {
   if (!res.ok) throw new Error("fail " + url);
   return res.json();
 }
+
+/**
+ * useListingsRealtime — keeps the Beranda (homepage) in sync with admin
+ * changes (delete / publish / violation toggle) in NEAR-REALTIME.
+ *
+ * Two mechanisms work together:
+ *
+ * 1. Socket.io push (instant, when available): subscribes to the
+ *    "listings:invalidate" event emitted by the admin's broadcastListings()
+ *    helper. When received, ALL ["listings", ...] queries are invalidated
+ *    and refetched immediately. This requires the chat-service mini-service
+ *    to be running.
+ *
+ * 2. Polling fallback (2-second interval): every homepage listing query has
+ *    refetchInterval: 2000. This catches changes even if the socket is not
+ *    connected (e.g. chat-service temporarily down, or the visitor is on a
+ *    network that blocks WebSocket). This guarantees the homepage never stays
+ *    stale for more than 2 seconds.
+ *
+ * Works for anonymous visitors too — the socket connects without requiring
+ * a user:join (it just won't join a user room, which is fine for global
+ * listing broadcasts).
+ */
+function useListingsRealtime() {
+  const qc = useQueryClient();
+  const { subscribe } = useChatSocket();
+  useEffect(() => {
+    // Socket.io push — instant invalidation when the admin broadcasts.
+    const off = subscribe("listings:invalidate", () => {
+      qc.invalidateQueries({ queryKey: ["listings"] });
+    });
+    return off;
+  }, [qc, subscribe]);
+}
+
+// Query options for homepage listing queries.
+// staleTime: 0 → always refetch on mount/focus.
+// refetchInterval: 3000 → poll every 3 seconds for near-realtime updates
+//   (catches admin delete/publish changes even if socket.io is unavailable).
+// refetchIntervalInBackground: false → only poll when the tab is visible
+//   (saves server resources when the user is on another tab).
+const LISTING_QUERY_OPTS = {
+  staleTime: 0,
+  refetchInterval: 3000,
+  refetchIntervalInBackground: false,
+} as const;
 
 type ViewMode = "grid" | "table";
 
@@ -275,43 +322,48 @@ export function HomeView() {
   const mounted = useMounted();
   const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
 
+  // REALTIME — when admin deletes / publishes / updates a listing elsewhere,
+  // the socket broadcasts "listings:invalidate" and we refetch all listing
+  // queries immediately so this Beranda updates without a manual refresh.
+  useListingsRealtime();
+
   // Produk Terpopuler = Titanium (spotlight)
   const { data: featured } = useQuery({
     queryKey: ["listings", "featured"],
     queryFn: () => fetchJson("/api/listings?packageType=spotlight&limit=8&sort=newest"),
-    staleTime: 0,
+    ...LISTING_QUERY_OPTS,
   });
   const { data: fresh } = useQuery({
     queryKey: ["listings", "fresh"],
     queryFn: () => fetchJson("/api/listings?sort=newest&limit=48"),
-    staleTime: 0,
+    ...LISTING_QUERY_OPTS,
   });
   // Produk Terpopuler = Titanium (spotlight)
   const { data: popular } = useQuery({
     queryKey: ["listings", "popular"],
     queryFn: () => fetchJson("/api/listings?packageType=spotlight&limit=12&sort=popular"),
-    staleTime: 0,
+    ...LISTING_QUERY_OPTS,
   });
   const { data: baru } = useQuery({
     queryKey: ["listings", "baru"],
     queryFn: () => fetchJson("/api/listings?condition=baru&sort=newest&limit=24"),
-    staleTime: 0,
+    ...LISTING_QUERY_OPTS,
   });
   // Produk Terdahsyat = Platinum (highlight)
   const { data: dahsyat } = useQuery({
     queryKey: ["listings", "dahsyat"],
     queryFn: () => fetchJson("/api/listings?packageType=highlight&limit=8&sort=newest"),
-    staleTime: 0,
+    ...LISTING_QUERY_OPTS,
   });
   const { data: jasa } = useQuery({
     queryKey: ["listings", "jasa"],
     queryFn: () => fetchJson("/api/listings?condition=jasa&sort=newest&limit=24"),
-    staleTime: 0,
+    ...LISTING_QUERY_OPTS,
   });
   const { data: searched } = useQuery({
     queryKey: ["listings", "searched"],
     queryFn: () => fetchJson("/api/listings/most-searched?limit=12"),
-    staleTime: 0,
+    ...LISTING_QUERY_OPTS,
   });
 
   const featuredListings: Listing[] = featured?.listings ?? [];
