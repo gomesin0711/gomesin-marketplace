@@ -373,7 +373,7 @@ export function PackageActivateDialog({
             <div className="flex flex-col space-y-3 md:overflow-y-auto md:pl-2">
 
         {/* Package cards */}
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           {packages.map((p) => {
             const isSel = selectedPackage === p.key;
             const PkgIcon = p.icon;

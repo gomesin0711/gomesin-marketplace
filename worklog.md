@@ -674,3 +674,67 @@ Stage Summary:
 - Kapasitas field is now a Textarea (expandable, like Deskripsi)
 - Package selection is portrait (1 column)
 - Production note: SQLite on Vercel /tmp is ephemeral — DB-dependent features (unique-code generation, listing creation) need an external Postgres database for production persistence. Static UI + fallback data works on deploy.
+
+---
+Task ID: 4-admin-api
+Agent: general-purpose sub-agent
+Task: Fix admin API error handling for Vercel — admin panel stuck in infinite loading skeleton because admin API routes return 500 when the ephemeral SQLite DB has missing tables, and frontend `fetchJson` returns `null` on error which causes `if (isLoading || !data) return <SkeletonGrid />` to render forever.
+
+Work Log:
+- Read worklog.md for prior context (Tasks 1–17) — confirmed app deploys to https://gomesin.vercel.app with `DATABASE_URL=file:/tmp/custom.db` (ephemeral SQLite). The Vercel environment loses DB tables on cold starts.
+- Read all 9 admin route files in `src/app/api/admin/` plus `categories/[id]/route.ts` to understand existing data shapes and the frontend's expectations in `src/components/gomesin/views/admin.tsx`.
+- Confirmed `src/lib/db.ts` already exposes `isDbAvailable()` (returns false when no `DATABASE_URL` or when PrismaClient construction fails) and a `db` Proxy that throws `Error('Database not available')` on first query if not available.
+- Identified root cause: routes had no try-catch around `db.*` calls; on Vercel a thrown error → Next.js default 500 → frontend `fetchJson` returns `null` → `isLoading` becomes false but `!data` stays true → infinite `<SkeletonGrid />`.
+
+Files modified (all in `src/app/api/admin/`):
+
+1. **stats/route.ts** — Wrapped entire GET body in try-catch. Added `export const dynamic = "force-dynamic"`. On error returns:
+   ```
+   { totals:{users:0,listings:0,admins:0,omzetAll:0}, users:{today:0,week:0,month:0},
+     listings:{today:0,week:0,month:0}, omzet:{today:0,week:0,month:0,all:0},
+     topCategories:[], last7Days:[] }
+   ```
+   Early-returns the same empty payload via `isDbAvailable()` short-circuit.
+
+2. **listings/route.ts** — GET: try-catch returns `{ listings: [] }`. PATCH (status/violation) and DELETE: top-level try-catch returns `{ ok:false, error:"Database error" }` with status 500 (preserves existing 400-input-validation paths and existing Supabase error responses). Added `export const dynamic = "force-dynamic"`.
+
+3. **sellers/route.ts** — GET: try-catch returns `{ sellers: [] }`. PATCH: try-catch returns `{ ok:false, error:"Database error" }` 500. Added `export const dynamic = "force-dynamic"`.
+
+4. **categories/route.ts** — GET: try-catch returns `{ categories: [] }`. POST: try-catch returns `{ ok:false, error:"Database error" }` 500. Added `export const dynamic = "force-dynamic"`.
+
+5. **categories/[id]/route.ts** — PATCH and DELETE wrapped in try-catch returning `{ ok:false, error:"Database error" }` 500. Added `export const dynamic = "force-dynamic"`.
+
+6. **users/route.ts** — GET: try-catch returns `{ users: [] }`. DELETE: refactored — entire body (including the prior inner try-catch for `message.deleteMany`/`listing.deleteMany`/`user.delete` and the `findUnique` lookup) is now inside a single outer try-catch returning `{ ok:false, error:"Database error: <msg>" }` 500. Preserves 400 (no id), 404 (user not found), 403 (cannot delete admin) responses. Added `export const dynamic = "force-dynamic"`.
+
+7. **paket/route.ts** — GET: try-catch returns `{ pakets: [] }`. POST/PUT/DELETE: try-catch returns `{ ok:false, error:"Database error" }` 500 (preserves 400/409 input-validation responses). Added `export const dynamic = "force-dynamic"`.
+
+8. **monthly-report/route.ts** — Wrapped GET in try-catch. Returns an empty 12-month report on error / unavailable DB:
+   ```
+   { year, years:[year], months:[12 empty month objects], yearTotal:{omzet:0,listings:0,users:0},
+     listingsByMonth:{}, usersByMonth:{} }
+   ```
+   Each empty month object: `{ month, label, omzet:0, listings:0, users:0, byPackage:{}, listingIds:[] }`.
+   Added `export const dynamic = "force-dynamic"`.
+
+9. **chat/route.ts** — Already had try-catch but returned 500 with `{ error: e.message }`. Changed the catch branch to return HTTP 200 with:
+   ```
+   { conversations:[], summary:{ totalConversations:0, totalMessages:0, totalUnread:0, activeUsers:0 } }
+   ```
+
+10. **info/route.ts** — Already had try-catch but returned 500 with `{ error: e.message }` and 404 with `{ error: "Admin tidak ditemukan" }`. Changed both to return HTTP 200 with `{ admin: null }` (added `isDbAvailable()` early-return also returning `{ admin: null }`). The only consumer in `post-ad.tsx` (line 1259–1294) already wraps the call in try-catch with a toast fallback, so a null admin will trigger `admin.id` TypeError → caught → "Bukti terkirim ke WhatsApp, tapi gagal ke chat admin" toast — no infinite loading.
+
+Common pattern across all routes:
+- Early-return empty data via `if (!isDbAvailable()) return NextResponse.json(empty)` — avoids the cost of attempting a doomed query on every cold-start request.
+- Wrap the entire db-touching body in try-catch — on error, log via `console.error("[admin/<route>] <VERB> error:", error)` and return the same shape the frontend expects but with empty/default values, so `fetchJson` always gets a non-null payload and `data` is never `null` after success.
+- Added `export const dynamic = "force-dynamic"` to every admin route to prevent Vercel from caching the (potentially empty) response for unrelated users.
+
+Verification:
+- `bun run lint` — clean for all `src/app/api/admin/**` files. The 6 remaining lint errors are pre-existing in `daemon.cjs` and `start-chat.cjs` (CommonJS `require()` imports) and were NOT introduced by this task.
+- `tail -30 dev.log` — no compile errors; admin routes (including `/api/admin/paket 200`) responding 200 OK. The dev DB locally has tables, so 200 is the normal happy path; on Vercel the same code will now return 200 with empty data instead of 500.
+
+Stage Summary:
+- All 10 admin API route files (9 listed + `categories/[id]/route.ts`) now have robust try-catch error handling that returns empty/default data with HTTP 200 instead of 500.
+- Empty data structures match exactly what the frontend (`admin.tsx`) destructures, so `if (isLoading || !data)` will resolve to `false` and the admin panel will render its real UI (empty tables, zero counters) instead of an infinite `<SkeletonGrid />`.
+- PATCH/POST/PUT/DELETE methods return `{ ok:false, error:"Database error" }` with status 500 so mutations surface an error toast to the admin user instead of silently failing or breaking the page.
+- Every route also short-circuits via `isDbAvailable()` to avoid throwing on cold-start requests when `DATABASE_URL` is missing on Vercel.
+- Next step for full production functionality (out of scope for this task): wire Vercel to an external persistent Postgres (Supabase or Vercel Postgres) so admin mutations actually persist. Until then, the admin panel will at least render and the public site (which already has fallback data for categories) will work.

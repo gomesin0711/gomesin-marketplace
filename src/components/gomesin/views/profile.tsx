@@ -1178,24 +1178,36 @@ export function ProfileView() {
                 {/* ===== LEFT: Conversation list (full pane on mobile, sidebar on desktop) ===== */}
                 {panel === "pesan" && (
                   <div className={cn(
-                    "flex-col border-r border-border bg-card w-full",
+                    "flex-col border-r border-border bg-background w-full",
                     activeChatId !== null
-                      ? "hidden md:flex md:w-[320px] md:shrink-0"
-                      : "flex md:w-[320px] md:shrink-0"
+                      ? "hidden md:flex md:w-[340px] md:shrink-0"
+                      : "flex md:w-[340px] md:shrink-0"
                   )}>
+                    {/* Mobile header — clean "Chat" title */}
+                    <div className="flex items-center gap-2 border-b border-border bg-background px-3 py-3 md:hidden">
+                      <button
+                        onClick={() => { setPanel(null); clearProfilePanel(); }}
+                        aria-label="Kembali"
+                        className="grid size-8 shrink-0 place-items-center rounded-full text-foreground hover:bg-accent"
+                      >
+                        <ChevronLeft className="size-5" />
+                      </button>
+                      <h2 className="flex-1 text-center text-base font-bold text-foreground">Chat</h2>
+                      <span className="size-8 shrink-0" />
+                    </div>
                     {/* Search bar */}
-                    <div className="border-b border-border bg-[#f0f2f5] p-2">
-                      <div className="flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 shadow-sm">
+                    <div className="border-b border-border bg-background p-3">
+                      <div className="flex items-center gap-2 rounded-xl bg-muted px-3 py-2">
                         <Search className="size-4 text-muted-foreground" />
                         <input
                           type="text"
-                          placeholder="Cari chat..."
-                          className="flex-1 bg-transparent text-sm outline-none"
+                          placeholder="Cari chat atau pengguna"
+                          className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                         />
                       </div>
                     </div>
                     {/* Conversation list */}
-                    <div className="flex-1 overflow-y-auto">
+                    <div className="flex-1 overflow-y-auto gomesin-scroll">
                       {conversations.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16 text-center">
                           <MessageSquare className="size-12 text-muted-foreground/30" />
@@ -1212,29 +1224,32 @@ export function ProfileView() {
                             onClick={() => openChat(c.id)}
                             onContextMenu={(e) => handleConvContextMenu(e, c.id)}
                             className={cn(
-                              "flex w-full items-center gap-3 px-3 py-2.5 text-left transition border-b border-border/30",
-                              activeChatId === c.id ? "bg-[#f0f2f5]" : "hover:bg-[#f5f6f6]"
+                              "flex w-full items-center gap-3 px-3 py-3 text-left transition border-b border-border/40",
+                              activeChatId === c.id ? "bg-accent" : "hover:bg-accent/50"
                             )}
                           >
                             <Avatar className="size-12 shrink-0 rounded-full">
                               {c.partnerImage ? (
                                 <img src={c.partnerImage} alt={c.name} className="size-full rounded-full object-cover" />
                               ) : (
-                                <AvatarFallback className="bg-[#075E54]/10 text-sm font-bold text-[#075E54]">
+                                <AvatarFallback className="bg-primary/10 text-sm font-bold text-primary">
                                   {c.name.split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
                                 </AvatarFallback>
                               )}
                             </Avatar>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center justify-between gap-2">
-                                <p className="truncate text-sm font-semibold text-foreground">{c.name}</p>
-                                <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(c.lastTime, mounted ? lang : "id")}</span>
+                                <p className="truncate text-sm font-bold text-foreground">{c.name}</p>
+                                <span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
+                                  <span className="size-0.5 rounded-full bg-muted-foreground/40" />
+                                  {timeAgo(c.lastTime, mounted ? lang : "id")}
+                                </span>
                               </div>
-                              <div className="flex items-center justify-between gap-2">
+                              <div className="mt-0.5 flex items-center justify-between gap-2">
                                 <p className="truncate text-xs text-muted-foreground">{c.lastMessage}</p>
-                                {c.unread > 0 && <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[#25D366] text-[9px] font-bold text-white">{c.unread}</span>}
+                                {c.unread > 0 && <span className="grid min-w-5 shrink-0 place-items-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">{c.unread}</span>}
                               </div>
-                              {c.listingTitle && <p className="mt-0.5 truncate text-[10px] text-[#075E54]">{c.listingTitle}</p>}
+                              {c.listingTitle && <p className="mt-0.5 truncate text-[10px] font-medium text-primary">{c.listingTitle}</p>}
                             </div>
                           </button>
                         ))
@@ -1287,12 +1302,12 @@ export function ProfileView() {
                       const convo = chatMessages[activeChatId as any] || [];
                       return (
                         <>
-                          {/* Chat header — light gray, back arrow + settings */}
-                          <div className="flex items-center gap-2 border-b border-border bg-[#f0f2f5] p-2.5">
+                          {/* Chat header — clean white, back arrow + settings */}
+                          <div className="flex items-center gap-2 border-b border-border bg-background p-2.5">
                             <button
                               onClick={() => setActiveChatId(null)}
                               aria-label="Kembali"
-                              className="grid size-9 shrink-0 place-items-center rounded-full text-foreground hover:bg-black/5"
+                              className="grid size-9 shrink-0 place-items-center rounded-full text-foreground hover:bg-accent"
                             >
                               <ChevronLeft className="size-5" />
                             </button>
@@ -1300,7 +1315,7 @@ export function ProfileView() {
                               {conv.partnerImage ? (
                                 <img src={conv.partnerImage} alt={conv.name} className="size-full rounded-full object-cover" />
                               ) : (
-                                <AvatarFallback className="bg-[#075E54]/10 text-xs font-bold text-[#075E54]">
+                                <AvatarFallback className="bg-primary/10 text-xs font-bold text-primary">
                                   {conv.name.split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
                                 </AvatarFallback>
                               )}
@@ -1308,14 +1323,16 @@ export function ProfileView() {
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1">
                                 <p className="truncate text-sm font-bold text-foreground">{conv.name}</p>
-                                <BadgeCheck className="size-3.5 shrink-0 text-[#075E54]" />
+                                <BadgeCheck className="size-3.5 shrink-0 text-primary" />
                               </div>
-                              <p className="text-[10px] text-muted-foreground">online</p>
+                              <p className="flex items-center gap-1 text-[10px] font-medium text-green-600">
+                                <span className="size-1.5 rounded-full bg-green-500" /> Online
+                              </p>
                             </div>
                             <Popover open={chatBgOpen} onOpenChange={setChatBgOpen}>
                               <PopoverTrigger asChild>
                                 <button
-                                  className="grid size-9 shrink-0 place-items-center rounded-full text-foreground transition hover:bg-black/5"
+                                  className="grid size-9 shrink-0 place-items-center rounded-full text-foreground transition hover:bg-accent"
                                   aria-label="Pengaturan chat"
                                 >
                                   <Settings className="size-5" />
@@ -1364,7 +1381,7 @@ export function ProfileView() {
                                   <div className="p-2">
                                     <p className="truncate text-xs font-semibold text-foreground">{conv.listingTitle}</p>
                                     {conv.listingPrice != null && (
-                                      <p className="text-xs font-bold text-[#075E54]">Rp {conv.listingPrice.toLocaleString("id-ID")}</p>
+                                      <p className="text-xs font-bold text-primary">Rp {conv.listingPrice.toLocaleString("id-ID")}</p>
                                     )}
                                     <span className="mt-0.5 block text-right text-[9px] text-muted-foreground/60">
                                       {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
@@ -1532,15 +1549,15 @@ export function ProfileView() {
                           {/* Input — emoji + text field with paperclip inside + send button */}
                           <form
                             onSubmit={(e) => { e.preventDefault(); sendChat(); }}
-                            className="flex items-center gap-1 bg-[#f0f2f5] p-2"
+                            className="flex items-center gap-1 bg-background p-2"
                           >
                             <button
                               type="button"
                               onClick={() => setShowEmoji((v) => !v)}
                               aria-label="Emoji"
                               className={cn(
-                                "grid size-10 shrink-0 place-items-center rounded-full hover:bg-black/5",
-                                showEmoji ? "text-[#075E54]" : "text-muted-foreground"
+                                "grid size-10 shrink-0 place-items-center rounded-full hover:bg-accent",
+                                showEmoji ? "text-primary" : "text-muted-foreground"
                               )}
                             >
                               <Smile className="size-5" />
@@ -1576,7 +1593,7 @@ export function ProfileView() {
                             <Button
                               type="submit"
                               size="icon"
-                              className="size-10 shrink-0 rounded-full bg-[#075E54] hover:bg-[#054c42]"
+                              className="size-10 shrink-0 rounded-full bg-primary hover:bg-primary/90"
                               disabled={chatSending || (!chatInput.trim() && !pendingImage)}
                             >
                               {chatSending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4 text-white" />}
@@ -1624,10 +1641,10 @@ export function ProfileView() {
                       );
                     })() : (
                       /* Placeholder when no chat selected */
-                      <div className="flex flex-1 flex-col items-center justify-center bg-[#f0f2f5]">
+                      <div className="flex flex-1 flex-col items-center justify-center bg-background">
                         <div className="text-center">
                           <MessageCircle className="mx-auto size-16 text-muted-foreground/20" />
-                          <p className="mt-4 text-lg font-light text-muted-foreground">Gomesin Web</p>
+                          <p className="mt-4 text-lg font-light text-muted-foreground">Gomesin Chat</p>
                           <p className="mt-1 text-xs text-muted-foreground/60">Pilih chat di sebelah kiri untuk mulai pesan</p>
                           <p className="mt-1 text-[10px] text-muted-foreground/40">Pesan terenkripsi end-to-end</p>
                         </div>

@@ -909,7 +909,7 @@ export function PostAdView() {
               <p className="text-xs text-muted-foreground">
                 Pilih paket promosi agar iklan Anda lebih cepat laku.
               </p>
-              <div className="grid grid-cols-1 gap-2.5">
+              <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
                 {pkgKeys.map((key) => {
                   const pk = paketMap[key];
                   const isUpgradeOnly = key === "sundul";

@@ -362,21 +362,6 @@ export function Header() {
               </button>
             )}
             <NotificationBell align="end" />
-            <button
-              onClick={() => {
-                const st = useStore.getState() as any;
-                if (st?.user?.id) {
-                  const sid = st.user.sellerId || st.user.id;
-                  useStore.getState().goToSeller(sid);
-                } else {
-                  goToLogin();
-                }
-              }}
-              className="relative grid size-9 place-items-center rounded-lg text-foreground hover:bg-accent"
-              aria-label="Penjual"
-            >
-              <Store className="size-5" />
-            </button>
           </div>
         </div>
 
