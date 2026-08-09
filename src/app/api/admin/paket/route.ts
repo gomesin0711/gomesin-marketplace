@@ -3,6 +3,33 @@ import { db, isDbAvailable } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+// ---------------------------------------------------------------------------
+// Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
+// connect to PostgreSQL. Locally we use Prisma + SQLite.
+// Mirrors /api/admin/listings/route.ts.
+// ---------------------------------------------------------------------------
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://nyyvmttbwlwqunigkrms.supabase.co";
+const SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55eXZtdHRid2x3cXVuaWdrcm1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMTY1NjIsImV4cCI6MjEwMDU5MjU2Mn0.yME5cuLw6bAnZ3-Pdq4IoFwEkyDATjJ3XcaJXBNcWe8";
+
+async function getSupabase() {
+  const { createClient } = await import("@supabase/supabase-js");
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+// Hardcoded default pakets — MUST stay in sync with lib/paket.ts fallback.
+// Used when neither Prisma nor Supabase returns any rows (e.g. Supabase Paket
+// table is empty on a fresh Vercel deploy). Without this, the "Pasang Iklan"
+// page would render every package price as "Rp. 0".
+const DEFAULT_PAKETS = [
+  { id: "default-gold",   key: "gold",      name: "Gold",      price: 30000,  originalPrice: 50000,  duration: 30, features: JSON.stringify(["Iklan tampil 30 hari", "Badge Gold", "1x Sundul"]),                       active: true, sortOrder: 1 },
+  { id: "default-colek",  key: "colek",     name: "Colek",     price: 50000,  originalPrice: 75000,  duration: 30, features: JSON.stringify(["Iklan tampil 30 hari", "Badge Colek", "3x Sundul"]),                      active: true, sortOrder: 2 },
+  { id: "default-high",   key: "highlight", name: "Platinum",  price: 100000, originalPrice: 150000, duration: 30, features: JSON.stringify(["Iklan tampil 30 hari", "Badge Platinum", "Carousel Terdahsyat"]),        active: true, sortOrder: 3 },
+  { id: "default-spot",   key: "spotlight", name: "Titanium",  price: 200000, originalPrice: 300000, duration: 30, features: JSON.stringify(["Iklan tampil 30 hari", "Badge Titanium", "Carousel Terpopuler", "Prioritas Pencarian"]), active: true, sortOrder: 4 },
+];
+
 function parseFeatures(p: any) {
   return {
     ...p,
@@ -11,16 +38,41 @@ function parseFeatures(p: any) {
 }
 
 export async function GET() {
-  if (!isDbAvailable()) {
-    return NextResponse.json({ pakets: [] });
+  // --- Path A: local dev (Prisma + SQLite) ---
+  if (isDbAvailable()) {
+    try {
+      const pakets = await db.paket.findMany({ orderBy: { sortOrder: "asc" } });
+      if (pakets.length > 0) {
+        return NextResponse.json({ pakets: pakets.map(parseFeatures) });
+      }
+      // No rows in DB — fall through to Supabase / defaults below.
+    } catch (error) {
+      console.error("[admin/paket] Prisma GET error, falling back to Supabase:", error);
+      // fall through to Supabase
+    }
   }
+
+  // --- Path B: Vercel (raw Supabase) ---
   try {
-    const pakets = await db.paket.findMany({ orderBy: { sortOrder: "asc" } });
-    return NextResponse.json({ pakets: pakets.map(parseFeatures) });
+    const supabase = await getSupabase();
+    const { data: rows, error } = await supabase
+      .from("Paket")
+      .select("*")
+      .order("sortOrder", { ascending: true });
+    if (!error && rows && rows.length > 0) {
+      return NextResponse.json({ pakets: rows.map(parseFeatures) });
+    }
+    if (error) {
+      console.error("[admin/paket] Supabase GET error:", error);
+    }
   } catch (error) {
-    console.error("[admin/paket] GET error:", error);
-    return NextResponse.json({ pakets: [] });
+    console.error("[admin/paket] Supabase GET exception:", error);
   }
+
+  // --- Path C: hardcoded defaults (matches Supabase data + lib/paket.ts) ---
+  // Last resort — guarantees the "Pasang Iklan" page always shows real prices
+  // even if both Prisma and Supabase are unavailable/empty.
+  return NextResponse.json({ pakets: DEFAULT_PAKETS.map(parseFeatures) });
 }
 
 // CREATE new paket

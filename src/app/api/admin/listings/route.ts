@@ -74,11 +74,18 @@ export async function GET(req: NextRequest) {
   }
 
   // --- Path B: Vercel (raw Supabase) ---
+  // NOTE: Supabase tables in this project have NO foreign-key relationships
+  // declared, so the nested .select("*, category(*), seller(*), user(*)")
+  // pattern that PostgREST requires FKs for will FAIL with an error and
+  // silently return { listings: [] }. That was the root cause of the admin
+  // "Iklan Aktif" page showing 0 listings on Vercel even though the beranda
+  // (which uses a different code path) had 30+. We now select only "*" and
+  // batch-fetch the related Category/Seller/User rows manually by ID.
   try {
     const supabase = await getSupabase();
     let query = supabase
       .from("Listing")
-      .select("*, category(*), seller(*), user(*)")
+      .select("*")
       .order("createdAt", { ascending: false })
       .limit(100);
     if (status) query = query.eq("status", status);
@@ -88,9 +95,41 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ listings: [] });
     }
 
+    const finalRows: any[] = rows || [];
+
+    // Batch-fetch related rows by their IDs (single round-trip per table).
+    const categoryIds = [...new Set(finalRows.map((r: any) => r.categoryId).filter(Boolean))];
+    const sellerIds = [...new Set(finalRows.map((r: any) => r.sellerId).filter(Boolean))];
+    const userIds = [...new Set(finalRows.map((r: any) => r.userId).filter(Boolean))];
+
+    const [categoriesRes, sellersRes, usersRes] = await Promise.all([
+      categoryIds.length
+        ? supabase.from("Category").select("*").in("id", categoryIds)
+        : Promise.resolve({ data: [], error: null }),
+      sellerIds.length
+        ? supabase.from("Seller").select("*").in("id", sellerIds)
+        : Promise.resolve({ data: [], error: null }),
+      userIds.length
+        ? supabase
+            .from("User")
+            .select("id, name, phone, email, city, logoImage, bannerImage")
+            .in("id", userIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    const categoryMap = new Map((categoriesRes.data || []).map((c: any) => [c.id, c]));
+    const sellerMap = new Map((sellersRes.data || []).map((s: any) => [s.id, s]));
+    const userMap = new Map((usersRes.data || []).map((u: any) => [u.id, u]));
+
     const paketMap = await getPaketMap();
-    const withFee = (rows || []).map((row: any) => {
-      const parsed = parseSupabaseListing(row);
+    const withFee = finalRows.map((row: any) => {
+      const withRelations = {
+        ...row,
+        category: categoryMap.get(row.categoryId) ?? null,
+        seller: sellerMap.get(row.sellerId) ?? null,
+        user: userMap.get(row.userId) ?? null,
+      };
+      const parsed = parseSupabaseListing(withRelations);
       const fee = paketMap[parsed.packageType || ""]?.price ?? 0;
       return { ...parsed, adFee: fee };
     });
