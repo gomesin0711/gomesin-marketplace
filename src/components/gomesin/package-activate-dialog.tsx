@@ -659,22 +659,10 @@ export function PackageActivateDialog({
                           }
                         } catch { /* keep data URL fallback */ }
 
-                        const caption =
-                          `*Bukti Pembayaran Upgrade Iklan Gomesin*\n\n` +
-                          `Paket: ${selectedPkg.name}\n` +
-                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
-                          `Kode Unik: ${uniqueCode !== null ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
-                          `Metode: QRIS\n` +
-                          `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}\n\n` +
-                          `Gambar Iklan:\n${adImageUrl}`;
-
-                        // 2) WhatsApp — open wa.me with caption + proof URL (no re-upload).
-                        const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
-                        if (result.status === "opened") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
-                        else if (result.status === "error") toast.error("Gagal membuka WhatsApp");
-
-                        // 3) Chat admin via socket (REALTIME) — send TWO messages
-                        //    with uploaded URLs (smaller payload than base64).
+                        // 2) Chat admin via socket (REALTIME) — MUST run BEFORE WhatsApp.
+                        //    CRITICAL: openWhatsAppWithUrl() navigates the page away
+                        //    (window.location.href) on mobile / popup-blocked desktop.
+                        //    Any code AFTER it is aborted, so chat must be sent FIRST.
                         if (user?.id) {
                           try {
                             const adminRes = await fetch("/api/admin/info");
@@ -744,6 +732,22 @@ export function PackageActivateDialog({
                             console.error("Gagal kirim bukti ke chat admin:", chatErr);
                           }
                         }
+
+                        // 3) WhatsApp — open wa.me LAST (may navigate page away).
+                        //    Chat messages already sent above, so proof is delivered
+                        //    even if this navigation aborts the remaining JS.
+                        const caption =
+                          `*Bukti Pembayaran Upgrade Iklan Gomesin*\n\n` +
+                          `Paket: ${selectedPkg.name}\n` +
+                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+                          `Kode Unik: ${uniqueCode !== null ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
+                          `Metode: QRIS\n` +
+                          `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}\n\n` +
+                          `Gambar Iklan:\n${adImageUrl}`;
+
+                        const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
+                        if (result.status === "opened") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
+                        else if (result.status === "error") toast.error("Gagal membuka WhatsApp");
                       } catch {
                         toast.error("Gagal mengirim bukti");
                       } finally {
@@ -931,22 +935,10 @@ export function PackageActivateDialog({
                           }
                         } catch { /* keep data URL fallback */ }
 
-                        const caption =
-                          `*Bukti Pembayaran Upgrade Iklan Gomesin*\n\n` +
-                          `Paket: ${selectedPkg.name}\n` +
-                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
-                          `Kode Unik: ${uniqueCode !== null ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
-                          `Metode: Transfer BCA\n` +
-                          `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}\n\n` +
-                          `Gambar Iklan:\n${adImageUrl}`;
-
-                        // 2) WhatsApp — open wa.me with caption + proof URL (no re-upload).
-                        const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
-                        if (result.status === "opened") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
-                        else if (result.status === "error") toast.error("Gagal membuka WhatsApp");
-
-                        // 3) Chat admin via socket (REALTIME) — send TWO messages
-                        //    with uploaded URLs (smaller payload than base64).
+                        // 2) Chat admin via socket (REALTIME) — MUST run BEFORE WhatsApp.
+                        //    CRITICAL: openWhatsAppWithUrl() navigates the page away
+                        //    (window.location.href) on mobile / popup-blocked desktop.
+                        //    Any code AFTER it is aborted, so chat must be sent FIRST.
                         if (user?.id) {
                           try {
                             const adminRes = await fetch("/api/admin/info");
@@ -1016,6 +1008,22 @@ export function PackageActivateDialog({
                             console.error("Gagal kirim bukti ke chat admin:", chatErr);
                           }
                         }
+
+                        // 3) WhatsApp — open wa.me LAST (may navigate page away).
+                        //    Chat messages already sent above, so proof is delivered
+                        //    even if this navigation aborts the remaining JS.
+                        const caption =
+                          `*Bukti Pembayaran Upgrade Iklan Gomesin*\n\n` +
+                          `Paket: ${selectedPkg.name}\n` +
+                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+                          `Kode Unik: ${uniqueCode !== null ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
+                          `Metode: Transfer BCA\n` +
+                          `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}\n\n` +
+                          `Gambar Iklan:\n${adImageUrl}`;
+
+                        const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
+                        if (result.status === "opened") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
+                        else if (result.status === "error") toast.error("Gagal membuka WhatsApp");
                       } catch { toast.error("Gagal mengirim bukti"); }
                       finally { setUploadingProof(false); }
                       setTimeout(async () => { await doSubmit(); setBcaModal(false); setProofImage(""); }, 500);

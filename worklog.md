@@ -1064,3 +1064,55 @@ Stage Summary:
   2. Cross-browser: ≤3 seconds (polling) or instant (socket.io when available)
 - Socket.io connection fixed to always use the Caddy gateway.
 - Code pushed to GitHub; Vercel auto-deploy pending.
+
+---
+Task ID: 23
+Agent: Main Agent (Z.ai Code)
+Task: Fix "kirim gambar bukti ke chat tidak berfungsi" — payment proof image not being sent to chat.
+
+Work Log:
+- Investigated the full payment proof flow:
+  1. User uploads proof image → compressImage() → data URL
+  2. Upload to /api/upload-proof → tmpfiles.org/catbox.moe → public URL
+  3. openWhatsAppWithUrl() → opens wa.me with caption + proof URL
+  4. sendMessage() via socket.io → admin chat (REALTIME)
+  5. REST fallback to /api/messages if socket fails
+
+- ROOT CAUSE FOUND: In openWhatsAppWithUrl() (src/lib/share-image.ts):
+  - On MOBILE: `window.location.href = waUrl` — navigates the page AWAY
+  - On DESKTOP with popup blocked: same `window.location.href = waUrl` fallback
+  - When the page navigates away, ALL pending JavaScript is ABORTED
+  - The chat sending code (STEP 3) was AFTER openWhatsAppWithUrl() (STEP 2)
+  - So the socket message was NEVER sent — the page unloaded before it ran
+
+- Verified backend works correctly:
+  - /api/upload-proof returns valid tmpfiles.org/dl/ URLs (HTTP 200, image/jpeg)
+  - Socket.io through Caddy gateway (port 81 → 3003) works perfectly
+  - chat-service saves messages and delivers to admin room
+  - /api/messages GET returns conversations with images
+  - DB has 20+ messages with images (all from admin→admin test sends)
+
+- FIX: Reordered the steps in BOTH post-ad.tsx AND package-activate-dialog.tsx:
+  - OLD order: upload → WhatsApp (navigate away) → chat (ABORTED)
+  - NEW order: upload → chat (socket send) → WhatsApp (navigate away)
+  - Now chat messages are sent BEFORE WhatsApp opens
+  - Even if WhatsApp navigation kills the page, the proof is already delivered
+  - Applied to all 3 flows: post-ad (QRIS/BCA combined), package-activate QRIS, package-activate BCA
+
+- E2E verification with script:
+  1. Uploaded test image → got tmpfiles URL ✓
+  2. Connected socket via gateway → joined as user ✓
+  3. Sent proof message via socket → ack {ok: true} ✓
+  4. Verified message appears in admin's /api/messages response ✓
+  5. Image URL present in message ✓
+  6. "✅ PROOF IMAGE DELIVERED TO ADMIN CHAT!"
+
+- Cleaned up 10 test messages from DB.
+
+Stage Summary:
+- Payment proof image is now reliably sent to admin chat BEFORE WhatsApp opens
+- The fix ensures the socket message is delivered even on mobile (where WhatsApp navigation
+  would previously abort the JS execution before the chat send could run)
+- All 3 proof-sending flows fixed: post-ad.tsx (QRIS+BCA), package-activate-dialog.tsx QRIS, package-activate-dialog.tsx BCA
+- Backend (socket.io, upload-proof, messages API) was already working — the bug was purely
+  in the execution order on the frontend

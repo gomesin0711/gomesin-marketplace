@@ -1331,27 +1331,10 @@ export function PostAdView() {
                           }
                         } catch { /* keep data URL fallback */ }
 
-                        // === STEP 2: WhatsApp — open wa.me with caption + proof URL ===
-                        // No re-upload needed — we already have the proof URL.
-                        const caption =
-                          `*Bukti Pembayaran Iklan Gomesin*\n\n` +
-                          `Paket: ${pkgName}\n` +
-                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
-                          `Kode Unik: ${uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
-                          `User: ${user?.name || "-"}\n` +
-                          `Email: ${user?.email || "-"}\n` +
-                          `Judul Iklan: ${title}\n\n` +
-                          `Gambar Iklan:\n${adImageUrl}`;
-
-                        const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
-                        if (result.status === "opened") toast.success("Bukti pembayaran terkirim ke WhatsApp admin!");
-                        else if (result.status === "error") toast.error("Gagal membuka WhatsApp");
-
-                        // === STEP 3: Chat admin via socket (REALTIME) ===
-                        // Send TWO messages: ad image + proof image.
-                        // Using uploaded URLs (not base64) for smaller, more
-                        // reliable socket payloads. The admin receives these
-                        // instantly via the message:new socket event.
+                        // === STEP 2: Chat admin via socket (REALTIME) — MUST run BEFORE WhatsApp ===
+                        // CRITICAL: openWhatsAppWithUrl() navigates the page away (window.location.href)
+                        // on mobile and as a desktop fallback. Any code AFTER it is aborted.
+                        // So we MUST send the chat messages FIRST, then open WhatsApp.
                         if (user?.id) {
                           try {
                             const adminRes = await fetch("/api/admin/info");
@@ -1421,9 +1404,27 @@ export function PostAdView() {
                             }
                           } catch (chatErr) {
                             console.error("Gagal kirim bukti ke chat admin:", chatErr);
-                            toast.error("Bukti terkirim ke WhatsApp, tapi gagal ke chat admin");
+                            toast.error("Gagal mengirim bukti ke chat admin");
                           }
                         }
+
+                        // === STEP 3: WhatsApp — open wa.me with caption + proof URL ===
+                        // This is LAST because it may navigate the page away (mobile / popup blocked).
+                        // The chat messages are already sent above, so even if navigation aborts
+                        // the remaining JS, the proof is delivered to admin chat.
+                        const caption =
+                          `*Bukti Pembayaran Iklan Gomesin*\n\n` +
+                          `Paket: ${pkgName}\n` +
+                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+                          `Kode Unik: ${uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
+                          `User: ${user?.name || "-"}\n` +
+                          `Email: ${user?.email || "-"}\n` +
+                          `Judul Iklan: ${title}\n\n` +
+                          `Gambar Iklan:\n${adImageUrl}`;
+
+                        const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
+                        if (result.status === "opened") toast.success("Bukti pembayaran terkirim ke WhatsApp admin!");
+                        else if (result.status === "error") toast.error("Gagal membuka WhatsApp");
                       } catch {
                         toast.error("Gagal mengirim bukti");
                       } finally {
