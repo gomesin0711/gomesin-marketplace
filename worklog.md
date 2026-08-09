@@ -433,3 +433,28 @@ Stage Summary:
 - jasa.png background fully removed — no more cream/beige pixels anywhere in the image
 - Used global color-based removal (not just flood fill) to catch enclosed background pockets
 - Icon now fully transparent like all other category icons
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Replace Jasa icon with new transparent icon
+
+Work Log:
+- User request: "ganti icon jasa dengan icon yang lain tanpa background" (replace jasa icon with different icon, no background)
+- Used z-ai image generation CLI to create new icon
+- Prompt: "Flat cartoon vector icon of a friendly technician worker wearing a yellow hard hat and blue shirt holding a wrench, service and repair concept, simple mascot style, centered composition, solid white background, clean thick outlines, no text, app icon style"
+- Generated 1024x1024 PNG at /tmp/jasa-new.png (file saved successfully)
+- Diagnosed: generated image had solid white background (RGB 253,253,253, alpha=255)
+- Wrote Python script using PIL to remove white background globally:
+  - Removed all pixels where R>=230, G>=230, B>=230 (catches anti-aliased edges)
+  - 616,298 pixels removed (58% of image)
+- Backed up old jasa.png to /tmp/jasa-old-backup.png
+- Saved new transparent icon to /home/z/my-project/public/cat-icons/jasa.png (555,344 bytes)
+- Verified: corners now transparent (alpha=0), center icon preserved (RGB 150,48,59 = red shirt)
+- Reloaded browser, verified dev server HTTP 200, no errors
+
+Stage Summary:
+- jasa.png replaced with new AI-generated transparent icon: technician with yellow hard hat holding wrench
+- Background fully removed (transparent PNG like all other category icons)
+- New icon matches flat cartoon style of other category icons (mesincetak, mescnc, etc.)
+- Old icon backed up at /tmp/jasa-old-backup.png
