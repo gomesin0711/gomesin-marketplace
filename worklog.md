@@ -344,3 +344,25 @@ Stage Summary:
 - Header right-side actions cleaned up: NotificationBell now directly followed by Akun button
 - Logo's left-side "Home" text button preserved (not in top-right corner)
 - Change verified in browser on both desktop and mobile viewports
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix preview not showing after workspace cleanup
+
+Work Log:
+- User reported: "preview tidak muncul" (preview not showing)
+- Diagnosed root cause: earlier I deleted the .next/ cache folder (486MB) WHILE the Next.js dev server was still running. This caused Turbopack to crash with "Unable to open static sorted file 00000633.sst" because the server tried to read cache files that no longer existed. The dev server process died and port 3000 stopped listening.
+- Killed all leftover next dev processes (none were running anymore)
+- Verified .next/ folder was fully removed
+- Restarted dev server via the project's daemon.cjs (which has auto-restart on crash and also starts chat-service)
+- daemon.cjs started Next.js (PID 16750) + chat-service successfully
+- First page load: HTTP 200 in 3.3s (initial compile)
+- All API endpoints responded 200: /api/listings, /api/categories, /api/messages, /api/auth/profile
+- Verified via Agent Browser: page title "Gomesin — Jual baru/bekas Mesin Cetak..." loads correctly, all interactive elements render (logo, search, categories, listing cards), no page errors
+
+Stage Summary:
+- Preview restored: dev server running on port 3000, responding HTTP 200
+- Root cause was deleting .next/ cache while server was running (Turbopack corruption)
+- Fix: clean restart via daemon.cjs (which also auto-starts chat-service on 3003)
+- Lesson: never delete .next/ while dev server is running — always stop the server first, then delete, then restart
