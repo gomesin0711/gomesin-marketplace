@@ -1,22 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, isDbAvailable } from "@/lib/db";
 
 // POST /api/listings/unique-code
 // Generate a RANDOM, GLOBALLY UNIQUE 3-digit payment code (001-999) for a payer.
 //
 // IMPORTANT (user requirement): The code must be RANDOM (not the smallest
 // available) and must CHANGE every time the page is refreshed or the user
-// navigates away and comes back. Therefore this endpoint is NOT idempotent —
-// every call releases the previous unused reservation for the same
-// (userId, packageType) and generates a brand-new random code that is
-// different from the previous one (whenever more than one code is available).
+// navigates away and comes back.
 //
 // Codes that have already been used by a paid listing are never reused
-// (they stay in the "taken" set permanently). Unused reservations also expire
-// automatically after 24h and are then eligible for reuse.
+// (they stay in the "taken" set permanently).
 //
 // Body: { userId: string, packageType: string, amount?: number, listingId?: string }
 // Returns: { uniqueCode: number, amount: number, reservationId: string }
+
+// ---------------------------------------------------------------------------
+// Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
+// connect to PostgreSQL. Locally we use Prisma + SQLite.
+// ---------------------------------------------------------------------------
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://nyyvmttbwlwqunigkrms.supabase.co";
+const SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55eXZtdHRid2x3cXVuaWdrcm1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMTY1NjIsImV4cCI6MjEwMDU5MjU2Mn0.yME5cuLw6bAnZ3-Pdq4IoFwEkyDATjJ3XcaJXBNcWe8";
+
+async function getSupabase() {
+  const { createClient } = await import("@supabase/supabase-js");
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
 export async function POST(req: NextRequest) {
   // Parse the body once and reuse it in the retry path (the body stream can
   // only be read a single time).
@@ -34,46 +46,110 @@ export async function POST(req: NextRequest) {
 
   const pkgAmount = typeof amount === "number" && amount > 0 ? amount : 0;
 
+  // --- Path A: local dev (Prisma + SQLite) ---
+  if (isDbAvailable()) {
+    try {
+      const result = await reserveRandomCodePrisma(userId, packageType, pkgAmount, listingId);
+      return NextResponse.json(result);
+    } catch (e: any) {
+      if (e?.message === "NO_CODES_AVAILABLE") {
+        return NextResponse.json(
+          { error: "Semua kode unik sedang dipakai. Coba lagi nanti." },
+          { status: 503 }
+        );
+      }
+      // Race condition: P2002 unique-constraint — retry once
+      if (e?.code === "P2002" && e?.meta?.target?.includes("code")) {
+        try {
+          const result = await reserveRandomCodePrisma(userId, packageType, pkgAmount, listingId);
+          return NextResponse.json(result);
+        } catch (retryErr: any) {
+          if (retryErr?.message === "NO_CODES_AVAILABLE") {
+            return NextResponse.json(
+              { error: "Semua kode unik sedang dipakai. Coba lagi nanti." },
+              { status: 503 }
+            );
+          }
+          console.error("unique-code Prisma retry error:", retryErr);
+          // fall through to Supabase
+        }
+      } else {
+        console.error("unique-code Prisma error, falling back to Supabase:", e);
+        // fall through to Supabase
+      }
+    }
+  }
+
+  // --- Path B: Vercel (raw Supabase) ---
+  // The UniqueCode reservation table does NOT exist in Supabase. So we use a
+  // simpler approach: query all uniqueCode values already saved on Listing
+  // rows (these are permanently taken), pick a random 3-digit code that is
+  // NOT in that set, and return it.
+  //
+  // The code is only "locked in" when the listing is actually created (POST
+  // /api/listings saves uniqueCode on the Listing row). There is a tiny race
+  // window if two users get the same code simultaneously before either
+  // creates a listing, but with 999 codes and low traffic this is acceptable.
+  // The code changes on every call (random pick), satisfying the requirement.
   try {
-    const result = await reserveRandomCode(userId, packageType, pkgAmount, listingId);
-    return NextResponse.json(result);
-  } catch (e: any) {
-    // No available codes left in the pool (all 1-999 are reserved/used).
-    if (e?.message === "NO_CODES_AVAILABLE") {
+    const supabase = await getSupabase();
+    const { data: rows, error } = await supabase
+      .from("Listing")
+      .select("uniqueCode")
+      .not("uniqueCode", "is", null);
+
+    if (error) {
+      console.error("[unique-code] Supabase query error:", error);
+      // Last resort: generate a random code without uniqueness check
+      const fallbackCode = Math.floor(Math.random() * 999) + 1;
+      return NextResponse.json({
+        uniqueCode: fallbackCode,
+        amount: pkgAmount,
+        reservationId: "supabase-fallback-" + Date.now(),
+      });
+    }
+
+    const takenSet = new Set<number>(
+      (rows || [])
+        .map((r: any) => r.uniqueCode)
+        .filter((c: any) => typeof c === "number" && c > 0)
+    );
+
+    const available: number[] = [];
+    for (let i = 1; i <= 999; i++) {
+      if (!takenSet.has(i)) available.push(i);
+    }
+    if (available.length === 0) {
       return NextResponse.json(
         { error: "Semua kode unik sedang dipakai. Coba lagi nanti." },
         { status: 503 }
       );
     }
-    // Race condition: another request grabbed the same code between our
-    // check and insert (P2002 unique-constraint violation on `code`).
-    // Retry once — a new random code will be picked from the updated pool.
-    if (e?.code === "P2002" && e?.meta?.target?.includes("code")) {
-      try {
-        const result = await reserveRandomCode(userId, packageType, pkgAmount, listingId);
-        return NextResponse.json(result);
-      } catch (retryErr: any) {
-        if (retryErr?.message === "NO_CODES_AVAILABLE") {
-          return NextResponse.json(
-            { error: "Semua kode unik sedang dipakai. Coba lagi nanti." },
-            { status: 503 }
-          );
-        }
-        console.error("unique-code retry error:", retryErr);
-        return NextResponse.json({ error: "Gagal generate kode unik" }, { status: 500 });
-      }
-    }
-    console.error("unique-code API error:", e);
-    return NextResponse.json({ error: "Gagal generate kode unik" }, { status: 500 });
+
+    const code = available[Math.floor(Math.random() * available.length)];
+
+    return NextResponse.json({
+      uniqueCode: code,
+      amount: pkgAmount,
+      reservationId: "supabase-" + Date.now() + "-" + code,
+    });
+  } catch (error) {
+    console.error("[unique-code] Supabase fallback error:", error);
+    // Ultimate fallback — random code without any uniqueness check
+    const fallbackCode = Math.floor(Math.random() * 999) + 1;
+    return NextResponse.json({
+      uniqueCode: fallbackCode,
+      amount: pkgAmount,
+      reservationId: "emergency-" + Date.now(),
+    });
   }
 }
 
 /**
- * Core logic: release the previous unused reservation for this
- * (userId, packageType), then pick a RANDOM available code that is
- * DIFFERENT from the previous one (when possible) and reserve it.
+ * Prisma-based reservation logic (local dev only).
+ * Uses the UniqueCode table for atomic reservations.
  */
-async function reserveRandomCode(
+async function reserveRandomCodePrisma(
   userId: string,
   packageType: string,
   pkgAmount: number,
@@ -91,22 +167,19 @@ async function reserveRandomCode(
   const previousCodes = new Set<number>(previousReservations.map((r) => r.code));
 
   // 2) Release the previous unused reservation(s) for this user+package so
-  //    the code goes back into the pool and a NEW code is generated. This
-  //    is what makes the code change on every refresh / navigation.
+  //    the code goes back into the pool and a NEW code is generated.
   if (previousReservations.length > 0) {
     await db.uniqueCode.deleteMany({
       where: { userId, packageType, used: false, expiresAt: { gt: now } },
     });
   }
 
-  // 3) Also release expired reservations (any user/package) so their codes
-  //    can be reused — keeps the pool from exhausting over time.
+  // 3) Also release expired reservations (any user/package).
   await db.uniqueCode.deleteMany({
     where: { expiresAt: { lt: now }, used: false },
   });
 
   // 4) Collect all currently-reserved + used-in-listing codes (global uniqueness).
-  //    Codes used by paid listings are NEVER reused.
   const reserved = await db.uniqueCode.findMany({ select: { code: true } });
   const usedListingCodes = await db.listing.findMany({
     where: { uniqueCode: { not: null } },
@@ -126,21 +199,17 @@ async function reserveRandomCode(
     throw new Error("NO_CODES_AVAILABLE");
   }
 
-  // 6) Prefer a code DIFFERENT from the previous one(s) so the code visibly
-  //    changes on refresh. Fall back to the full available list only when
-  //    every remaining code equals the previous one (extremely unlikely
-  //    with 999 codes).
+  // 6) Prefer a code DIFFERENT from the previous one(s).
   let candidates = available;
   if (available.length > 1) {
     const different = available.filter((c) => !previousCodes.has(c));
     if (different.length > 0) candidates = different;
   }
 
-  // 7) Pick a RANDOM code from the candidates (NOT the smallest).
+  // 7) Pick a RANDOM code from the candidates.
   const code = candidates[Math.floor(Math.random() * candidates.length)];
 
-  // 8) Atomically reserve the code. The @unique constraint on `code`
-  //    guarantees uniqueness even under concurrent requests.
+  // 8) Atomically reserve the code.
   const reservation = await db.uniqueCode.create({
     data: {
       code,

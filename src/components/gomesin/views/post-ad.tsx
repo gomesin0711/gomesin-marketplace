@@ -1464,8 +1464,8 @@ export function PostAdView() {
                   <>
                     <div className="rounded-2xl border-2 border-blue-500 bg-white p-8 shadow-lg text-center">
                       <p className="text-sm font-bold text-blue-600">Blu BCA</p>
-                      <p className="mt-2 text-3xl font-extrabold tracking-wider text-foreground">0011 2208 8800</p>
-                      <p className="mt-2 text-sm text-muted-foreground">a.n. Lina Listiawati</p>
+                      <p className="mt-2 text-3xl font-extrabold font-bold tracking-wider text-black">0011 2208 8800</p>
+                      <p className="mt-2 text-sm font-bold text-black">a.n. Lina Listiawati</p>
                     </div>
                     <p className="mt-3 text-center text-sm font-semibold text-muted-foreground">Transfer ke rekening di atas</p>
                   </>

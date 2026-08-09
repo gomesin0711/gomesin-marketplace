@@ -820,9 +820,9 @@ export function PackageActivateDialog({
                 <div className="rounded-xl border border-border bg-card p-4">
                   <p className="text-sm font-bold">Transfer ke Rekening BCA:</p>
                   <div className="mt-2 space-y-1 text-sm">
-                    <p>Bank: <strong className="text-foreground">BCA</strong></p>
-                    <p>No. Rekening: <strong className="text-foreground text-base">8770338221</strong></p>
-                    <p>a.n. <strong className="text-foreground">Lina Listiawati</strong></p>
+                    <p>Bank: <strong className="text-foreground font-bold">BCA</strong></p>
+                    <p>No. Rekening: <strong className="text-foreground font-bold text-base">8770338221</strong></p>
+                    <p>a.n. <strong className="text-foreground font-bold">Lina Listiawati</strong></p>
                   </div>
                   <div className="mt-3 rounded-lg bg-blue-50 p-2 text-center">
                     <p className="text-xs text-muted-foreground">Jumlah Transfer</p>
@@ -1041,8 +1041,8 @@ export function PackageActivateDialog({
               <div className="flex flex-col items-center justify-center gap-4 pb-6 md:pb-0">
                 <div className="rounded-2xl border-2 border-blue-500 bg-white p-8 shadow-lg text-center">
                   <p className="text-sm font-bold text-blue-600">BCA</p>
-                  <p className="mt-2 text-3xl font-extrabold tracking-wider text-foreground">8770338221</p>
-                  <p className="mt-2 text-sm text-muted-foreground">a.n. Lina Listiawati</p>
+                  <p className="mt-2 text-3xl font-extrabold font-bold tracking-wider text-black">8770338221</p>
+                  <p className="mt-2 text-sm font-bold text-black">a.n. Lina Listiawati</p>
                 </div>
                 <p className="text-center text-sm font-semibold text-muted-foreground">Transfer ke rekening di atas</p>
                 <p className="text-center text-lg font-bold text-primary">{formatRupiahFull(qrisAmount)}</p>

@@ -50,8 +50,12 @@ const fetchJson = async (url: string) => {
   } catch { return null; }
 };
 
-// Shared query options for realtime admin polling (500ms)
-const RT = { staleTime: 0, refetchInterval: 500, refetchIntervalInBackground: true } as const;
+// Shared query options for realtime admin polling.
+// Polls every 3s (was 500ms — too aggressive, caused 8 Supabase queries/sec
+// on production and contributed to the perceived delete delay).
+// Combined with optimistic updates on mutations, actions appear instant while
+// polling catches changes from other users/devices.
+const RT = { staleTime: 0, refetchInterval: 3000, refetchIntervalInBackground: true } as const;
 
 // Format biaya pasang iklan (angka dari server) → "Rp X".
 // `adFee` sudah dihitung di sisi server (/api/admin/listings) dari tabel Paket,
@@ -325,16 +329,77 @@ function IklanTab() {
   };
   const del = useMutation({
     mutationFn: (id: string) => fetch("/api/admin/listings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }),
+    // Optimistic update: remove the listing from cache IMMEDIATELY so the UI
+    // updates instantly (0ms delay). If the API fails, rollback.
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ["admin-listings"] });
+      const prev = qc.getQueryData<any>(["admin-listings"]);
+      qc.setQueryData<any>(["admin-listings"], (old: any) => {
+        if (!old?.listings) return old;
+        return { ...old, listings: old.listings.filter((l: any) => l.id !== id) };
+      });
+      qc.setQueryData<any>(["listings"], (old: any) => {
+        if (!old?.listings) return old;
+        return { ...old, listings: old.listings.filter((l: any) => l.id !== id), total: Math.max(0, (old.total || 0) - 1) };
+      });
+      return { prev };
+    },
     onSuccess: () => { toast.success(tr("admDeleted")); invalidateAllListings(); },
-    onError: () => { toast.error("Gagal menghapus iklan"); },
+    onError: (_e: any, _id: string, ctx: any) => {
+      if (ctx?.prev) qc.setQueryData(["admin-listings"], ctx.prev);
+      toast.error("Gagal menghapus iklan");
+    },
   });
   const setStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => fetch("/api/admin/listings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) }),
+    // Optimistic update: change the listing's status in cache IMMEDIATELY.
+    // For "active" (publikasi) → listing appears on Iklan Aktif instantly.
+    // For "rejected" (tolak) → listing disappears from Iklan Aktif instantly.
+    onMutate: async ({ id, status }: { id: string; status: string }) => {
+      await qc.cancelQueries({ queryKey: ["admin-listings"] });
+      const prev = qc.getQueryData<any>(["admin-listings"]);
+      qc.setQueryData<any>(["admin-listings"], (old: any) => {
+        if (!old?.listings) return old;
+        return {
+          ...old,
+          listings: old.listings.map((l: any) =>
+            l.id === id
+              ? { ...l, status, paymentStatus: status === "active" ? "paid" : l.paymentStatus }
+              : l
+          ),
+        };
+      });
+      return { prev };
+    },
     onSuccess: () => { toast.success(tr("admStatusUpdated")); invalidateAllListings(); },
+    onError: (_e: any, _vars: any, ctx: any) => {
+      if (ctx?.prev) qc.setQueryData(["admin-listings"], ctx.prev);
+    },
   });
   const setViolation = useMutation({
     mutationFn: ({ id, flag, reason }: { id: string; flag: boolean; reason?: string }) => fetch("/api/admin/listings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, violationFlag: flag, violationReason: reason }) }),
+    // Optimistic: flag=true → status becomes "rejected" (disappears from Aktif);
+    // flag=false → status becomes "active" (reappears on Aktif / pulihkan).
+    onMutate: async ({ id, flag }: { id: string; flag: boolean; reason?: string }) => {
+      await qc.cancelQueries({ queryKey: ["admin-listings"] });
+      const prev = qc.getQueryData<any>(["admin-listings"]);
+      qc.setQueryData<any>(["admin-listings"], (old: any) => {
+        if (!old?.listings) return old;
+        return {
+          ...old,
+          listings: old.listings.map((l: any) =>
+            l.id === id
+              ? { ...l, violationFlag: flag, status: flag ? "rejected" : "active" }
+              : l
+          ),
+        };
+      });
+      return { prev };
+    },
     onSuccess: () => { toast.success(tr("admViolationStatusUpdated")); invalidateAllListings(); },
+    onError: (_e: any, _vars: any, ctx: any) => {
+      if (ctx?.prev) qc.setQueryData(["admin-listings"], ctx.prev);
+    },
   });
   const markSold = useMutation({
     mutationFn: (id: string) => fetch("/api/admin/listings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status: "sold" }) }),
@@ -739,8 +804,26 @@ function IklanBaruTab() {
   });
   const del = useMutation({
     mutationFn: (id: string) => fetch("/api/admin/listings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }),
+    // Optimistic update: remove the listing from cache IMMEDIATELY so the UI
+    // updates instantly (0ms delay). If the API fails, rollback.
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ["admin-listings"] });
+      const prev = qc.getQueryData<any>(["admin-listings"]);
+      qc.setQueryData<any>(["admin-listings"], (old: any) => {
+        if (!old?.listings) return old;
+        return { ...old, listings: old.listings.filter((l: any) => l.id !== id) };
+      });
+      qc.setQueryData<any>(["listings"], (old: any) => {
+        if (!old?.listings) return old;
+        return { ...old, listings: old.listings.filter((l: any) => l.id !== id), total: Math.max(0, (old.total || 0) - 1) };
+      });
+      return { prev };
+    },
     onSuccess: () => { toast.success(tr("admDeleted")); invalidateAllListings(); },
-    onError: () => { toast.error("Gagal menghapus iklan"); },
+    onError: (_e: any, _id: string, ctx: any) => {
+      if (ctx?.prev) qc.setQueryData(["admin-listings"], ctx.prev);
+      toast.error("Gagal menghapus iklan");
+    },
   });
 
   // New ads = unpublished (pending OR draft). Both have not been published yet.
@@ -1359,7 +1442,23 @@ function IklanDitolakTab() {
   const [search, setSearch] = useState("");
   const restore = useMutation({
     mutationFn: ({ id }: { id: string }) => fetch("/api/admin/listings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status: "active", violationFlag: false, violationReason: null }) }),
+    // Optimistic: remove from Iklan Ditolak instantly (status → active).
+    onMutate: async ({ id }: { id: string }) => {
+      await qc.cancelQueries({ queryKey: ["admin-listings"] });
+      const prev = qc.getQueryData<any>(["admin-listings"]);
+      qc.setQueryData<any>(["admin-listings"], (old: any) => {
+        if (!old?.listings) return old;
+        return {
+          ...old,
+          listings: old.listings.filter((l: any) => l.id !== id),
+        };
+      });
+      return { prev };
+    },
     onSuccess: () => { toast.success(tr("admRestored")); qc.invalidateQueries({ queryKey: ["admin-listings"] }); },
+    onError: (_e: any, _vars: any, ctx: any) => {
+      if (ctx?.prev) qc.setQueryData(["admin-listings"], ctx.prev);
+    },
   });
   const del = useMutation({
     mutationFn: (id: string) => fetch("/api/admin/listings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }),
