@@ -390,3 +390,26 @@ Stage Summary:
 - Working tree clean (matches remote HEAD da15812)
 - Ready for normal git operations: commit, push, pull
 - Workspace total: 1.8 GB (.git=148MB + node_modules=1.1GB + mini-services=248MB + others)
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Remove background from Jasa category icon
+
+Work Log:
+- User request: "icon jasa di kategori backgroundnya dihilangkan" (remove background of jasa icon in categories)
+- Investigated /home/z/my-project/public/cat-icons/jasa.png (1024x1024, RGBA)
+- Sampled corner pixels: jasa.png corners = (243, 233, 223, 255) — fully OPAQUE cream/beige background
+- Compared with other icons (mescnc.png, mesincetak.png, alatberat.png): all have alpha=0 (transparent) corners
+- Root cause: jasa.png was the only icon with a solid opaque background fill; all others were transparent PNGs
+- Wrote Python script using PIL to flood-fill the background from all 4 edges with transparency (tolerance=12 for near-bg colors)
+- Removed 642,440 background pixels (61% of the 1024x1024 image)
+- Verified corners now have alpha=0 (transparent), center icon (26,104,152 = blue hard hat) preserved at alpha=255
+- File size reduced from 761,969 bytes to 546,094 bytes (removed 215KB of background data)
+- Cleaned up backup file (jasa.png.bak)
+- Verified dev server still running (HTTP 200), reloaded browser to confirm visual fix
+
+Stage Summary:
+- jasa.png now has transparent background like all other category icons
+- Flood-fill approach preserved the HardHat icon in center while removing only the cream/beige background
+- Icon displays correctly in CategoryNav without the unwanted background box color
