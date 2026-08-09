@@ -480,3 +480,33 @@ Stage Summary:
 - Renamed jasa.png → jasa-v2.png + updated code MAP to force cache miss
 - New icon now actually displays: technician with yellow hard hat, transparent background
 - User should hard-refresh Preview Panel (or it will auto-fetch new jasa-v2.png URL)
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Swap step 2 and step 3 in pasang iklan wizard
+
+Work Log:
+- User request: "dihalaman pasang iklan step 2 diganti ke step 3 dan step 3 diganti ke step 2" (swap step 2 and step 3 in post-ad page)
+- File: /home/z/my-project/src/components/gomesin/views/post-ad.tsx
+- Before: Step 1=Informasi Dasar, Step 2=Foto Mesin, Step 3=Detail & Deskripsi, Step 4=Konfirmasi
+- After:  Step 1=Informasi Dasar, Step 2=Detail & Deskripsi, Step 3=Foto Mesin, Step 4=Konfirmasi
+- Changes made (4 edits via MultiEdit + 1 comment update):
+  1. STEP_LABELS array: swapped index 1 & 2 → ["Informasi Dasar", "Detail & Deskripsi", "Foto Mesin", "Konfirmasi"]
+  2. validateStep(): swapped validation logic — s===2 now checks description (was images), s===3 now checks images>=3 (was description)
+  3. Content block "STEP 2: Foto Mesin" → changed condition to {step === 3 && (...)}
+  4. Content block "STEP 3: Detail & Deskripsi" → changed condition to {step === 2 && (...)}
+  5. Updated comment "Add optional fields from step 3" → "from step 2 (Detail & Deskripsi)"
+- Verified via Agent Browser (end-to-end):
+  - Stepper labels confirmed: [Informasi Dasar, Detail & Deskripsi, Foto Mesin, Konfirmasi]
+  - Filled Step 1 (category=Mesin Cetak, title, price=10jt, province=DKI Jakarta, city=Jakarta Selatan)
+  - Clicked Lanjut → Step 2/4 now shows heading "Detail & Deskripsi" + description textarea + Spesifikasi (Opsional)
+  - Filled description, clicked Lanjut → Step 3/4 now shows heading "Foto Mesin" + Tambah Foto button
+  - Validation works correctly (description required at step 2, images>=3 required at step 3)
+- Dev server compiled cleanly, no errors
+
+Stage Summary:
+- Pasang iklan wizard step order successfully swapped
+- New order: 1.Informasi Dasar → 2.Detail & Deskripsi → 3.Foto Mesin → 4.Konfirmasi
+- Validation logic correctly moved with content (description check at step 2, images check at step 3)
+- Stepper labels, step titles, content blocks, and validation all consistent

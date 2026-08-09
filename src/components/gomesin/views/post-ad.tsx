@@ -78,7 +78,7 @@ async function postListing(payload: any) {
 // Year options: 2025 down to 1990
 const YEAR_OPTIONS = Array.from({ length: 2025 - 1990 + 1 }, (_, i) => String(2025 - i));
 
-const STEP_LABELS = ["Informasi Dasar", "Foto Mesin", "Detail & Deskripsi", "Konfirmasi"];
+const STEP_LABELS = ["Informasi Dasar", "Detail & Deskripsi", "Foto Mesin", "Konfirmasi"];
 
 export function PostAdView() {
   const { data: cats } = useQuery({
@@ -180,11 +180,11 @@ export function PostAdView() {
         return true;
       }
       if (s === 2) {
-        if (images.length < 3) { toast.error("Upload minimal 3 foto mesin"); return false; }
+        if (!description.trim()) { toast.error("Deskripsi mesin wajib diisi"); return false; }
         return true;
       }
       if (s === 3) {
-        if (!description.trim()) { toast.error("Deskripsi mesin wajib diisi"); return false; }
+        if (images.length < 3) { toast.error("Upload minimal 3 foto mesin"); return false; }
         return true;
       }
       return true;
@@ -278,7 +278,7 @@ export function PostAdView() {
     for (const s of specs) {
       if (s.k.trim() && s.v.trim()) specObj[s.k.trim()] = s.v.trim();
     }
-    // Add optional fields from step 3
+    // Add optional fields from step 2 (Detail & Deskripsi)
     if (brand.trim()) specObj["Merk/Brand"] = brand.trim();
     if (modelType.trim()) specObj["Tipe/Model"] = modelType.trim();
     if (capacity.trim()) specObj["Kapasitas"] = capacity.trim();
@@ -602,8 +602,8 @@ export function PostAdView() {
           </div>
         )}
 
-        {/* ========== STEP 2: Foto Mesin ========== */}
-        {step === 2 && (
+        {/* ========== STEP 3: Foto Mesin ========== */}
+        {step === 3 && (
           <div className="space-y-4">
             <h2 className="text-base font-bold text-foreground">Foto Mesin</h2>
             <p className="text-xs text-muted-foreground">
@@ -697,8 +697,8 @@ export function PostAdView() {
           </div>
         )}
 
-        {/* ========== STEP 3: Detail & Deskripsi ========== */}
-        {step === 3 && (
+        {/* ========== STEP 2: Detail & Deskripsi ========== */}
+        {step === 2 && (
           <div className="space-y-4">
             <h2 className="text-base font-bold text-foreground">Detail &amp; Deskripsi</h2>
 
