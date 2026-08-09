@@ -59,6 +59,7 @@ export async function GET(req: NextRequest) {
   const ids = idsParam ? idsParam.split(",").filter(Boolean) : null;
   const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
   const limit = Math.min(48, Math.max(1, parseInt(searchParams.get("limit") || "24", 10)));
+  const weekOnly = searchParams.get("week") === "1";
 
   try {
     const where: Record<string, any> = { status: "active", paymentStatus: "paid", violationFlag: false };
@@ -95,7 +96,6 @@ export async function GET(req: NextRequest) {
     }
     if (featuredOnly) where.featured = true;
     // Week filter: only listings from the last 7 days
-    const weekOnly = searchParams.get("week") === "1";
     if (weekOnly) {
       const weekAgo = new Date();
       weekAgo.setDate(weekAgo.getDate() - 7);
@@ -138,8 +138,186 @@ export async function GET(req: NextRequest) {
       totalPages: Math.ceil(total / limit),
     });
   } catch (error) {
-    console.error("GET /api/listings DB error, falling back to seed data", error);
+    console.error("GET /api/listings Prisma error, trying Supabase:", error);
+    // DO NOT return getFallbackListings here anymore — fall through to Supabase
+  }
 
+  // --- Path B: Vercel (raw Supabase) ---
+  // NOTE: Supabase tables in this project have NO foreign-key relationships
+  // declared, so the nested .select("*, category(*)") pattern that PostgREST
+  // requires FKs for would FAIL and silently return []. We select only "*" and
+  // batch-fetch the related Category/Seller/User rows manually (same pattern
+  // as /api/admin/listings/route.ts).
+  try {
+    const supabase = await getSupabase();
+
+    // Resolve category filter once: either condition="jasa" (for "jasa-teknisi"
+    // slug) or categoryId=<resolved id> (looked up by slug). Hoisted so we can
+    // re-use the resolved values for the count query below.
+    let categoryCondition: string | null = null; // e.g. "jasa"
+    let categoryIdFilter: string | null = null;
+    if (category) {
+      if (category === "jasa-teknisi") {
+        categoryCondition = "jasa";
+      } else {
+        const { data: cat } = await supabase
+          .from("Category")
+          .select("id")
+          .eq("slug", category)
+          .limit(1)
+          .single();
+        if (cat) categoryIdFilter = cat.id;
+      }
+    }
+
+    // Build Supabase query with the SAME filters as the Prisma where clause:
+    // - status = "active"
+    // - paymentStatus = "paid"
+    // - violationFlag = false
+    let query = supabase
+      .from("Listing")
+      .select("*")
+      .eq("status", "active")
+      .eq("paymentStatus", "paid")
+      .eq("violationFlag", false);
+
+    // Apply filters (mirror the Prisma where clause):
+    if (ids && ids.length) query = query.in("id", ids);
+    if (q) {
+      // Supabase text search: use .or() with ilike for each searchable field.
+      // Cannot do cross-table search on seller.name without a join — just
+      // search title/description/brand/city (minor edge case skipped).
+      query = query.or(
+        `title.ilike.%${q}%,description.ilike.%${q}%,brand.ilike.%${q}%,city.ilike.%${q}%`
+      );
+    }
+    if (categoryCondition) query = query.eq("condition", categoryCondition);
+    if (categoryIdFilter) query = query.eq("categoryId", categoryIdFilter);
+    if (condition && !categoryCondition) query = query.eq("condition", condition);
+    if (province) query = query.eq("province", province);
+    if (city) query = query.ilike("city", `%${city}%`);
+    if (minPrice) query = query.gte("price", Math.floor(Number(minPrice)));
+    if (maxPrice) query = query.lte("price", Math.floor(Number(maxPrice)));
+    if (featuredOnly) query = query.eq("featured", true);
+    if (weekOnly) {
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      query = query.gte("createdAt", weekAgo.toISOString());
+    }
+    if (packageType) {
+      const pkgList = packageType.split(",").map((p) => p.trim()).filter(Boolean);
+      if (pkgList.length === 1) query = query.eq("packageType", pkgList[0]);
+      else if (pkgList.length > 1) query = query.in("packageType", pkgList);
+    }
+
+    // Apply sort (mirror Prisma orderBy)
+    if (sort === "price-asc") query = query.order("price", { ascending: true });
+    else if (sort === "price-desc") query = query.order("price", { ascending: false });
+    else if (sort === "popular") query = query.order("views", { ascending: false });
+    else query = query.order("createdAt", { ascending: false });
+
+    // Apply pagination
+    query = query.range((page - 1) * limit, (page - 1) * limit + limit - 1);
+
+    const { data: rows, error } = await query;
+    if (error) {
+      console.error("[listings] Supabase GET error:", error);
+      const filters: ListingFilters = {
+        q: q || undefined,
+        category: category || undefined,
+        condition: condition || undefined,
+        province: province || undefined,
+        packageType: packageType || undefined,
+        sort: sort || undefined,
+        page,
+        limit,
+        ids,
+        featured: featuredOnly || undefined,
+      };
+      return NextResponse.json(getFallbackListings(filters));
+    }
+
+    const finalRows: any[] = rows || [];
+
+    // Batch-fetch related rows by their IDs (single round-trip per table).
+    const categoryIds = [...new Set(finalRows.map((r: any) => r.categoryId).filter(Boolean))];
+    const sellerIds = [...new Set(finalRows.map((r: any) => r.sellerId).filter(Boolean))];
+    const userIds = [...new Set(finalRows.map((r: any) => r.userId).filter(Boolean))];
+
+    const [categoriesRes, sellersRes, usersRes] = await Promise.all([
+      categoryIds.length
+        ? supabase.from("Category").select("*").in("id", categoryIds)
+        : Promise.resolve({ data: [], error: null }),
+      sellerIds.length
+        ? supabase.from("Seller").select("*").in("id", sellerIds)
+        : Promise.resolve({ data: [], error: null }),
+      userIds.length
+        ? supabase
+            .from("User")
+            .select("id, name, phone, email, city, logoImage, bannerImage")
+            .in("id", userIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    const categoryMap = new Map((categoriesRes.data || []).map((c: any) => [c.id, c]));
+    const sellerMap = new Map((sellersRes.data || []).map((s: any) => [s.id, s]));
+    const userMap = new Map((usersRes.data || []).map((u: any) => [u.id, u]));
+
+    const listings = finalRows.map((row: any) => {
+      const withRelations = {
+        ...row,
+        category: categoryMap.get(row.categoryId) ?? null,
+        seller: sellerMap.get(row.sellerId) ?? null,
+        user: userMap.get(row.userId) ?? null,
+      };
+      return parseSupabaseListing(withRelations);
+    });
+
+    // Get total count via a separate count query (re-apply same filters).
+    // Supabase's .range() with .select("*") does not return total count;
+    // we use { count: "exact", head: true } to get the count without data.
+    let countQuery = supabase
+      .from("Listing")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active")
+      .eq("paymentStatus", "paid")
+      .eq("violationFlag", false);
+    if (ids && ids.length) countQuery = countQuery.in("id", ids);
+    if (categoryCondition) countQuery = countQuery.eq("condition", categoryCondition);
+    if (categoryIdFilter) countQuery = countQuery.eq("categoryId", categoryIdFilter);
+    if (condition && !categoryCondition) countQuery = countQuery.eq("condition", condition);
+    if (province) countQuery = countQuery.eq("province", province);
+    if (city) countQuery = countQuery.ilike("city", `%${city}%`);
+    if (minPrice) countQuery = countQuery.gte("price", Math.floor(Number(minPrice)));
+    if (maxPrice) countQuery = countQuery.lte("price", Math.floor(Number(maxPrice)));
+    if (featuredOnly) countQuery = countQuery.eq("featured", true);
+    if (weekOnly) {
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      countQuery = countQuery.gte("createdAt", weekAgo.toISOString());
+    }
+    if (packageType) {
+      const pkgList = packageType.split(",").map((p) => p.trim()).filter(Boolean);
+      if (pkgList.length === 1) countQuery = countQuery.eq("packageType", pkgList[0]);
+      else if (pkgList.length > 1) countQuery = countQuery.in("packageType", pkgList);
+    }
+    if (q)
+      countQuery = countQuery.or(
+        `title.ilike.%${q}%,description.ilike.%${q}%,brand.ilike.%${q}%,city.ilike.%${q}%`
+      );
+
+    const { count: totalCount } = await countQuery;
+    const total = totalCount || listings.length;
+
+    return NextResponse.json({
+      listings,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    });
+  } catch (error) {
+    console.error("GET /api/listings Supabase error, falling back to seed data:", error);
     const filters: ListingFilters = {
       q: q || undefined,
       category: category || undefined,
@@ -152,7 +330,6 @@ export async function GET(req: NextRequest) {
       ids,
       featured: featuredOnly || undefined,
     };
-
     return NextResponse.json(getFallbackListings(filters));
   }
 }
