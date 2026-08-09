@@ -366,3 +366,27 @@ Stage Summary:
 - Root cause was deleting .next/ cache while server was running (Turbopack corruption)
 - Fix: clean restart via daemon.cjs (which also auto-starts chat-service on 3003)
 - Lesson: never delete .next/ while dev server is running — always stop the server first, then delete, then restart
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix/restore .git folder
+
+Work Log:
+- User requested: "perbaiki .git" (fix .git folder) — previously deleted .git (263MB) but user wants it back
+- Ran `git init` to create new empty git repository
+- Added remote origin: https://github.com/gomesin0711/gomesin-marketplace.git
+- Configured git user: name="Z User", email="z@container"
+- Ran `git fetch origin main` to download all commits from GitHub
+- Ran `git reset --hard origin/main` to sync local working tree with remote HEAD (da15812)
+- Set upstream tracking: main → origin/main
+- Verified: branch=main, working tree clean, up to date with origin/main
+- All 10 commits restored in local git history
+- .git folder now 148 MB (smaller than before because fresh fetch, no dangling objects)
+
+Stage Summary:
+- .git folder restored and properly linked to GitHub remote
+- Local branch main tracks origin/main, all 10 commits present
+- Working tree clean (matches remote HEAD da15812)
+- Ready for normal git operations: commit, push, pull
+- Workspace total: 1.8 GB (.git=148MB + node_modules=1.1GB + mini-services=248MB + others)
