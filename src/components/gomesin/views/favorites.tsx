@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useStore } from "@/lib/store";
 import { ListingCard, ListingCardSkeleton } from "../listing-card";
 import { Button } from "@/components/ui/button";
-import { Heart, ChevronRight, Trash2, LayoutGrid, List } from "lucide-react";
+import { Heart, Trash2, LayoutGrid, List } from "lucide-react";
 import { ListingRow } from "../listing-row";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -22,7 +22,6 @@ export function FavoritesView() {
   const favIds = useStore((s) => s.favorites);
   const toggleFavorite = useStore((s) => s.toggleFavorite);
   const goToListings = useStore((s) => s.goToListings);
-  const goHome = useStore((s) => s.goHome);
   const { t } = useLang();
   const mounted = useMounted();
   const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
@@ -67,12 +66,6 @@ export function FavoritesView() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 animate-fade-up">
-      <div className="mb-4 flex items-center gap-1 text-xs text-muted-foreground">
-        <button onClick={goHome} className="hover:text-primary">{tr("home2")}</button>
-        <ChevronRight className="size-3" />
-        <span className="text-foreground">{tr("favCrumb")}</span>
-      </div>
-
       <div className="mb-5 flex items-center gap-2">
         <Heart className="size-6 fill-rose-500 text-rose-500" />
         <h1 className="text-2xl font-bold">{tr("favTitle")}</h1>
@@ -106,7 +99,7 @@ export function FavoritesView() {
           </Button>
         </div>
       ) : isLoading ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {Array.from({ length: 4 }).map((_, i) => (
             <ListingCardSkeleton key={i} />
           ))}
@@ -130,7 +123,7 @@ export function FavoritesView() {
             </div>
           )}
           {viewMode === "grid" ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
               {listings.map((l) => <ListingCard key={l.id} listing={l} />)}
             </div>
           ) : (

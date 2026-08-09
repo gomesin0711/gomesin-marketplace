@@ -249,3 +249,24 @@ Stage Summary:
 - Chat back icon + background color settings added to both ChatWidget popup and profile Pesan panel
 - 10 color presets persisted via localStorage, shared across both chat interfaces
 - All changes browser-verified with 0 console errors
+
+---
+Task ID: 3
+Agent: Main
+Task: Match dashboard/favorites card size with beranda, remove breadcrumbs, add new-listings notification bell, change admin Iklan Baru approve icon to text button
+
+Work Log:
+- dashboard.tsx (Iklan Saya): Changed listings grid from `grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4` to `grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6` (matches beranda home.tsx). Changed card image aspect from `aspect-[4/3]` to `aspect-square`, content padding from `p-3` to `p-2.5`, price from `text-sm` to `text-base`, title from `text-xs` to `text-sm`. Applied same grid+aspect changes to loading skeleton. Removed "Beranda > Dashboard Iklan" breadcrumb div. Removed unused imports (goHome, ChevronRight).
+- favorites.tsx (Favorit Saya): Changed grid from `grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4` to `grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6` (matches beranda). Applied to both loading skeleton and results grid. Removed "Beranda > Favorit" breadcrumb div. Removed unused imports (goHome, ChevronRight).
+- Created src/lib/use-new-listings-notif.ts: Hook that polls /api/listings?sort=newest&limit=24 every 60s, tracks lastSeenAt timestamp in localStorage (key: gomesin-new-listings-seen-at), returns count + list of listings newer than lastSeenAt, and markAllSeen() to update timestamp to now. First-ever visit seeds lastSeenAt to now (no flood of existing ads).
+- Created src/components/gomesin/notification-bell.tsx: Bell icon with rose-500 badge showing new-listings count. Popover shows title "Iklan Baru Masuk" + count + scrollable list (image, title, city/seller, time-ago, price) + "Lihat semua iklan terbaru" footer. Behavior: while popover open, user sees the list; when popover closes (after having seen items), markAllSeen() is called → badge drops to 0 → next open shows empty state until new ads arrive. This matches user requirement "apabila sudah dilihat maka isi notif kosong".
+- header.tsx: Added NotificationBell to both mobile (between dark mode toggle and Store icon) and desktop (between dark mode toggle and Home icon) headers.
+- admin.tsx IklanBaruTab: Changed 4 icon-only buttons (size-7 with just CheckCircle2/XCircle icon) to proper text buttons with icon + label: "Setujui" (blue bg-blue-500) and "Tolak" (red bg-red-500), matching the IklanTab text-button style. Applied to both grid card and line card views.
+
+Stage Summary:
+- Dashboard Iklan Saya + Favorit Saya card sizes now identical to beranda (grid cols, gap, aspect-square image, p-2.5 padding, text-base price, text-sm title)
+- Breadcrumbs "Beranda > Dashboard Iklan" and "Beranda > Favorit" removed entirely
+- New notification bell in header (mobile + desktop): shows badge count of new listings since last view, popover lists them with image/title/seller/time/price, badge clears after viewing
+- Admin Iklan Baru: Setujui/Tolak are now proper text buttons (icon + label) instead of icon-only buttons
+- All changes browser-verified with Agent Browser (0 console errors, all API calls 200 OK)
+- Lint clean on all edited files (only pre-existing warnings in unrelated files)

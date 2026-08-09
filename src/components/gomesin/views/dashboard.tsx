@@ -16,7 +16,6 @@ import {
   Eye,
   TrendingUp,
   Plus,
-  ChevronRight,
   Frown,
   Trash2,
   Edit,
@@ -107,7 +106,6 @@ export function DashboardView() {
   const goToDetail = useStore((s) => s.goToDetail);
   const goToEdit = useStore((s) => s.goToEdit);
   const goToPost = useStore((s) => s.goToPost);
-  const goHome = useStore((s) => s.goHome);
   const goToUpgrade = useStore((s) => s.goToUpgrade);
   const user = useStore((s) => s.user);
   const goToLogin = useStore((s) => s.goToLogin);
@@ -275,7 +273,7 @@ export function DashboardView() {
         )}
       >
         {/* image */}
-        <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
+        <div className="relative aspect-square w-full overflow-hidden bg-muted">
           {img ? (
             <img src={img} alt={l.title} className="size-full object-cover transition group-hover:scale-105" />
           ) : (
@@ -311,10 +309,10 @@ export function DashboardView() {
         </div>
 
         {/* content */}
-        <div className="flex flex-1 flex-col p-3">
+        <div className="flex flex-1 flex-col p-2.5">
           {/* price */}
           <div className="flex items-baseline justify-between gap-2">
-            <p className="text-sm font-bold text-primary">
+            <p className="text-base font-bold text-primary">
               {formatRupiahFull(l.price)}
             </p>
             {l.priceType === "negotiable" && (
@@ -324,7 +322,7 @@ export function DashboardView() {
             )}
           </div>
           {/* title */}
-          <h3 className="mt-1 line-clamp-2 text-xs font-medium leading-snug text-foreground">
+          <h3 className="mt-1 line-clamp-2 text-sm font-medium leading-snug text-foreground">
             {listingTitle(l, mounted ? lang : "id")}
           </h3>
           {/* meta */}
@@ -596,13 +594,6 @@ export function DashboardView() {
         </div>
       )}
 
-      {/* breadcrumb */}
-      <div className="mb-4 flex items-center gap-1 text-xs text-muted-foreground">
-        <button onClick={goHome} className="hover:text-primary">{tr("home2")}</button>
-        <ChevronRight className="size-3" />
-        <span className="text-foreground">{tr("dashboardCrumb")}</span>
-      </div>
-
       {/* header */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -705,10 +696,10 @@ export function DashboardView() {
       {/* ===== RESULTS ===== */}
       {isLoading ? (
         viewMode === "grid" ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="overflow-hidden rounded-xl border-2 border-border bg-card">
-                <div className="aspect-[4/3] w-full animate-pulse bg-muted" />
+                <div className="aspect-square w-full animate-pulse bg-muted" />
                 <div className="space-y-2 p-3">
                   <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
                   <div className="h-3 w-full animate-pulse rounded bg-muted" />
@@ -741,7 +732,7 @@ export function DashboardView() {
           </Button>
         </div>
       ) : viewMode === "grid" ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {listings.map(renderGridCard)}
         </div>
       ) : (

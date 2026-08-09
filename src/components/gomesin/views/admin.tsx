@@ -784,11 +784,11 @@ function IklanBaruTab() {
               <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0}
             </span>
             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => approve(l.id)} className="grid size-7 place-items-center rounded-md border border-blue-500 bg-blue-500 text-white transition hover:bg-blue-600 hover:border-blue-600" title="Setujui">
-                <CheckCircle2 className="size-3" />
+              <button onClick={() => approve(l.id)} className="flex items-center gap-1 rounded-md border border-blue-500 bg-blue-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-blue-600 hover:border-blue-600">
+                <CheckCircle2 className="size-3" /> Setujui
               </button>
-              <button onClick={() => reject(l.id)} className="grid size-7 place-items-center rounded-md border border-red-500 bg-red-500 text-white transition hover:bg-red-600 hover:border-red-600" title="Tolak">
-                <XCircle className="size-3" />
+              <button onClick={() => reject(l.id)} className="flex items-center gap-1 rounded-md border border-red-500 bg-red-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-600 hover:border-red-600">
+                <XCircle className="size-3" /> Tolak
               </button>
             </div>
           </div>
@@ -830,8 +830,8 @@ function IklanBaruTab() {
               <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0} dilihat
             </span>
             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => approve(l.id)} className="grid size-7 place-items-center rounded-md border border-blue-500 bg-blue-500 text-white transition hover:bg-blue-600 hover:border-blue-600" title="Setujui"><CheckCircle2 className="size-3" /></button>
-              <button onClick={() => reject(l.id)} className="grid size-7 place-items-center rounded-md border border-red-500 bg-red-500 text-white transition hover:bg-red-600 hover:border-red-600" title="Tolak"><XCircle className="size-3" /></button>
+              <button onClick={() => approve(l.id)} className="flex items-center gap-1 rounded-md border border-blue-500 bg-blue-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-blue-600 hover:border-blue-600"><CheckCircle2 className="size-3" /> Setujui</button>
+              <button onClick={() => reject(l.id)} className="flex items-center gap-1 rounded-md border border-red-500 bg-red-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-600 hover:border-red-600"><XCircle className="size-3" /> Tolak</button>
             </div>
           </div>
         </div>

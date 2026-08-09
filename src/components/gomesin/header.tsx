@@ -19,6 +19,7 @@ import { PROVINCES } from "@/lib/types";
 import { playNotificationSound, setupNotificationSoundUnlock } from "@/lib/notification-sound";
 import { cn } from "@/lib/utils";
 import { CategoryNav } from "./category-nav";
+import { NotificationBell } from "./notification-bell";
 import { useChatSocket } from "@/lib/use-chat-socket";
 import { useTheme } from "next-themes";
 
@@ -360,6 +361,7 @@ export function Header() {
                 {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
               </button>
             )}
+            <NotificationBell align="end" />
             <button
               onClick={() => {
                 const st = useStore.getState() as any;
@@ -485,6 +487,8 @@ export function Header() {
               {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
             </button>
           )}
+          {/* Notification bell: shows count of new listings since last viewed */}
+          <NotificationBell align="end" />
           {/* House icon: goes to seller store page (desktop only) */}
           {mounted && user && (
             <button
