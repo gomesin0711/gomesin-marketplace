@@ -921,3 +921,81 @@ Stage Summary:
 - Each code remains GLOBALLY UNIQUE at the time of reservation (DB @unique constraint + used-listing codes excluded from pool)
 - The previous unused reservation is released on each new request, so the 999-code pool is not exhausted
 - Code pushed to GitHub; Vercel auto-deploy pending (no CLI token available for manual deploy)
+
+---
+Task ID: 21
+Agent: Main Agent (Z.ai Code)
+Task: Make payment proof delivery to admin chat REALTIME via socket.io. User request: "buatlah agar bukti pembayaran di kirim ke chat secara realtime"
+
+Work Log:
+- Explored the chat infrastructure: chat-service (socket.io on port 3003), use-chat-socket.ts hook, chat-widget.tsx, admin.tsx ChatTab
+- Found ROOT CAUSE #1: admin.tsx ChatTab only polled /api/messages every 500ms (refetchInterval: 500) and did NOT subscribe to socket.io message:new events — so proof messages were not pushed in realtime
+- Found ROOT CAUSE #2: the admin "Pesan" (chat) tab was defined in TABS array but NOT accessible — admin-sidebar.tsx ADMIN_MENU didn't include it, app-shell.tsx ADMIN_VIEWS didn't include "admin-chat", and there was no <AdminView initialTab="chat" /> rendering
+- Found ROOT CAUSE #3: proof images were sent as base64 data URLs via socket — large payloads could exceed socket.io's default 1MB maxHttpBufferSize
+
+Fixes implemented:
+
+1. mini-services/chat-service/index.ts:
+   - Added maxHttpBufferSize: 25 * 1024 * 1024 (25MB) to the Server options
+   - Ensures large base64 image payloads don't get rejected by socket.io
+
+2. src/components/gomesin/views/admin.tsx (ChatTab):
+   - Imported useChatSocket and ChatMessage type
+   - Added useQueryClient + useChatSocket hooks
+   - Added useEffect that subscribes to "message:new" socket events:
+     * Only handles messages where admin is the receiver (msg.receiverId === user.id)
+     * Instantly invalidates the admin-chat query (no 500ms polling lag)
+     * Auto-selects the sender's conversation (setSelectedId(msg.senderId))
+     * Shows toast "Bukti pembayaran baru masuk!" when message has image + "Bukti Pembayaran" in content
+
+3. src/components/gomesin/admin-sidebar.tsx:
+   - Added { view: "admin-chat", labelKey: "adminMessages", icon: MessageCircle } to ADMIN_MENU
+   - Admin can now navigate to the Pesan (chat) tab from the sidebar
+
+4. src/components/gomesin/app-shell.tsx:
+   - Added "admin-chat" to ADMIN_VIEWS array
+   - Added {view === "admin-chat" && <AdminView initialTab="chat" />}
+
+5. src/lib/i18n.ts:
+   - Added adminMessages: "Pesan" (id), "Messages" (en), "消息" (zh)
+
+6. src/lib/share-image.ts:
+   - Added openWhatsAppWithUrl() helper — opens wa.me with a pre-uploaded image URL
+   - No re-upload needed (avoids double-uploading the same proof image)
+   - Same mobile/desktop popup-safe pattern as shareImageToWhatsApp
+
+7. src/components/gomesin/views/post-ad.tsx + src/components/gomesin/package-activate-dialog.tsx:
+   - Both QRIS and BCA handlers refactored:
+   - Upload BOTH ad image AND proof image to server FIRST (via /api/upload-proof) → get public URLs
+   - Send the URLs via socket.io (not base64 data URLs) → smaller payload, more reliable
+   - Use openWhatsAppWithUrl() for WhatsApp (reuses the already-uploaded proof URL)
+   - REST fallback also uses URLs (consistent)
+   - Toast message updated to "Bukti pembayaran dikirim ke chat admin (realtime)"
+
+Verification with Agent Browser (two parallel sessions):
+- Session "admin": logged in as Admin Gomesin, navigated to Pesan tab
+- Session "user": logged in as udin
+- Sent a proof message via socket.io (node script connecting to chat-service):
+  - socket.emit("user:join", {userId: "udin-id"})
+  - socket.emit("message:send", {senderId, receiverId: admin-id, content, image, listingTitle})
+  - Chat-service ack returned {ok: true, msgId: "..."}
+- Admin session received the message INSTANTLY without page reload ✓
+- Message with image URL appeared in the conversation panel ✓
+- Conversation was auto-selected so admin sees it immediately ✓
+- Chat-service log confirms: user:join → message:send → delivered to admin room
+- Dev log: all GET /api/messages returned 200, no errors
+- Lint: clean on all edited files (only pre-existing start-chat.cjs errors)
+
+Deployment:
+- Committed (ed437bd) and pushed to GitHub (gomesin0711/gomesin-marketplace, main branch)
+- Vercel CLI deploy not attempted (no valid token — same as previous tasks)
+- GitHub auto-deploy will trigger if configured on the Vercel project
+
+Stage Summary:
+- Payment proof is now delivered to admin chat in TRUE REALTIME via socket.io push
+  (no more 500ms polling lag — the admin sees the proof the instant the user sends it)
+- Admin "Pesan" tab is now accessible from the sidebar (was previously hidden/unreachable)
+- Images are uploaded to server first, then URLs are sent via socket — smaller payloads,
+  more reliable, and the images persist as clickable links in the chat DB
+- Both QRIS and BCA proof flows in post-ad.tsx AND package-activate-dialog.tsx updated
+- Code pushed to GitHub; Vercel auto-deploy pending
