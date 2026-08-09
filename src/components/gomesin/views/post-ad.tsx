@@ -40,7 +40,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { compressImage } from "@/lib/image";
-import { shareImageToWhatsApp } from "@/lib/share-image";
+import { openWhatsAppWithUrl } from "@/lib/share-image";
 import { useChatSocket } from "@/lib/use-chat-socket";
 import {
   Popover,
@@ -1288,23 +1288,20 @@ export function PostAdView() {
                       setUploadingProof(true);
                       try {
                         // === Ad image (gambar iklan) ===
-                        // images[0] is a compressed data URL; fall back to a
-                        // placeholder if the user somehow has no photo.
                         const adImage = images[0] || PLACEHOLDER_IMAGES[0];
 
                         // === Proof image (gambar bukti transfer) ===
                         const matches = proofImage.match(/^data:(image\/\w+);base64,(.+)$/);
                         if (!matches) { toast.error("Format gambar tidak valid"); return; }
-                        const ext = matches[1] === "image/jpeg" ? "jpg" : matches[1].split("/")[1];
-                        const byteString = atob(matches[2]);
-                        const buf = new Uint8Array(byteString.length);
-                        for (let i = 0; i < byteString.length; i++) buf[i] = byteString.charCodeAt(i);
-                        const blob = new Blob([buf], { type: matches[1] });
-                        const fileName = `bukti-pembayaran-${pkgName.toLowerCase()}-${Date.now()}.${ext}`;
 
-                        // If the ad image is a data URL, upload it too so we
-                        // can include a public URL in the WhatsApp caption.
-                        // (Remote URLs are included as-is.)
+                        // === STEP 1: Upload BOTH images to server first ===
+                        // This gives us public URLs that are:
+                        //  - Smaller to send via socket (URL vs base64 data URL)
+                        //  - More reliable (no socket.io payload size issues)
+                        //  - Reusable for both WhatsApp AND chat admin
+                        //  - Persisted as clickable links in the chat DB
+
+                        // Upload ad image (if it's a data URL)
                         let adImageUrl: string = adImage;
                         if (adImage.startsWith("data:image/")) {
                           try {
@@ -1320,7 +1317,22 @@ export function PostAdView() {
                           } catch { /* keep data URL fallback */ }
                         }
 
-                        // === WhatsApp caption (includes BOTH ad image URL + proof info) ===
+                        // Upload proof image → get public URL
+                        let proofUrl: string = proofImage;
+                        try {
+                          const proofUp = await fetch("/api/upload-proof", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ image: proofImage }),
+                          });
+                          if (proofUp.ok) {
+                            const proofData = await proofUp.json();
+                            if (proofData?.url) proofUrl = proofData.url;
+                          }
+                        } catch { /* keep data URL fallback */ }
+
+                        // === STEP 2: WhatsApp — open wa.me with caption + proof URL ===
+                        // No re-upload needed — we already have the proof URL.
                         const caption =
                           `*Bukti Pembayaran Iklan Gomesin*\n\n` +
                           `Paket: ${pkgName}\n` +
@@ -1331,16 +1343,15 @@ export function PostAdView() {
                           `Judul Iklan: ${title}\n\n` +
                           `Gambar Iklan:\n${adImageUrl}`;
 
-                        // 1) WhatsApp share — uploads proof image, opens wa.me
-                        //    with caption (which already contains the ad image URL).
-                        const result = await shareImageToWhatsApp({ blob, fileName, caption, phone: "6285888082208" });
-                        if (result.status === "shared") toast.success("Gambar bukti dibagikan ke WhatsApp!");
-                        else if (result.status === "opened") toast.success("Bukti pembayaran terkirim ke WhatsApp admin!");
-                        else if (result.status === "cancelled") { setUploadingProof(false); return; }
+                        const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
+                        if (result.status === "opened") toast.success("Bukti pembayaran terkirim ke WhatsApp admin!");
+                        else if (result.status === "error") toast.error("Gagal membuka WhatsApp");
 
-                        // 2) Chat admin via socket — send TWO messages so the
-                        //    admin sees both the ad image and the proof image
-                        //    inline in the conversation.
+                        // === STEP 3: Chat admin via socket (REALTIME) ===
+                        // Send TWO messages: ad image + proof image.
+                        // Using uploaded URLs (not base64) for smaller, more
+                        // reliable socket payloads. The admin receives these
+                        // instantly via the message:new socket event.
                         if (user?.id) {
                           try {
                             const adminRes = await fetch("/api/admin/info");
@@ -1363,12 +1374,12 @@ export function PostAdView() {
                                 `Bukti pembayaran terlampir. Mohon diverifikasi agar iklan segera aktif.`;
 
                               if (admin?.id) {
-                                // Message 1: ad image
+                                // Message 1: ad image (sent as URL for smaller payload)
                                 const ack1 = await sendMessage({
                                   senderId: user.id,
                                   receiverId: admin.id,
                                   content: adCaption,
-                                  image: adImage,
+                                  image: adImageUrl,
                                   listingTitle: `Gambar Iklan — ${title}`,
                                 });
                                 if (!ack1?.ok) {
@@ -1379,17 +1390,17 @@ export function PostAdView() {
                                       senderId: user.id,
                                       receiverId: admin.id,
                                       content: adCaption,
-                                      image: adImage,
+                                      image: adImageUrl,
                                       listingTitle: `Gambar Iklan — ${title}`,
                                     }),
                                   });
                                 }
-                                // Message 2: payment proof image
+                                // Message 2: payment proof image (sent as URL)
                                 const ack2 = await sendMessage({
                                   senderId: user.id,
                                   receiverId: admin.id,
                                   content: proofCaption,
-                                  image: proofImage,
+                                  image: proofUrl,
                                   listingTitle: `Bukti Pembayaran — ${title}`,
                                 });
                                 if (!ack2?.ok) {
@@ -1400,12 +1411,12 @@ export function PostAdView() {
                                       senderId: user.id,
                                       receiverId: admin.id,
                                       content: proofCaption,
-                                      image: proofImage,
+                                      image: proofUrl,
                                       listingTitle: `Bukti Pembayaran — ${title}`,
                                     }),
                                   });
                                 }
-                                toast.success("Bukti pembayaran dikirim ke chat admin");
+                                toast.success("Bukti pembayaran dikirim ke chat admin (realtime)");
                               }
                             }
                           } catch (chatErr) {

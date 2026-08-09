@@ -154,3 +154,54 @@ export async function shareImageToWhatsApp({
     return { status: "error", error: "Tidak bisa membuka WhatsApp" };
   }
 }
+
+/**
+ * Open WhatsApp chat with a pre-uploaded image URL — NO blob upload needed.
+ *
+ * Use this when the image has already been uploaded to a public URL (e.g.
+ * via /api/upload-proof). The URL is embedded in the caption so WhatsApp
+ * shows a preview. This avoids double-uploading the same image.
+ */
+export async function openWhatsAppWithUrl({
+  caption,
+  imageUrl,
+  phone = "6285888082208",
+}: {
+  caption: string;
+  imageUrl: string | null;
+  phone?: string;
+}): Promise<ShareImageResult> {
+  const waUrl = buildWhatsAppUrl(phone, caption, imageUrl);
+
+  if (isMobile()) {
+    try {
+      window.location.href = waUrl;
+      return { status: "opened" };
+    } catch {
+      return { status: "error", error: "Tidak bisa membuka WhatsApp" };
+    }
+  }
+
+  let popupWin: Window | null = null;
+  try {
+    popupWin = window.open("", "_blank");
+  } catch {
+    popupWin = null;
+  }
+
+  if (popupWin && !popupWin.closed) {
+    try {
+      popupWin.location.href = waUrl;
+      return { status: "opened" };
+    } catch {
+      try { popupWin.close(); } catch {}
+    }
+  }
+
+  try {
+    window.location.href = waUrl;
+    return { status: "opened" };
+  } catch {
+    return { status: "error", error: "Tidak bisa membuka WhatsApp" };
+  }
+}

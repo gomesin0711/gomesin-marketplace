@@ -12,7 +12,7 @@ import { formatRupiahFull, type Listing } from "@/lib/types";
 import { useLang, translations as i18nTranslations, listingTitle } from "@/lib/i18n";
 import { useMounted } from "@/lib/use-mounted";
 import { compressImage } from "@/lib/image";
-import { shareImageToWhatsApp } from "@/lib/share-image";
+import { openWhatsAppWithUrl } from "@/lib/share-image";
 import { useChatSocket } from "@/lib/use-chat-socket";
 import { useStore } from "@/lib/store";
 
@@ -626,17 +626,10 @@ export function PackageActivateDialog({
                         const dataUrlPrefix = proofImage.substring(0, proofImage.indexOf(','));
                         const base64Data = proofImage.substring(proofImage.indexOf(',') + 1);
                         if (!dataUrlPrefix || !base64Data) { toast.error("Format gambar tidak valid"); return; }
-                        const mimeMatch = dataUrlPrefix.match(/image\/(\w+)/);
-                        const mime = mimeMatch ? mimeMatch[1] : 'jpeg';
-                        const ext = mime === 'jpeg' ? 'jpg' : mime;
-                        const byteString = atob(base64Data);
-                        const buf = new Uint8Array(byteString.length);
-                        for (let i = 0; i < byteString.length; i++) buf[i] = byteString.charCodeAt(i);
-                        const blob = new Blob([buf], { type: `image/${mime}` });
-                        const fileName = `${sanitizeFileName(user?.name || user?.email || "bukti-pembayaran")}.${ext}`;
 
-                        // If ad image is a data URL, upload it to get a public URL
-                        // for the WhatsApp caption. Remote URLs are used as-is.
+                        // === STEP 1: Upload BOTH images to server first ===
+                        // Gives public URLs that are smaller to send via socket,
+                        // more reliable, and reusable for WhatsApp + chat admin.
                         let adImageUrl: string = adImage;
                         if (adImage.startsWith("data:image/")) {
                           try {
@@ -652,6 +645,20 @@ export function PackageActivateDialog({
                           } catch { /* keep data URL fallback */ }
                         }
 
+                        // Upload proof image → get public URL
+                        let proofUrl: string = proofImage;
+                        try {
+                          const proofUp = await fetch("/api/upload-proof", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ image: proofImage }),
+                          });
+                          if (proofUp.ok) {
+                            const proofData = await proofUp.json();
+                            if (proofData?.url) proofUrl = proofData.url;
+                          }
+                        } catch { /* keep data URL fallback */ }
+
                         const caption =
                           `*Bukti Pembayaran Upgrade Iklan Gomesin*\n\n` +
                           `Paket: ${selectedPkg.name}\n` +
@@ -661,13 +668,13 @@ export function PackageActivateDialog({
                           `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}\n\n` +
                           `Gambar Iklan:\n${adImageUrl}`;
 
-                        // 1) WhatsApp — uploads proof, opens wa.me with caption.
-                        const result = await shareImageToWhatsApp({ blob, fileName, caption, phone: "6285888082208" });
-                        if (result.status === "shared") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
-                        else if (result.status === "opened") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
-                        else if (result.status === "cancelled") { setUploadingProof(false); return; }
+                        // 2) WhatsApp — open wa.me with caption + proof URL (no re-upload).
+                        const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
+                        if (result.status === "opened") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
+                        else if (result.status === "error") toast.error("Gagal membuka WhatsApp");
 
-                        // 2) Chat admin via socket — send TWO messages (ad image + proof).
+                        // 3) Chat admin via socket (REALTIME) — send TWO messages
+                        //    with uploaded URLs (smaller payload than base64).
                         if (user?.id) {
                           try {
                             const adminRes = await fetch("/api/admin/info");
@@ -688,12 +695,12 @@ export function PackageActivateDialog({
                                 `User: ${user.name || "-"} (${user.email || "-"})\n\n` +
                                 `Bukti pembayaran terlampir. Mohon diverifikasi.`;
                               if (admin?.id) {
-                                if (adImage) {
+                                if (adImageUrl) {
                                   const ack1 = await sendMessage({
                                     senderId: user.id,
                                     receiverId: admin.id,
                                     content: adCaption,
-                                    image: adImage,
+                                    image: adImageUrl,
                                     listingTitle: `Gambar Iklan — ${listingTitle(listing, mounted ? lang : "id")}`,
                                   });
                                   if (!ack1?.ok) {
@@ -704,7 +711,7 @@ export function PackageActivateDialog({
                                         senderId: user.id,
                                         receiverId: admin.id,
                                         content: adCaption,
-                                        image: adImage,
+                                        image: adImageUrl,
                                         listingTitle: `Gambar Iklan — ${listingTitle(listing, mounted ? lang : "id")}`,
                                       }),
                                     });
@@ -714,7 +721,7 @@ export function PackageActivateDialog({
                                   senderId: user.id,
                                   receiverId: admin.id,
                                   content: proofCaption,
-                                  image: proofImage,
+                                  image: proofUrl,
                                   listingTitle: `Bukti Pembayaran — ${listingTitle(listing, mounted ? lang : "id")}`,
                                 });
                                 if (!ack2?.ok) {
@@ -725,12 +732,12 @@ export function PackageActivateDialog({
                                       senderId: user.id,
                                       receiverId: admin.id,
                                       content: proofCaption,
-                                      image: proofImage,
+                                      image: proofUrl,
                                       listingTitle: `Bukti Pembayaran — ${listingTitle(listing, mounted ? lang : "id")}`,
                                     }),
                                   });
                                 }
-                                toast.success("Bukti pembayaran dikirim ke chat admin");
+                                toast.success("Bukti pembayaran dikirim ke chat admin (realtime)");
                               }
                             }
                           } catch (chatErr) {
@@ -893,16 +900,8 @@ export function PackageActivateDialog({
                         const dataUrlPrefix = proofImage.substring(0, proofImage.indexOf(','));
                         const base64Data = proofImage.substring(proofImage.indexOf(',') + 1);
                         if (!dataUrlPrefix || !base64Data) { toast.error("Format gambar tidak valid"); return; }
-                        const mimeMatch = dataUrlPrefix.match(/image\/(\w+)/);
-                        const mime = mimeMatch ? mimeMatch[1] : 'jpeg';
-                        const ext = mime === 'jpeg' ? 'jpg' : mime;
-                        const byteString = atob(base64Data);
-                        const buf = new Uint8Array(byteString.length);
-                        for (let i = 0; i < byteString.length; i++) buf[i] = byteString.charCodeAt(i);
-                        const blob = new Blob([buf], { type: `image/${mime}` });
-                        const fileName = `${sanitizeFileName(user?.name || user?.email || "bukti-pembayaran")}.${ext}`;
 
-                        // Upload ad image if it's a data URL (for WhatsApp caption).
+                        // === STEP 1: Upload BOTH images to server first ===
                         let adImageUrl: string = adImage;
                         if (adImage.startsWith("data:image/")) {
                           try {
@@ -918,6 +917,20 @@ export function PackageActivateDialog({
                           } catch { /* keep data URL fallback */ }
                         }
 
+                        // Upload proof image → get public URL
+                        let proofUrl: string = proofImage;
+                        try {
+                          const proofUp = await fetch("/api/upload-proof", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ image: proofImage }),
+                          });
+                          if (proofUp.ok) {
+                            const proofData = await proofUp.json();
+                            if (proofData?.url) proofUrl = proofData.url;
+                          }
+                        } catch { /* keep data URL fallback */ }
+
                         const caption =
                           `*Bukti Pembayaran Upgrade Iklan Gomesin*\n\n` +
                           `Paket: ${selectedPkg.name}\n` +
@@ -927,13 +940,13 @@ export function PackageActivateDialog({
                           `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}\n\n` +
                           `Gambar Iklan:\n${adImageUrl}`;
 
-                        // 1) WhatsApp — uploads proof, opens wa.me with caption.
-                        const result = await shareImageToWhatsApp({ blob, fileName, caption, phone: "6285888082208" });
-                        if (result.status === "shared") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
-                        else if (result.status === "opened") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
-                        else if (result.status === "cancelled") { setUploadingProof(false); return; }
+                        // 2) WhatsApp — open wa.me with caption + proof URL (no re-upload).
+                        const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
+                        if (result.status === "opened") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
+                        else if (result.status === "error") toast.error("Gagal membuka WhatsApp");
 
-                        // 2) Chat admin via socket — send TWO messages (ad image + proof).
+                        // 3) Chat admin via socket (REALTIME) — send TWO messages
+                        //    with uploaded URLs (smaller payload than base64).
                         if (user?.id) {
                           try {
                             const adminRes = await fetch("/api/admin/info");
@@ -954,12 +967,12 @@ export function PackageActivateDialog({
                                 `User: ${user.name || "-"} (${user.email || "-"})\n\n` +
                                 `Bukti pembayaran terlampir. Mohon diverifikasi.`;
                               if (admin?.id) {
-                                if (adImage) {
+                                if (adImageUrl) {
                                   const ack1 = await sendMessage({
                                     senderId: user.id,
                                     receiverId: admin.id,
                                     content: adCaption,
-                                    image: adImage,
+                                    image: adImageUrl,
                                     listingTitle: `Gambar Iklan — ${listingTitle(listing, mounted ? lang : "id")}`,
                                   });
                                   if (!ack1?.ok) {
@@ -970,7 +983,7 @@ export function PackageActivateDialog({
                                         senderId: user.id,
                                         receiverId: admin.id,
                                         content: adCaption,
-                                        image: adImage,
+                                        image: adImageUrl,
                                         listingTitle: `Gambar Iklan — ${listingTitle(listing, mounted ? lang : "id")}`,
                                       }),
                                     });
@@ -980,7 +993,7 @@ export function PackageActivateDialog({
                                   senderId: user.id,
                                   receiverId: admin.id,
                                   content: proofCaption,
-                                  image: proofImage,
+                                  image: proofUrl,
                                   listingTitle: `Bukti Pembayaran — ${listingTitle(listing, mounted ? lang : "id")}`,
                                 });
                                 if (!ack2?.ok) {
@@ -991,12 +1004,12 @@ export function PackageActivateDialog({
                                       senderId: user.id,
                                       receiverId: admin.id,
                                       content: proofCaption,
-                                      image: proofImage,
+                                      image: proofUrl,
                                       listingTitle: `Bukti Pembayaran — ${listingTitle(listing, mounted ? lang : "id")}`,
                                     }),
                                   });
                                 }
-                                toast.success("Bukti pembayaran dikirim ke chat admin");
+                                toast.success("Bukti pembayaran dikirim ke chat admin (realtime)");
                               }
                             }
                           } catch (chatErr) {

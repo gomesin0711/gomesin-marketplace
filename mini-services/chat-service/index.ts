@@ -21,6 +21,10 @@ const io = new Server(httpServer, {
   },
   pingTimeout: 60000,
   pingInterval: 25000,
+  // Allow large image payloads (base64 data URLs or image URLs with long
+  // captions). Default is 1MB which is too small for payment proof images.
+  // 25MB covers even uncompressed screenshots sent as base64.
+  maxHttpBufferSize: 25 * 1024 * 1024,
 })
 
 interface MessagePayload {

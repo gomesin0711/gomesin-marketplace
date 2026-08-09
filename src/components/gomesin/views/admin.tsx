@@ -34,6 +34,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useChatSocket, type ChatMessage } from "@/lib/use-chat-socket";
 
 type Tab = "dashboard" | "iklan" | "iklanbaru" | "iklanexpired" | "iklanditolak" | "penjual" | "kategori" | "merek" | "lokasi" | "banner" | "paket" | "transaksi" | "laporan" | "laporanbulanan" | "audit" | "pengguna" | "chat";
 
@@ -2909,6 +2910,8 @@ function ChatTab() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+  const { subscribe } = useChatSocket();
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-chat", user?.id],
@@ -2919,6 +2922,31 @@ function ChatTab() {
   const conversations: any[] = data?.conversations ?? [];
   const totalMessages = conversations.reduce((sum: number, c: any) => sum + (c.messages?.length || 0), 0);
   const totalUnread = conversations.reduce((sum: number, c: any) => sum + (c.unread || 0), 0);
+
+  // === REALTIME: subscribe to socket.io message:new events ===
+  // When a new message arrives (e.g. a payment proof from a user), instantly
+  // invalidate the admin-chat query so the conversation list refreshes
+  // immediately — no 500ms polling lag. Also auto-select the conversation
+  // that received the proof and show a toast notification.
+  useEffect(() => {
+    if (!user?.id) return;
+    const off = subscribe<ChatMessage>("message:new", (msg) => {
+      // Only handle messages where the admin is the receiver (incoming).
+      if (msg.receiverId !== user.id) return;
+      // Instantly refetch so the new message appears in the conversation list.
+      queryClient.invalidateQueries({ queryKey: ["admin-chat", user.id] });
+      // Auto-select the conversation so the admin sees it immediately.
+      if (msg.senderId) setSelectedId(msg.senderId);
+      // Toast notification for payment proofs (messages with images that
+      // mention "Bukti Pembayaran").
+      if (msg.image && msg.content?.includes("Bukti Pembayaran")) {
+        toast.success("Bukti pembayaran baru masuk!", {
+          description: "Cek tab Pesan untuk verifikasi.",
+        });
+      }
+    });
+    return off;
+  }, [user?.id, subscribe, queryClient]);
 
   // Filter conversations by search
   const filtered = conversations.filter((c: any) => {
