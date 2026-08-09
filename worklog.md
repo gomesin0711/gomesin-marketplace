@@ -458,3 +458,25 @@ Stage Summary:
 - Background fully removed (transparent PNG like all other category icons)
 - New icon matches flat cartoon style of other category icons (mesincetak, mescnc, etc.)
 - Old icon backed up at /tmp/jasa-old-backup.png
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix Jasa icon not updating (browser cache issue)
+
+Work Log:
+- User reported: "icon jasa belum ganti" (jasa icon not changed yet) despite previous fix
+- Verified server-side: /home/z/my-project/public/cat-icons/jasa.png contains the NEW icon (technician with hard hat, transparent bg, 555344 bytes, center=RGB(150,48,59))
+- Verified HTTP serve: curl fetch returned correct new image with transparent corners (alpha=0)
+- Root cause: BROWSER CACHE — Next.js public/ assets have no cache-busting hash, so user's browser/Preview Panel kept showing the OLD cached jasa.png
+- Fix: renamed file from jasa.png → jasa-v2.png to force fresh fetch (cache miss)
+- Updated src/components/gomesin/category-icon.tsx MAP: HardHat: "/cat-icons/jasa.png" → "/cat-icons/jasa-v2.png"
+- Verified via Agent Browser: page now loads img src="http://localhost:3000/cat-icons/jasa-v2.png" (confirmed via DOM eval)
+- Confirmed served v2 image: 1024x1024, transparent corners, center icon (150,48,59) = new red-shirt technician icon
+- Dev server compiled cleanly, no errors
+
+Stage Summary:
+- Browser cache was the culprit — file was correct server-side all along
+- Renamed jasa.png → jasa-v2.png + updated code MAP to force cache miss
+- New icon now actually displays: technician with yellow hard hat, transparent background
+- User should hard-refresh Preview Panel (or it will auto-fetch new jasa-v2.png URL)
