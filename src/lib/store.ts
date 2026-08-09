@@ -90,6 +90,7 @@ type NavState = {
   goToFavorites: () => void;
   goToProfile: () => void;
   goToProfilePanel: (panel: "pesan" | "pesanan" | "saldo" | "notifikasi" | "keamanan" | "pengaturan" | "bantuan" | "iklan-saya" | "favorit-saya") => void;
+  setProfilePanel: (panel: "pesan" | "pesanan" | "saldo" | "notifikasi" | "keamanan" | "pengaturan" | "bantuan" | "iklan-saya" | "favorit-saya" | null) => void;
   clearProfilePanel: () => void;
   goToLogin: () => void;
   goToDashboard: () => void;
@@ -222,6 +223,11 @@ export const useStore = create<NavState>()(
         }),
 
       clearProfilePanel: () => set({ profilePanel: null }),
+
+      // Set profile panel WITHOUT pushing browser history (used by in-view sidebar/drawer
+      // navigation so the store always reflects the active panel — lets the bottom-nav
+      // "Akun Saya" button reliably reset to beranda akun via goToProfile).
+      setProfilePanel: (panel) => set({ profilePanel: panel }),
 
       goToLogin: () =>
         set((s) => {

@@ -120,7 +120,7 @@ export function BottomNav() {
         <NavItem
           icon={MessageSquare}
           label={tr("chat")}
-          active={false}
+          active={view === "profile" && storeProfilePanel === "pesan"}
           onClick={guard(() => goToProfilePanel("pesan"))}
           badge={unreadCount}
           badgeMounted={mounted}
@@ -154,7 +154,7 @@ export function BottomNav() {
         <NavItem
           icon={User}
           label={user ? tr("myAccount") : tr("login")}
-          active={view === "profile" || view === "login"}
+          active={(view === "profile" && !storeProfilePanel) || view === "login"}
           onClick={user ? goToProfile : goToLogin}
         />
       </div>

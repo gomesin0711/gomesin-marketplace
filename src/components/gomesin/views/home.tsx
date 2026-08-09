@@ -342,7 +342,7 @@ export function HomeView() {
                   <h1 className="text-xl font-extrabold leading-tight text-white sm:text-3xl md:text-4xl">
                     Bingung Jual mesin baru/bekas dimana?
                   </h1>
-                  <p className="mt-2 text-sm font-bold text-orange-400 sm:text-lg md:text-xl">
+                  <p className="mt-2 text-base font-bold text-orange-400 sm:text-xl md:text-2xl">
                     Pasang iklan di gomesin saja!!!
                   </p>
                   <p className="mt-1 text-xs text-white/90 sm:text-sm md:text-base">

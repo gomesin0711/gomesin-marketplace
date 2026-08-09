@@ -132,6 +132,7 @@ export function ProfileView() {
   const favCount = useStore((s) => s.favorites.length);
   const storeProfilePanel = useStore((s) => s.profilePanel);
   const clearProfilePanel = useStore((s) => s.clearProfilePanel);
+  const setProfilePanel = useStore((s) => s.setProfilePanel);
 
   // Fetch user's listing count
   const { data: myListingsData } = useQuery({
@@ -309,6 +310,14 @@ export function ProfileView() {
     clearProfilePanel();
   };
 
+  // Switch panel AND sync to store so the bottom-nav "Akun Saya" button (goToProfile →
+  // store profilePanel = null) always reliably resets to beranda akun, even after opening
+  // a panel via the in-view sidebar / hamburger drawer.
+  const goPanel = (p: Exclude<PanelType, null>) => {
+    setPanel(p);
+    setProfilePanel(p);
+  };
+
   // sample data for panels — per-user (empty for new users)
   const orders: any[] = [];
   const wallets: any[] = [];
@@ -460,7 +469,7 @@ export function ProfileView() {
         toast.info(`Pesan baru${conv?.name ? ` dari ${conv.name}` : ""}`, {
           description: preview,
           duration: 4000,
-          action: conv ? { label: "Buka", onClick: () => { setPanel("pesan"); openChat(conv.id as any); } } : undefined,
+          action: conv ? { label: "Buka", onClick: () => { goPanel("pesan"); openChat(conv.id as any); } } : undefined,
         });
       }
 
@@ -836,10 +845,10 @@ export function ProfileView() {
           <p className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/60">Iklan & Transaksi</p>
           {[
             ...(user?.role === "admin" ? [{ icon: ShieldCheck, label: tr("adminPanel"), action: goToAdmin, navigate: true, key: "admin" }] : []),
-            { icon: Tag, label: tr("profMyAds"), action: () => setPanel("iklan-saya"), navigate: false, key: "iklan-saya" },
-            { icon: Heart, label: tr("myFavorites"), action: () => setPanel("favorit-saya"), navigate: false, key: "favorit-saya" },
-            { icon: MessageSquare, label: tr("messages"), action: () => setPanel("pesan"), navigate: false, key: "pesan" },
-            { icon: Wallet, label: tr("wallet"), action: () => setPanel("saldo"), navigate: false, key: "saldo" },
+            { icon: Tag, label: tr("profMyAds"), action: () => goPanel("iklan-saya"), navigate: false, key: "iklan-saya" },
+            { icon: Heart, label: tr("myFavorites"), action: () => goPanel("favorit-saya"), navigate: false, key: "favorit-saya" },
+            { icon: MessageSquare, label: tr("messages"), action: () => goPanel("pesan"), navigate: false, key: "pesan" },
+            { icon: Wallet, label: tr("wallet"), action: () => goPanel("saldo"), navigate: false, key: "saldo" },
           ].map((m, i) => {
             const isActive = panel === m.key;
             return (
@@ -863,9 +872,9 @@ export function ProfileView() {
           {/* Section: Akun & Keamanan */}
           <p className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/60">Akun & Keamanan</p>
           {[
-            { icon: Bell, label: tr("notifications"), action: () => setPanel("notifikasi"), key: "notifikasi" },
-            { icon: Lock, label: tr("security"), action: () => setPanel("keamanan"), key: "keamanan" },
-            { icon: Settings, label: tr("settings"), action: () => setPanel("pengaturan"), key: "pengaturan" },
+            { icon: Bell, label: tr("notifications"), action: () => goPanel("notifikasi"), key: "notifikasi" },
+            { icon: Lock, label: tr("security"), action: () => goPanel("keamanan"), key: "keamanan" },
+            { icon: Settings, label: tr("settings"), action: () => goPanel("pengaturan"), key: "pengaturan" },
           ].map((m, i) => {
             const isActive = panel === m.key;
             return (
@@ -886,7 +895,7 @@ export function ProfileView() {
           {/* Section: Bantuan */}
           <p className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/60">Bantuan</p>
           <button
-            onClick={() => setPanel("bantuan")}
+            onClick={() => goPanel("bantuan")}
             className={cn(
               "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition",
               panel === "bantuan" ? "bg-primary font-semibold text-primary-foreground" : "text-foreground/80 hover:bg-accent"
@@ -937,14 +946,14 @@ export function ProfileView() {
                 </span>
               </div>
             )}
-            <nav className="px-1.5 py-1">
-              <p className="px-2.5 pb-0.5 pt-1.5 text-[9px] font-bold uppercase tracking-wide text-muted-foreground/50">Iklan & Transaksi</p>
+            <nav className="space-y-1 p-3">
+              <p className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/60">Iklan & Transaksi</p>
               {[
                 ...(user?.role === "admin" ? [{ icon: ShieldCheck, label: tr("adminPanel"), action: () => { goToAdmin(); setDrawerOpen(false); }, navigate: true, key: "admin" }] : []),
-                { icon: Tag, label: tr("profMyAds"), action: () => { setPanel("iklan-saya"); setDrawerOpen(false); }, navigate: false, key: "iklan-saya" },
-                { icon: Heart, label: tr("myFavorites"), action: () => { setPanel("favorit-saya"); setDrawerOpen(false); }, navigate: false, key: "favorit-saya" },
-                { icon: MessageSquare, label: tr("messages"), action: () => { setPanel("pesan"); setDrawerOpen(false); }, navigate: false, key: "pesan" },
-                { icon: Wallet, label: tr("wallet"), action: () => { setPanel("saldo"); setDrawerOpen(false); }, navigate: false, key: "saldo" },
+                { icon: Tag, label: tr("profMyAds"), action: () => { goPanel("iklan-saya"); setDrawerOpen(false); }, navigate: false, key: "iklan-saya" },
+                { icon: Heart, label: tr("myFavorites"), action: () => { goPanel("favorit-saya"); setDrawerOpen(false); }, navigate: false, key: "favorit-saya" },
+                { icon: MessageSquare, label: tr("messages"), action: () => { goPanel("pesan"); setDrawerOpen(false); }, navigate: false, key: "pesan" },
+                { icon: Wallet, label: tr("wallet"), action: () => { goPanel("saldo"); setDrawerOpen(false); }, navigate: false, key: "saldo" },
               ].map((m, i) => {
                 const isActive = panel === m.key;
                 return (
@@ -952,23 +961,23 @@ export function ProfileView() {
                     key={i}
                     onClick={m.action}
                     className={cn(
-                      "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition",
-                      isActive ? "bg-primary font-semibold text-primary-foreground" : "text-foreground/80 hover:bg-accent"
+                      "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
+                      isActive ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-foreground"
                     )}
                   >
-                    <m.icon className="size-3.5 shrink-0" />
+                    <m.icon className="size-4 shrink-0" />
                     <span className="truncate">{m.label}</span>
                     {m.key === "pesan" && unreadCount > 0 && (
-                      <span className="ml-auto rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">{unreadCount}</span>
+                      <span className="ml-auto rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">{unreadCount}</span>
                     )}
                   </button>
                 );
               })}
-              <p className="px-2.5 pb-0.5 pt-2 text-[9px] font-bold uppercase tracking-wide text-muted-foreground/50">Akun & Keamanan</p>
+              <p className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/60">Akun & Keamanan</p>
               {[
-                { icon: Bell, label: tr("notifications"), action: () => { setPanel("notifikasi"); setDrawerOpen(false); }, key: "notifikasi" },
-                { icon: Lock, label: tr("security"), action: () => { setPanel("keamanan"); setDrawerOpen(false); }, key: "keamanan" },
-                { icon: Settings, label: tr("settings"), action: () => { setPanel("pengaturan"); setDrawerOpen(false); }, key: "pengaturan" },
+                { icon: Bell, label: tr("notifications"), action: () => { goPanel("notifikasi"); setDrawerOpen(false); }, key: "notifikasi" },
+                { icon: Lock, label: tr("security"), action: () => { goPanel("keamanan"); setDrawerOpen(false); }, key: "keamanan" },
+                { icon: Settings, label: tr("settings"), action: () => { goPanel("pengaturan"); setDrawerOpen(false); }, key: "pengaturan" },
               ].map((m, i) => {
                 const isActive = panel === m.key;
                 return (
@@ -976,31 +985,31 @@ export function ProfileView() {
                     key={i}
                     onClick={m.action}
                     className={cn(
-                      "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition",
-                      isActive ? "bg-primary font-semibold text-primary-foreground" : "text-foreground/80 hover:bg-accent"
+                      "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
+                      isActive ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-foreground"
                     )}
                   >
-                    <m.icon className="size-3.5 shrink-0" />
+                    <m.icon className="size-4 shrink-0" />
                     <span className="truncate">{m.label}</span>
                   </button>
                 );
               })}
-              <p className="px-2.5 pb-0.5 pt-2 text-[9px] font-bold uppercase tracking-wide text-muted-foreground/50">Bantuan</p>
+              <p className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/60">Bantuan</p>
               <button
-                onClick={() => { setPanel("bantuan"); setDrawerOpen(false); }}
+                onClick={() => { goPanel("bantuan"); setDrawerOpen(false); }}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition",
-                  panel === "bantuan" ? "bg-primary font-semibold text-primary-foreground" : "text-foreground/80 hover:bg-accent"
+                  "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
+                  panel === "bantuan" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 )}
               >
-                <HelpCircle className="size-3.5 shrink-0" />
+                <HelpCircle className="size-4 shrink-0" />
                 <span className="truncate">{tr("help")}</span>
               </button>
               <button
                 onClick={() => { setDrawerOpen(false); if (user) { logout(); toast.success(tr("profLogoutSuccess")); goHome(); } else { goToLogin(); } }}
-                className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-destructive transition hover:bg-destructive/5"
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-destructive transition hover:bg-destructive/5"
               >
-                <LogOut className="size-3.5 shrink-0" />
+                <LogOut className="size-4 shrink-0" />
                 <span className="truncate">{user ? tr("logout") : tr("loginRegister")}</span>
               </button>
             </nav>
@@ -1192,7 +1201,7 @@ export function ProfileView() {
                           <MessageSquare className="size-12 text-muted-foreground/30" />
                           <p className="mt-3 text-sm font-semibold">Belum ada pesan</p>
                           <p className="mt-1 text-xs text-muted-foreground">Pesan dari pembeli akan muncul di sini.</p>
-                          <Button variant="outline" size="sm" className="mt-3" onClick={() => { setPanel(null); goToListings({}); }}>
+                          <Button variant="outline" size="sm" className="mt-3" onClick={() => { setPanel(null); clearProfilePanel(); goToListings({}); }}>
                             Jelajahi iklan
                           </Button>
                         </div>
