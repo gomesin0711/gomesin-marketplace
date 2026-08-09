@@ -1,0 +1,123 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String
+  slug      String    @unique
+  icon      String
+  color     String
+  sortOrder Int       @default(0)
+  listings  Listing[]
+}
+
+model Seller {
+  id        String    @id @default(cuid())
+  name      String
+  phone     String
+  avatar    String?
+  city      String
+  province  String
+  verified  Boolean   @default(false)
+  rating    Float     @default(4.5)
+  reviewCount Int     @default(0)
+  joinedAt  DateTime  @default(now())
+  listings  Listing[]
+}
+
+model Listing {
+  id          String    @id @default(cuid())
+  title       String
+  titleEn     String?
+  titleZh     String?
+  slug        String    @unique
+  description String
+  descEn      String?
+  descZh      String?
+  price       BigInt
+  priceType   String    @default("fixed")
+  condition   String    @default("bekas")
+  brand       String?
+  yearProduced Int?
+  city        String
+  province    String
+  images      String
+  specs       String
+  specsEn     String?
+  specsZh     String?
+  featured    Boolean   @default(false)
+  views       Int       @default(0)
+  status      String    @default("active")
+  paymentStatus String  @default("unpaid")
+  paymentExpiry DateTime?
+  uniqueCode   Int?
+  packageType  String   @default("gratis")
+  violationFlag Boolean @default(false)
+  violationReason String?
+  createdAt   DateTime  @default(now())
+  categoryId  String
+  sellerId    String
+  userId      String?
+  category    Category  @relation(fields: [categoryId], references: [id])
+  seller      Seller    @relation(fields: [sellerId], references: [id])
+  user        User?     @relation(fields: [userId], references: [id])
+
+  @@index([categoryId])
+  @@index([city])
+  @@index([featured])
+  @@index([userId])
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  phone     String?
+  city      String?
+  company   String?
+  address   String?
+  bannerImage String?
+  logoImage   String?
+  role      String   @default("user")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  listings  Listing[]
+  messagesReceived  Message[] @relation("MessageReceiver")
+  messagesSent      Message[] @relation("MessageSender")
+}
+
+model Message {
+  id          String   @id @default(cuid())
+  senderId    String
+  receiverId  String
+  listingId   String?
+  listingTitle String?
+  content     String
+  image       String?
+  read        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  sender      User     @relation("MessageSender", fields: [senderId], references: [id])
+  receiver    User     @relation("MessageReceiver", fields: [receiverId], references: [id])
+
+  @@index([receiverId])
+  @@index([senderId])
+}
+
+model Paket {
+  id           String  @id @default(cuid())
+  key          String  @unique
+  name         String
+  price        Int     @default(0)
+  originalPrice Int    @default(0)
+  duration     Int     @default(30)
+  features     String
+  active       Boolean @default(true)
+  sortOrder    Int     @default(0)
+}

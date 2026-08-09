@@ -1,0 +1,13 @@
+{
+  "name": "gomesin-chat-service",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "bun index.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.2",
+    "prisma": "6.19.2",
+    "socket.io": "^4.8.3"
+  }
+}
