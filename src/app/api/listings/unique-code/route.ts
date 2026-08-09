@@ -2,62 +2,134 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
 // POST /api/listings/unique-code
-// Generate & store a unique payment code (3 digits) for a listing.
-// The code is GLOBALLY UNIQUE — no two listings share the same code.
-// Once assigned, it NEVER changes (stored in DB uniqueCode field).
+// Reserve a GLOBALLY UNIQUE 3-digit payment code (001-999) for a payer.
+// The code is reserved atomically in the UniqueCode table and is NEVER
+// given to another payer. Expired/unused reservations (older than 24h)
+// are released so the code can be reused later.
 //
-// Body: { listingId?: string, userId: string, packageType: string }
+// Body: { userId: string, packageType: string, amount: number, listingId?: string }
 // Returns: { uniqueCode: number, amount: number }
 export async function POST(req: NextRequest) {
   try {
-    const { listingId, userId, packageType } = await req.json();
+    const { userId, packageType, amount, listingId } = await req.json();
 
     if (!userId || !packageType) {
       return NextResponse.json({ error: "userId dan packageType wajib" }, { status: 400 });
     }
 
-    // If listing already has uniqueCode, return it (don't change).
-    if (listingId) {
-      const existing = await db.listing.findUnique({
-        where: { id: listingId },
-        select: { uniqueCode: true },
+    const pkgAmount = typeof amount === "number" && amount > 0 ? amount : 0;
+    const now = new Date();
+    const expiry = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24h reservation
+
+    // 1) If this user already has an active (non-expired, unused) reservation
+    //    for the same package, return it (idempotent).
+    const existing = await db.uniqueCode.findFirst({
+      where: {
+        userId,
+        packageType,
+        expiresAt: { gt: now },
+        used: false,
+      },
+      orderBy: { reservedAt: "desc" },
+    });
+    if (existing) {
+      return NextResponse.json({
+        uniqueCode: existing.code,
+        amount: existing.amount,
+        reservationId: existing.id,
       });
-      if (existing?.uniqueCode !== null && existing?.uniqueCode !== undefined) {
-        return NextResponse.json({ uniqueCode: existing.uniqueCode });
-      }
     }
 
-    // Find all uniqueCodes already used by ALL users (global uniqueness).
-    const usedCodes = await db.listing.findMany({
+    // 2) Release expired reservations so their codes can be reused.
+    await db.uniqueCode.deleteMany({
+      where: { expiresAt: { lt: now }, used: false },
+    });
+
+    // 3) Collect all currently-reserved + used codes (global uniqueness).
+    const reserved = await db.uniqueCode.findMany({ select: { code: true } });
+    const usedListingCodes = await db.listing.findMany({
       where: { uniqueCode: { not: null } },
       select: { uniqueCode: true },
     });
-    const usedSet = new Set(usedCodes.map((l) => l.uniqueCode));
+    const takenSet = new Set<number>([
+      ...reserved.map((r) => r.code),
+      ...usedListingCodes.map((l) => l.uniqueCode!),
+    ]);
 
-    // Find a code from 1-999 that's not used by ANY listing (globally unique).
+    // 4) Find the smallest available code in 1..999.
     let code: number | null = null;
     for (let i = 1; i <= 999; i++) {
-      if (!usedSet.has(i)) {
+      if (!takenSet.has(i)) {
         code = i;
         break;
       }
     }
-
-    // If all 1-999 are used, wrap around.
     if (code === null) {
-      code = Math.floor(Math.random() * 999) + 1;
+      return NextResponse.json(
+        { error: "Semua kode unik sedang dipakai. Coba lagi nanti." },
+        { status: 503 }
+      );
     }
 
-    // Store the code in the listing if listingId is provided.
-    if (listingId) {
-      await db.listing.update({
-        where: { id: listingId },
-        data: { uniqueCode: code },
-      });
-    }
+    // 5) Atomically reserve the code. The @unique constraint on `code`
+    //    guarantees that even under concurrent requests, only one writer
+    //    can claim a given code.
+    const reservation = await db.uniqueCode.create({
+      data: {
+        code,
+        userId,
+        packageType,
+        listingId: listingId || null,
+        amount: pkgAmount,
+        expiresAt: expiry,
+      },
+    });
 
-    return NextResponse.json({ uniqueCode: code });
+    return NextResponse.json({
+      uniqueCode: reservation.code,
+      amount: reservation.amount,
+      reservationId: reservation.id,
+    });
   } catch (e: any) {
+    // Race condition: another request grabbed the same code between our
+    // check and insert. Retry once with a different code.
+    if (e?.code === "P2002" && e?.meta?.target?.includes("code")) {
+      try {
+        const now = new Date();
+        const expiry = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        const { userId, packageType, amount, listingId } = await req.json();
+        const reserved = await db.uniqueCode.findMany({ select: { code: true } });
+        const usedListingCodes = await db.listing.findMany({
+          where: { uniqueCode: { not: null } },
+          select: { uniqueCode: true },
+        });
+        const takenSet = new Set<number>([
+          ...reserved.map((r) => r.code),
+          ...usedListingCodes.map((l) => l.uniqueCode!),
+        ]);
+        for (let i = 1; i <= 999; i++) {
+          if (!takenSet.has(i)) {
+            const reservation = await db.uniqueCode.create({
+              data: {
+                code: i,
+                userId,
+                packageType,
+                listingId: listingId || null,
+                amount: typeof amount === "number" ? amount : 0,
+                expiresAt: expiry,
+              },
+            });
+            return NextResponse.json({
+              uniqueCode: reservation.code,
+              amount: reservation.amount,
+              reservationId: reservation.id,
+            });
+          }
+        }
+      } catch (retryErr) {
+        console.error("unique-code retry error:", retryErr);
+      }
+    }
     console.error("unique-code API error:", e);
     return NextResponse.json({ error: "Gagal generate kode unik" }, { status: 500 });
   }

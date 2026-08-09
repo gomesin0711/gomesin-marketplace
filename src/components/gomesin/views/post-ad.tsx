@@ -150,6 +150,7 @@ export function PostAdView() {
   const [showPayment, setShowPayment] = useState(true);
   const [qrisModal, setQrisModal] = useState(false);
   const [qrisAmount, setQrisAmount] = useState(0);
+  const [uniqueCode, setUniqueCode] = useState<number>(0);
   const [proofImage, setProofImage] = useState<string>("");
   const [uploadingProof, setUploadingProof] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -242,6 +243,9 @@ export function PostAdView() {
     setSelectedPackage("colek");
     setPaymentMethod("");
     setProofImage("");
+    setQrisAmount(0);
+    setUniqueCode(0);
+    setQrisModal(false);
     try { localStorage.removeItem(DRAFT_KEY); } catch {}
     toast.success("Form telah direset.");
   };
@@ -355,11 +359,18 @@ export function PostAdView() {
           const codeRes = await fetch("/api/listings/unique-code", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId: user?.id, packageType: selectedPackage }),
+            body: JSON.stringify({
+              userId: user?.id,
+              packageType: selectedPackage,
+              amount: pkgPrice,
+            }),
           });
           if (codeRes.ok) {
             const codeData = await codeRes.json();
-            setQrisAmount(pkgPrice + codeData.uniqueCode);
+            const uc = codeData.uniqueCode || 0;
+            // Format as 3-digit with leading zeros for display, but keep numeric for math
+            setUniqueCode(uc);
+            setQrisAmount(pkgPrice + uc);
           } else {
             setQrisAmount(pkgPrice);
           }
@@ -872,12 +883,15 @@ export function PostAdView() {
 
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium text-muted-foreground">Kapasitas</Label>
-                <Input
+                <Textarea
                   value={capacity}
                   onChange={(e) => setCapacity(e.target.value)}
-                  placeholder="contoh: 100 Ton, 5000 sheets/jam"
-                  className="h-12 rounded-lg"
+                  placeholder="contoh: 100 Ton, 5000 sheets/jam, 3 phase 380V"
+                  rows={3}
+                  maxLength={500}
+                  className="rounded-lg resize-none"
                 />
+                <p className="text-right text-[10px] text-muted-foreground">{capacity.length}/500</p>
               </div>
             </div>
 
@@ -895,7 +909,7 @@ export function PostAdView() {
               <p className="text-xs text-muted-foreground">
                 Pilih paket promosi agar iklan Anda lebih cepat laku.
               </p>
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-1 gap-2.5">
                 {pkgKeys.map((key) => {
                   const pk = paketMap[key];
                   const isUpgradeOnly = key === "sundul";
@@ -1139,7 +1153,7 @@ export function PostAdView() {
                     <ol className="mt-2 list-inside list-decimal space-y-1 text-xs text-muted-foreground">
                       <li>Buka aplikasi m-banking / ATM Blu BCA</li>
                       <li>Transfer ke rekening <strong className="text-foreground">0011 2208 8800</strong> a.n. Lina Listiawati</li>
-                      <li>Pastikan jumlah sesuai: <strong className="text-foreground">{formatRupiahFull(qrisAmount)}</strong></li>
+                      <li>Transfer jumlah <strong className="text-foreground">{formatRupiahFull(qrisAmount)}</strong> (termasuk kode unik <strong className="text-primary">{uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "-"}</strong>)</li>
                       <li>Konfirmasi & selesaikan transfer</li>
                       <li>Upload foto / screenshot bukti transfer di bawah</li>
                     </ol>
@@ -1148,7 +1162,7 @@ export function PostAdView() {
                       <li>Buka aplikasi e-wallet / m-banking</li>
                       <li>Pilih menu Scan / Bayar QRIS</li>
                       <li>Arahkan kamera ke QR code di sebelah kanan</li>
-                      <li>Pastikan jumlah sesuai: <strong className="text-foreground">{formatRupiahFull(qrisAmount)}</strong></li>
+                      <li>Bayar jumlah <strong className="text-foreground">{formatRupiahFull(qrisAmount)}</strong> (termasuk kode unik <strong className="text-primary">{uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "-"}</strong>)</li>
                       <li>Konfirmasi & selesaikan pembayaran</li>
                       <li>Upload foto / screenshot bukti pembayaran di bawah</li>
                     </ol>
@@ -1173,7 +1187,7 @@ export function PostAdView() {
                     <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border p-6 text-center transition hover:border-primary hover:bg-accent">
                       <Upload className="size-8 text-muted-foreground" />
                       <span className="text-xs text-muted-foreground">Klik untuk upload bukti pembayaran</span>
-                      <span className="text-[10px] text-muted-foreground/70">JPG, PNG (maks 120KB)</span>
+                      <span className="text-[10px] text-muted-foreground/70">JPG, PNG (maks 100KB)</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -1224,7 +1238,7 @@ export function PostAdView() {
                           `Email: ${user?.email || "-"}\n` +
                           `Judul Iklan: ${title}`;
 
-                        const matches = proofImage.match(/^data:\/\/(image\/\w+);base64,(.+)$/);
+                        const matches = proofImage.match(/^data:(image\/\w+);base64,(.+)$/);
                         if (!matches) { toast.error("Format gambar tidak valid"); return; }
                         const ext = matches[1] === "image/jpeg" ? "jpg" : matches[1].split("/")[1];
                         const byteString = atob(matches[2]);
@@ -1307,8 +1321,14 @@ export function PostAdView() {
                 <div className="mb-4 text-center">
                   <p className="text-xs text-muted-foreground">Total Pembayaran</p>
                   <p className="text-3xl font-extrabold text-primary sm:text-4xl">{formatRupiahFull(qrisAmount)}</p>
+                  {uniqueCode > 0 && (
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      Harga paket <span className="font-semibold text-foreground">{formatRupiahFull(qrisAmount - uniqueCode)}</span> +
+                      Kode unik <span className="font-bold text-primary">{String(uniqueCode).padStart(3, "0")}</span>
+                    </p>
+                  )}
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    Harga paket + kode unik untuk identifikasi pembayar
+                    Kode unik 3 digit untuk identifikasi pembayar
                   </p>
                 </div>
                 {paymentMethod === "bca" ? (

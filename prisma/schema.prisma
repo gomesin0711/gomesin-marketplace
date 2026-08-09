@@ -123,3 +123,20 @@ model Paket {
   active       Boolean @default(true)
   sortOrder    Int     @default(0)
 }
+
+// Dedicated table for reserving 3-digit unique payment codes (1-999).
+// A code is reserved atomically when a user starts a paid listing flow
+// and is NEVER reused by another payer. Codes are released back only
+// when the reservation expires (default 24h) without a successful payment.
+model UniqueCode {
+  id          String   @id @default(cuid())
+  code        Int      @unique
+  userId      String
+  packageType String
+  listingId   String?
+  amount      Int
+  reservedAt  DateTime @default(now())
+  expiresAt   DateTime
+  used        Boolean  @default(false)
+  usedAt      DateTime?
+}

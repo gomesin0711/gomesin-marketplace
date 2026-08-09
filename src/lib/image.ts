@@ -1,8 +1,8 @@
 // Client-side image compression utility.
-// Compresses an image File to a base64 data URL under maxBytes (default 120KB).
+// Compresses an image File to a base64 data URL under maxBytes (default 100KB).
 
 const MAX_DIMENSION = 800; // max width/height in pixels
-const TARGET_BYTES = 120_000; // ~120KB
+const TARGET_BYTES = 100_000; // ~100KB
 
 /**
  * Route external image URLs through our server-side proxy to avoid CORS issues.
