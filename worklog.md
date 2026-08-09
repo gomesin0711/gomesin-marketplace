@@ -1498,3 +1498,41 @@ Stage Summary:
   - 5/5 beranda slugs: all 404 → all 200 ✅
   - Detail page renders fully (title, description, specs, related listings, chat button) ✅
   - Chat input in dark mode: black text on white bg = visible ✅
+
+---
+Task ID: 8-register-supabase-persist
+Agent: Main (Z.ai Code)
+Task: New user registrations must persist to Supabase so they appear on admin "Pengguna" page with role="user" and can log in
+
+Work Log:
+- Confirmed root cause via code inspection: /api/auth/register/route.ts only tried Prisma (SQLite) then fell back to fallbackRegisterUser() which is an in-memory + /tmp file store. On Vercel, Prisma cannot connect to PostgreSQL (sqlite provider), so new registrations were saved to a temporary in-memory store that:
+  1. Does NOT persist across serverless invocations → users effectively lost
+  2. Is NOT queryable by /api/auth/login (which checks Prisma → Supabase → fallback) → login fails for newly registered users
+  3. Is NOT visible on the admin "Pengguna" page (/api/admin/users GET reads from Supabase) → new users don't appear
+- Also found /api/auth/check-email/route.ts only checked Prisma → returned `exists: false` on Vercel even for emails already in Supabase, so the registration form did not block duplicate emails on production.
+- FIX 1 (/api/auth/register/route.ts): Rewrote with 3-tier fallback:
+  - Path A (Prisma, local dev): unchanged logic, wrapped in `if (isDbAvailable())` with try/catch that falls through to Path B.
+  - Path B (Supabase, Vercel): checks if email exists via `.eq("email", emailNorm).maybeSingle()`. If exists → 409. Otherwise inserts a new row with: id (cuid-compatible generated), name, email, password (scrypt hash — same format as Prisma path so login verifies identically), phone, city, company, address, bannerImage, logoImage, role="user" (explicit), createdAt, updatedAt. Returns the inserted row via `.select(...).single()`.
+  - Path C (in-memory fallback): unchanged, last resort only.
+- FIX 2 (/api/auth/check-email/route.ts): Added Path B (Supabase) — queries `User.select("id").eq("email", emailNorm).maybeSingle()` and returns `{exists: !!data}`. Previously returned a 500 error "Gagal mengecek email" on Vercel because Prisma threw.
+- End-to-end production verification (all 6 steps passed):
+  1. Admin users count before: 3 (2 user + 1 admin)
+  2. check-email for new email: `{exists: false}` ✅
+  3. POST /api/auth/register with new user: HTTP 201, returned user with `role: "user"` ✅
+  4. check-email for new email after register: `{exists: true}` ✅
+  5. POST /api/auth/login with new credentials: returned the same user ✅
+  6. Admin users count after: 4 (new user "Verify Prod User" appeared at top with role: user) ✅
+- Cleaned up test user from Supabase via direct REST API DELETE (HTTP 204). Count back to 3.
+- Verified via Agent Browser: logged in as admin → clicked "Pengguna" tab → page title "Pengguna Terdaftar (3)" → table shows all 3 users with correct roles:
+  - testuserlokal@example.com → role: user (Hapus button enabled)
+  - udin@yahoo.com → role: user (Hapus button enabled)
+  - gomesin0711@gmail.com → role: admin (Hapus button disabled with "Tidak dapat menghapus admin")
+- Lint: 17 pre-existing problems (6 errors in .cjs + 11 warnings) — 0 new errors introduced.
+
+Stage Summary:
+- Files modified (2):
+  - src/app/api/auth/register/route.ts — added Path B (raw Supabase insert) with role="user" between Prisma and in-memory fallback. Password stored as scrypt hash (same format as Prisma) so login verifies identically.
+  - src/app/api/auth/check-email/route.ts — added Path B (Supabase lookup) so registration form correctly blocks duplicate emails on production.
+- Lint: 17 pre-existing problems — 0 new errors
+- Deployed to: https://gomesin.vercel.app (production, commit 6f331d0)
+- Production verification: register → login → admin "Pengguna" page all work end-to-end. New users appear with role="user" and can be deleted by admin (admin account is protected from deletion).
