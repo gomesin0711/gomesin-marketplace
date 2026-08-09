@@ -798,3 +798,80 @@ Stage Summary:
 - Admin API: all 10 routes have try-catch error handling (returns empty data, not 500)
 - vercel.json: build command now includes `prisma generate` (fixes Prisma client missing on Vercel)
 - Code pushed to GitHub; Vercel deployment pending (no token available for direct CLI deploy)
+
+---
+Task ID: 19
+Agent: Main Agent (Z.ai Code)
+Task: Fix payment page — unique code per package + send both ad image and proof image to WhatsApp & chat admin. User request: "dihalaman pembayaran. ada 4 paket pilihan. apabila di klik gold, maka pembayarannya yang tertera di paket gold ditambah 3 digit nomor unik dan apabila diganti ke platinum maka pembayarannya yang tertera di paket platinum dan ditambah 3 digit nomor unik yang beda. setelah dikirim bukti pembayaran dan diklik tombol kirim dan pasang iklan maka bukti dikirim ke chat dan whatsapp admin. bukti dikirim berupa gambar iklan dan gambar bukti trf. check and fix. deploy"
+
+Work Log:
+- Read /home/z/my-project/src/components/gomesin/views/post-ad.tsx (1455 lines) to understand the current payment flow
+- Read /home/z/my-project/src/components/gomesin/package-activate-dialog.tsx (855 lines) for the upgrade flow
+- Read /home/z/my-project/src/app/api/listings/unique-code/route.ts — confirmed API is idempotent per (userId, packageType), returns same code for same package, different code for different packages
+- Read /home/z/my-project/src/lib/share-image.ts and /home/z/my-project/src/lib/use-chat-socket.ts to understand WhatsApp + chat admin sending
+
+ROOT CAUSE of "same code for all packages":
+- post-ad.tsx submit() only fetched unique code if `qrisAmount === 0`. After selecting Gold (qrisAmount=30005), switching to Platinum did NOT fetch a new code because qrisAmount was already non-zero. So Platinum showed Gold's total.
+
+Fix 1 (post-ad.tsx): Added useEffect that fetches unique code whenever `selectedPackage` changes
+- Dependencies: [selectedPackage, hydrated, user?.id, paketData]
+- Fetches POST /api/listings/unique-code with { userId, packageType, amount }
+- On success: setUniqueCode(code), setQrisAmount(pkgPrice + code)
+- On failure: setUniqueCode(0), setQrisAmount(pkgPrice)
+- Free/draft package: setUniqueCode(0), setQrisAmount(0)
+- Cleanup: cancelled flag prevents stale state updates
+
+Fix 2 (post-ad.tsx): Simplified submit() — removed inline unique-code fetch
+- The useEffect now handles all code fetching reactively
+- submit() just opens the QRIS modal (setQrisModal(true)) for paid packages
+
+Fix 3 (post-ad.tsx): Package onClick now resets unique code state
+- setSelectedPackage(key), setShowPayment(price > 0), setPaymentMethod("")
+- setUniqueCode(0), setQrisAmount(price) — shows just the price while useEffect fetches the new code
+
+Fix 4 (post-ad.tsx): Added live payment summary in Pembayaran section
+- Shows: Harga Paket <name> Rp X | Kode Unik (3 digit) YYY | Total Transfer Rp (X+YYY)
+- Shows "..." while code is being fetched
+- Updates immediately when package changes (before opening modal)
+
+Fix 5 (post-ad.tsx): "Kirim & Pasang Iklan" now sends BOTH ad image AND proof image
+- WhatsApp: uploads proof image via /api/upload-proof, uploads ad image if data URL, includes both URLs in caption, opens wa.me/6285888082208
+- Chat admin: fetches admin via /api/admin/info, sends 2 socket.io messages:
+  1. Message with ad image (image: images[0]) + caption "Gambar Iklan: <title>"
+  2. Message with proof image (image: proofImage) + caption "Bukti Pembayaran Iklan: <details>"
+- Both messages have REST fallback (POST /api/messages) if socket ack fails
+
+Fix 6 (package-activate-dialog.tsx): Same "send both images" fix for QRIS + BCA modals
+- Added useChatSocket import and sendMessage hook
+- Package onClick now calls setUniqueCode(null) to reset while fetching new code
+- Both QRIS and BCA proof handlers now:
+  1. Upload proof to WhatsApp (with ad image URL in caption)
+  2. Send 2 messages to chat admin (ad image + proof image)
+
+Verification with Agent Browser:
+- Gold: Harga Rp 30.000 + Kode Unik 007 = Total Rp 30.007 ✓
+- Platinum: Harga Rp 50.000 + Kode Unik 006 = Total Rp 50.006 (DIFFERENT code) ✓
+- Titanium: Harga Rp 80.000 + Kode Unik 008 = Total Rp 80.008 (DIFFERENT code) ✓
+- Switching back to Gold returns 007 (idempotent per package) ✓
+- Payment summary shows in Pembayaran section before opening modal ✓
+- Payment modal shows correct total + code (Rp 80.008, code 008) ✓
+- Lint clean on both edited files (only pre-existing warnings in unrelated files)
+- Dev server compiled successfully, no runtime errors
+
+Deployment:
+- Code committed (77cfe2d) and pushed to GitHub (gomesin0711/gomesin-marketplace)
+- Vercel CLI deploy failed: no valid VERCEL_TOKEN available in environment
+  (previous session's token expired; .env.vercel only has OIDC token, not CLI token)
+- If GitHub auto-deploy is configured on Vercel, the push will trigger a deployment
+- User may need to run `vercel --prod` manually with a valid token
+
+Stage Summary:
+- Payment page now correctly shows a DIFFERENT 3-digit unique code per package
+  (Gold=007, Platinum=006, Titanium=008) — codes are globally unique across all payers
+- Total = package price + unique code, updates reactively when switching packages
+- Live payment summary visible in Pembayaran section (before opening payment modal)
+- "Kirim & Pasang Iklan" sends BOTH ad image (gambar iklan) AND proof image (gambar bukti trf) to:
+  1. WhatsApp admin (6285888082208) — proof image uploaded + ad image URL in caption
+  2. Chat admin via socket.io — 2 separate messages with each image inline
+- Same fix applied to package-activate-dialog (upgrade flow) for both QRIS and BCA
+- Code pushed to GitHub; Vercel deploy pending (no CLI token available)
