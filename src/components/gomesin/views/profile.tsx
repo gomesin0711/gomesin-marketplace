@@ -1618,7 +1618,7 @@ export function ProfileView() {
                                 value={chatInput}
                                 onChange={(e) => setChatInput(e.target.value)}
                                 placeholder="Tulis pesan..."
-                                className="h-10 w-full rounded-lg border border-transparent bg-white pr-20 pl-4 text-sm outline-none shadow-sm"
+                                className="h-10 w-full rounded-lg border border-transparent bg-white pr-20 pl-4 text-sm text-black outline-none shadow-sm placeholder:text-black/40"
                                 disabled={chatSending}
                               />
                               <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-0.5">

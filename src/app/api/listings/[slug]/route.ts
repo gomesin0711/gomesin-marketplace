@@ -47,39 +47,137 @@ export async function GET(
 ) {
   const { slug } = await params;
 
-  try {
-    const listing = await db.listing.findUnique({
-      where: { slug },
-      include: { category: true, seller: true, user: true },
-    });
+  // --- Path A: local dev (Prisma + SQLite) ---
+  if (isDbAvailable()) {
+    try {
+      const listing = await db.listing.findUnique({
+        where: { slug },
+        include: { category: true, seller: true, user: true },
+      });
 
-    if (!listing) {
+      if (listing) {
+        // increment views (non-blocking, fire and forget)
+        db.listing.update({ where: { id: listing.id }, data: { views: { increment: 1 } } }).catch(() => {});
+
+        // related: same category, exclude self
+        const [related] = await Promise.all([
+          db.listing.findMany({
+            where: {
+              status: "active",
+              categoryId: listing.categoryId,
+              id: { not: listing.id },
+            },
+            orderBy: { createdAt: "desc" },
+            take: 6,
+            include: { category: true, seller: true, user: true },
+          }),
+        ]);
+
+        return NextResponse.json({
+          listing: parseListing(listing),
+          related: related.map(parseListing),
+        });
+      }
+      // not found in Prisma → fall through to Supabase
+    } catch (error) {
+      console.error("GET /api/listings/[slug] Prisma error, falling back to Supabase:", error);
+      // fall through to Supabase
+    }
+  }
+
+  // --- Path B: Vercel (raw Supabase) ---
+  try {
+    const supabase = await getSupabase();
+
+    // Fetch the listing by slug (no FK joins — Supabase tables have no relationships declared)
+    const { data: row, error: findErr } = await supabase
+      .from("Listing")
+      .select("*")
+      .eq("slug", slug)
+      .limit(1)
+      .single();
+
+    if (findErr || !row) {
+      // Not in Supabase either → last resort: try static seed-data.json (legacy listings)
+      const fallback = getFallbackListingBySlug(slug);
+      if (fallback) return NextResponse.json(fallback);
       return NextResponse.json({ error: "Iklan tidak ditemukan" }, { status: 404 });
     }
 
-    // increment views (non-blocking, fire and forget)
-    db.listing.update({ where: { id: listing.id }, data: { views: { increment: 1 } } }).catch(() => {});
+    // Increment views (non-blocking, fire and forget)
+    supabase
+      .from("Listing")
+      .update({ views: (row.views ?? 0) + 1 })
+      .eq("id", row.id)
+      .then(() => {}, () => {});
 
-    // related: same category, exclude self — parallel with the above fire-and-forget
-    const [related] = await Promise.all([
-      db.listing.findMany({
-        where: {
-          status: "active",
-          categoryId: listing.categoryId,
-          id: { not: listing.id },
-        },
-        orderBy: { createdAt: "desc" },
-        take: 6,
-        include: { category: true, seller: true, user: true },
-      }),
+    // Batch-fetch related Category / Seller / User by ID (same pattern as /api/listings GET)
+    const [catRes, sellerRes, userRes, relatedRes] = await Promise.all([
+      row.categoryId
+        ? supabase.from("Category").select("*").eq("id", row.categoryId).limit(1).single()
+        : Promise.resolve({ data: null, error: null }),
+      row.sellerId
+        ? supabase.from("Seller").select("*").eq("id", row.sellerId).limit(1).single()
+        : Promise.resolve({ data: null, error: null }),
+      row.userId
+        ? supabase.from("User").select("*").eq("id", row.userId).limit(1).single()
+        : Promise.resolve({ data: null, error: null }),
+      // related listings: same category, exclude self, active only — fetch top 6 raw rows
+      row.categoryId
+        ? supabase
+            .from("Listing")
+            .select("*")
+            .eq("status", "active")
+            .eq("categoryId", row.categoryId)
+            .neq("id", row.id)
+            .order("createdAt", { ascending: false })
+            .limit(6)
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
-    return NextResponse.json({
-      listing: parseListing(listing),
-      related: related.map(parseListing),
-    });
+    const category = catRes?.data ?? null;
+    const seller = sellerRes?.data ?? null;
+    const user = userRes?.data ?? null;
+
+    const listing = parseSupabaseListing({ ...row, category, seller, user });
+
+    // For related listings, batch-fetch their Category/Seller/User in one pass
+    const relatedRows = (relatedRes?.data as any[]) ?? [];
+    let related: any[] = [];
+    if (relatedRows.length > 0) {
+      const catIds = [...new Set(relatedRows.map((r) => r.categoryId).filter(Boolean))];
+      const sellerIds = [...new Set(relatedRows.map((r) => r.sellerId).filter(Boolean))];
+      const userIds = [...new Set(relatedRows.map((r) => r.userId).filter(Boolean))];
+
+      const [relatedCats, relatedSellers, relatedUsers] = await Promise.all([
+        catIds.length
+          ? supabase.from("Category").select("*").in("id", catIds)
+          : Promise.resolve({ data: [], error: null }),
+        sellerIds.length
+          ? supabase.from("Seller").select("*").in("id", sellerIds)
+          : Promise.resolve({ data: [], error: null }),
+        userIds.length
+          ? supabase.from("User").select("*").in("id", userIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      const catMap = new Map(((relatedCats?.data as any[]) ?? []).map((c) => [c.id, c]));
+      const sellerMap = new Map(((relatedSellers?.data as any[]) ?? []).map((s) => [s.id, s]));
+      const userMap = new Map(((relatedUsers?.data as any[]) ?? []).map((u) => [u.id, u]));
+
+      related = relatedRows.map((r) =>
+        parseSupabaseListing({
+          ...r,
+          category: r.categoryId ? catMap.get(r.categoryId) ?? null : null,
+          seller: r.sellerId ? sellerMap.get(r.sellerId) ?? null : null,
+          user: r.userId ? userMap.get(r.userId) ?? null : null,
+        })
+      );
+    }
+
+    return NextResponse.json({ listing, related });
   } catch (error) {
-    console.error("GET /api/listings/[slug] DB error, falling back to seed data", error);
+    console.error("GET /api/listings/[slug] Supabase error, falling back to seed data:", error);
 
     const fallback = getFallbackListingBySlug(slug);
     if (!fallback) {
