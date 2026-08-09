@@ -325,14 +325,9 @@ export function DashboardView() {
           <h3 className="mt-1 line-clamp-2 text-sm font-medium leading-snug text-foreground">
             {listingTitle(l, mounted ? lang : "id")}
           </h3>
-          {/* meta */}
+          {/* viewer (moved to where location used to be) */}
           <div className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-            <MapPin className="size-3 shrink-0" /> {l.city}, {l.province}
-          </div>
-          <div className="mt-0.5 flex items-center gap-x-2 text-[10px] text-muted-foreground">
-            <span>{l.condition === "baru" ? tr("commonBaru") : tr("commonBekas")}</span>
-            {l.brand && <span>· {l.brand}</span>}
-            {l.yearProduced && <span>· Th. {l.yearProduced}</span>}
+            <Eye className="size-3 shrink-0" /> {l.views?.toLocaleString("id-ID") || 0} dilihat
           </div>
 
           {/* Masa Aktif — remaining days bar */}
@@ -377,44 +372,39 @@ export function DashboardView() {
             </div>
           )}
 
-          {/* bottom: views + actions */}
+          {/* bottom: actions */}
           <div className="mt-auto pt-2 border-t border-border">
-            <div className="flex items-center justify-between gap-1">
-              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0}
-              </span>
-              <div className="flex gap-1">
-                {(l.status === "active" || isSold) && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); soldMutation.mutate({ slug: l.slug, isSold }); }}
-                    disabled={soldMutation.isPending}
-                    title={isSold ? "Batal" : "Terjual"}
-                    className={cn(
-                      "flex items-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-semibold transition sm:px-2",
-                      isSold
-                        ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                        : "border-emerald-300 bg-background text-emerald-700 hover:bg-emerald-50"
-                    )}
-                  >
-                    {soldMutation.isPending ? <Loader2 className="size-3 animate-spin" /> : <BadgeCheck className="size-3" />}
-                    <span className="hidden sm:inline">{isSold ? "Batal" : "Terjual"}</span>
-                  </button>
-                )}
+            <div className="flex items-center justify-end gap-1">
+              {(l.status === "active" || isSold) && (
                 <button
-                  onClick={(e) => { e.stopPropagation(); goToEdit(l.slug); }}
-                  title="Edit"
-                  className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-1 text-[10px] font-semibold text-foreground transition hover:bg-primary hover:text-white hover:border-primary sm:px-2"
+                  onClick={(e) => { e.stopPropagation(); soldMutation.mutate({ slug: l.slug, isSold }); }}
+                  disabled={soldMutation.isPending}
+                  title={isSold ? "Batal" : "Terjual"}
+                  className={cn(
+                    "flex items-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-semibold transition sm:px-2",
+                    isSold
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                      : "border-emerald-300 bg-background text-emerald-700 hover:bg-emerald-50"
+                  )}
                 >
-                  <Edit className="size-3" /> <span className="hidden sm:inline">Edit</span>
+                  {soldMutation.isPending ? <Loader2 className="size-3 animate-spin" /> : <BadgeCheck className="size-3" />}
+                  <span className="hidden sm:inline">{isSold ? "Batal" : "Terjual"}</span>
                 </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDelete(l.slug); }}
-                  title="Hapus"
-                  className="flex items-center gap-1 rounded-md border border-destructive/30 bg-background px-1.5 py-1 text-[10px] font-semibold text-destructive transition hover:bg-destructive hover:text-white hover:border-destructive sm:px-2"
-                >
-                  <Trash2 className="size-3" /> <span className="hidden sm:inline">Hapus</span>
-                </button>
-              </div>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); goToEdit(l.slug); }}
+                title="Edit"
+                className="flex items-center gap-1 rounded-md border border-blue-500 bg-blue-500 px-1.5 py-1 text-[10px] font-semibold text-white transition hover:bg-blue-600 hover:border-blue-600 sm:px-2"
+              >
+                <Edit className="size-3" /> <span className="hidden sm:inline">Edit</span>
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleDelete(l.slug); }}
+                title="Hapus"
+                className="flex items-center gap-1 rounded-md border border-orange-500 bg-orange-500 px-1.5 py-1 text-[10px] font-semibold text-white transition hover:bg-orange-600 hover:border-orange-600 sm:px-2"
+              >
+                <Trash2 className="size-3" /> <span className="hidden sm:inline">Hapus</span>
+              </button>
             </div>
           </div>
         </div>
@@ -496,7 +486,9 @@ export function DashboardView() {
                 {listingTitle(l, mounted ? lang : "id")}
               </h3>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {l.brand ? `${l.brand} · ` : ""}{categoryName(l.category?.name || "", mounted ? lang : "id")} · {l.city}
+                <span className="flex items-center gap-0.5">
+                  <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0} dilihat
+                </span>
               </p>
             </div>
             <p className="shrink-0 text-sm font-bold text-primary">
@@ -525,15 +517,9 @@ export function DashboardView() {
             )}
           </div>
 
-          {/* bottom row */}
+          {/* bottom row — only actions, viewer moved to top meta area */}
           <div className="mt-auto flex items-center justify-between pt-2">
-            <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-              <span className="flex items-center gap-0.5">
-                <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0} dilihat
-              </span>
-              <span>·</span>
-              <span>{timeAgo(l.createdAt, mounted ? lang : "id")}</span>
-            </div>
+            <span className="text-[10px] text-muted-foreground">{timeAgo(l.createdAt, mounted ? lang : "id")}</span>
             <div className="flex gap-1">
               {(l.status === "active" || isSold) && (
                 <button
@@ -552,13 +538,13 @@ export function DashboardView() {
               )}
               <button
                 onClick={(e) => { e.stopPropagation(); goToEdit(l.slug); }}
-                className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[10px] font-semibold text-foreground transition hover:bg-primary hover:text-white hover:border-primary"
+                className="flex items-center gap-1 rounded-md border border-blue-500 bg-blue-500 px-2 py-1 text-[10px] font-semibold text-white transition hover:bg-blue-600 hover:border-blue-600"
               >
                 <Edit className="size-3" /> Edit
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); handleDelete(l.slug); }}
-                className="flex items-center gap-1 rounded-md border border-destructive/30 bg-background px-2 py-1 text-[10px] font-semibold text-destructive transition hover:bg-destructive hover:text-white hover:border-destructive"
+                className="flex items-center gap-1 rounded-md border border-orange-500 bg-orange-500 px-2 py-1 text-[10px] font-semibold text-white transition hover:bg-orange-600 hover:border-orange-600"
               >
                 <Trash2 className="size-3" /> Hapus
               </button>

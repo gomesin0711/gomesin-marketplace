@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { PROVINCES } from "@/lib/types";
-import { playNotificationSound, setupNotificationSoundUnlock } from "@/lib/notification-sound";
+import { playNotificationSound, playDingSound, setupNotificationSoundUnlock, isChatOpen } from "@/lib/notification-sound";
 import { cn } from "@/lib/utils";
 import { CategoryNav } from "./category-nav";
 import { NotificationBell } from "./notification-bell";
@@ -97,9 +97,16 @@ export function Header() {
     if (!user) return;
     const offNew = subscribe("message:new", (msg: any) => {
       queryClient.invalidateQueries({ queryKey: ["messages"] });
-      // Play "Go mesin!" notification sound for incoming messages (not from self).
+      // Play notification sound for incoming messages (not from self).
+      // When a chat conversation is currently open & visible, play only a soft
+      // "ding" (less intrusive). When chat is closed, play the full "Go mesin!"
+      // ringtone so the user is alerted.
       if (msg && msg.senderId !== user.id) {
-        playNotificationSound();
+        if (isChatOpen()) {
+          playDingSound();
+        } else {
+          playNotificationSound();
+        }
       }
     });
     const offRead = subscribe("message:read-update", () => {

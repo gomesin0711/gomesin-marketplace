@@ -28,16 +28,27 @@ export function proxyUrl(src: string | undefined | null): string {
  * the DIRECT image URL to render in an <img> tag. The direct URL has /dl/ in
  * the path. If the URL is already a /dl/ URL, catbox.moe, or a data URL, it
  * passes through unchanged.
+ *
+ * IMPORTANT: tmpfiles.org recently changed their /dl/ URL behavior — old /dl/
+ * URLs now 302-redirect to the viewer HTML page instead of serving the image.
+ * To handle this, tmpfiles.org AND catbox.moe URLs are routed through our
+ * /api/img-proxy endpoint, which follows redirects, detects HTML responses,
+ * extracts the new direct /dl/ URL from the viewer page, and serves the
+ * actual image bytes. This makes legacy payment-proof images render again.
  */
 export function normalizeImageUrl(src: string | undefined | null): string {
   if (!src) return "";
   // data URLs and relative paths — pass through
   if (src.startsWith("data:") || src.startsWith("/") || src.startsWith("blob:")) return src;
-  // tmpfiles.org viewer URL → direct URL
-  // Viewer:  https://tmpfiles.org/12345/proof.jpg
-  // Direct:  https://tmpfiles.org/dl/12345/proof.jpg
-  if (src.includes("tmpfiles.org") && !src.includes("tmpfiles.org/dl/")) {
-    return src.replace(/(tmpfiles\.org\/)(?!dl\/)/, "$1dl/");
+  // Route tmpfiles.org + catbox.moe through our server-side proxy so the
+  // server can follow redirects, handle the tmpfiles.org /dl/ → viewer HTML
+  // redirect, and serve actual image bytes.
+  if (
+    src.includes("tmpfiles.org") ||
+    src.includes("files.catbox.moe") ||
+    src.includes("catbox.moe")
+  ) {
+    return "/api/img-proxy?url=" + encodeURIComponent(src);
   }
   return src;
 }

@@ -1116,3 +1116,71 @@ Stage Summary:
 - All 3 proof-sending flows fixed: post-ad.tsx (QRIS+BCA), package-activate-dialog.tsx QRIS, package-activate-dialog.tsx BCA
 - Backend (socket.io, upload-proof, messages API) was already working — the bug was purely
   in the execution order on the frontend
+
+---
+Task ID: 1-admin-stability
+Agent: Admin stability fixer
+Task: Fix admin panel page appearing empty when navigating between sidebar items
+
+Work Log:
+- Read worklog.md for context, then inspected `src/components/gomesin/app-shell.tsx` and `src/components/gomesin/views/admin.tsx`
+- Root cause confirmed: every admin sidebar item renders `<AdminView initialTab="..." />` at the same position in the React tree. Because the component type (AdminView) is identical, React reuses the same instance when navigating between admin sub-views (e.g. admin → admin-new-listings). The internal `tab` state is initialized once via `useState(initialTab || "dashboard")` and is never updated when `initialTab` changes — so the sidebar click changes the URL/store but the visible tab (and the dashboard skeleton) stays the same, which the user perceives as a "blank" admin page.
+- Primary fix: added `key={view}` to every `<AdminView …/>` instance in `app-shell.tsx` (17 occurrences: 16 sidebar routes on lines 100–116 + 1 fallback on line 132). The `key` changes whenever the active admin view changes, forcing React to unmount the stale AdminView and remount a fresh one — so `useState(initialTab || "dashboard")` is re-evaluated and the correct tab is shown immediately.
+- Defense-in-depth considered: also tried `useEffect(() => setTab(initialTab || "dashboard"), [initialTab])` inside AdminView. This was reverted because (a) the `key`-based remount already guarantees correctness and (b) the new useEffect triggered the `react-hooks/set-state-in-effect` lint error. Left an explanatory NOTE comment instead so future maintainers know not to add the sync back.
+- Ran `bun run lint`: the new lint error I introduced is gone (error count dropped 7 → 6). The remaining 6 errors are all pre-existing `@typescript-eslint/no-require-imports` issues inside `daemon.cjs` and `start-chat.cjs` — files unrelated to this fix and not modified by this task.
+
+Stage Summary:
+- Files modified:
+  - `/home/z/my-project/src/components/gomesin/app-shell.tsx` — added `key={view}` to all 17 `<AdminView .../>` instances (lines 100–116 + fallback line 132).
+  - `/home/z/my-project/src/components/gomesin/views/admin.tsx` — added an explanatory NOTE comment next to the `useState<Tab>` declaration documenting why the `key` prop in app-shell is the source of truth and why a `useEffect` sync was intentionally NOT added.
+- Approach used: `key` prop on `<AdminView>` (primary + only fix). The `useEffect` defense-in-depth was attempted and reverted because it tripped the `react-hooks/set-state-in-effect` lint rule and was redundant given the `key`-based remount.
+- Lint result: 6 pre-existing errors remain (all in `.cjs` files, untouched). 0 new errors/warnings introduced by this fix. The admin panel now reliably re-initializes its active tab on every sidebar navigation, so the "kosong lagi" (blank page) symptom should no longer recur.
+
+---
+Task ID: 1-chat-image
+Agent: Chat-image investigator
+Task: Fix missing payment proof images on user-side chat page; adjust notification sounds (no ringtone when chat is open, just notif sound)
+
+Work Log:
+- Read worklog.md for prior context; confirmed chat-service (port 3003) was already running and the admin ChatTab already used normalizeImageUrl + referrerPolicy="no-referrer" correctly.
+- Investigated the full payment-proof image flow: /api/upload-proof returns catbox.moe URLs (primary, permanent) or tmpfiles.org viewer URLs (fallback, 60-day expiry). The tmpfiles.org viewer URL is an HTML page, NOT a direct image — normalizeImageUrl() converts it to the /dl/ direct image URL.
+- ROOT CAUSE FOUND: The user-side chat in profile.tsx (the "Pesan" panel — the main user chat inbox, NOT the floating chat-widget) rendered message images with a raw `<img src={c.image}>` that did NOT call normalizeImageUrl() and did NOT set referrerPolicy="no-referrer". When the stored URL was a tmpfiles.org viewer URL (HTML page), the <img> received HTML instead of an image and failed silently — the text caption ("📷 Foto" / "Bukti Pembayaran") still showed because it was a separate <p> element. (The floating chat-widget.tsx already had a ChatBubbleImage component using normalizeImageUrl, so it was NOT the source of the bug — but it was missing an onClick lightbox handler and had no lightbox overlay.)
+- Fixed profile.tsx: created a local ChatBubbleImage component (mirrors admin's ChatMsgBubble pattern) using normalizeImageUrl + referrerPolicy="no-referrer" + onError fallback link ("Gambar tidak tersedia — klik untuk membuka"). Replaced the raw <img> at the message bubble with this component. Also updated the existing full-size lightbox <img> to use normalizeImageUrl(lightbox) + referrerPolicy="no-referrer" so the enlarged image also loads correctly.
+- Fixed chat-widget.tsx: added onClick={() => onLightbox?.(src)} to the ChatBubbleImage <img> (was missing — clicking the image did nothing), wired the onLightbox prop at the call site, and added a full lightbox overlay (fixed z-200, black/90 bg, normalized URL + referrerPolicy) matching the admin/profile lightbox style.
+- Implemented the notification-sound behavior ("no ringtone when chat is open, just a notif ding"):
+  - Extended src/lib/notification-sound.ts with a module-level `chatOpen` flag + setChatOpen()/isChatOpen() exports so any component can report whether a chat conversation is currently visible.
+  - Added playDingSound() — a short ~350ms soft "ding" synthesized at runtime via the Web Audio API (descending sine wave E6→A5 with quick attack + exponential decay). NO audio asset file was needed; the existing /sounds/go-mesin.wav ringtone is reused for the full ringtone. The AudioContext is unlocked alongside the existing Audio element in unlockNotificationSound() (also resumed on first user gesture via setupNotificationSoundUnlock()).
+  - Updated header.tsx global message:new handler: if isChatOpen() → playDingSound(); else → playNotificationSound() (full "Go mesin!" ringtone). This is the single source of truth for incoming-message sounds.
+  - profile.tsx: added a useEffect that calls setChatOpen(activeChatId !== null && panel === "pesan") so the header knows when the Pesan conversation view is open. Removed the duplicate playNotificationSound() call that profile.tsx previously made on every incoming message (it was causing a double-play alongside header.tsx). The "test play" in the settings switch (toggling sound on) still calls playNotificationSound() directly as a preview.
+  - chat-widget.tsx: added a useEffect that calls setChatOpen(open) so the header also knows when the floating listing-detail chat dialog is open.
+- Ran `bun run lint`: 0 new errors/warnings in any modified file (the 6 remaining errors are all pre-existing @typescript-eslint/no-require-imports in daemon.cjs and start-chat.cjs, untouched).
+- Ran `bunx tsc --noEmit`: 0 new type errors in modified files (2 pre-existing errors in header.tsx:128 `Lang` and profile.tsx:226 `PanelType` are unrelated to this task and were present before).
+
+Stage Summary:
+- ROOT CAUSE: User-side chat (profile.tsx Pesan panel) rendered payment-proof images with raw URLs — no normalizeImageUrl() to convert tmpfiles.org viewer URLs to /dl/ direct image URLs, and no referrerPolicy="no-referrer" to bypass hotlink protection. The <img> silently failed on HTML-page URLs while the text caption still rendered.
+- Files modified:
+  - `/home/z/my-project/src/lib/notification-sound.ts` — added chatOpen flag (setChatOpen/isChatOpen), Web Audio API AudioContext management, playDingSound() (synthesized ding, no asset file), AudioContext unlock in unlockNotificationSound().
+  - `/home/z/my-project/src/components/gomesin/views/profile.tsx` — new ChatBubbleImage component (normalizeImageUrl + referrerPolicy + onError fallback); replaced raw <img> at message bubble; normalized lightbox URL; added setChatOpen effect; removed duplicate playNotificationSound from message:new handler.
+  - `/home/z/my-project/src/components/gomesin/header.tsx` — global message:new handler now plays playDingSound() when isChatOpen(), else playNotificationSound() (full ringtone).
+  - `/home/z/my-project/src/components/gomesin/chat-widget.tsx` — added onClick to ChatBubbleImage <img> to open lightbox; wired onLightbox prop; added full lightbox overlay (normalized URL + referrerPolicy); added setChatOpen(open) effect.
+- Notification sound logic: When a chat is open (profile Pesan conversation active, OR floating chat-widget dialog open), incoming messages play only a soft synthesized "ding" (Web Audio API, ~350ms, no asset). When no chat is open, the full "Go mesin!" ringtone (/sounds/go-mesin.wav) plays. The header.tsx global subscription is the single decision point; profile.tsx and chat-widget.tsx only report their open state via setChatOpen().
+- No new audio assets were created or downloaded — the ding is synthesized at runtime via the Web Audio API (oscillator + gain envelope). The existing /sounds/go-mesin.wav is reused for the full ringtone.
+
+---
+Task ID: 2-ui-fixes
+Agent: Main (UI fixes orchestrator)
+Task: Multiple UI fixes — admin panel stability, My Ads card redesign, admin Iklan Baru 2-row buttons, rejected ads text buttons, sales history image popup, chat payment proof image display, chat ringtone logic
+
+Work Log:
+- Dispatched subagent 1-chat-image: Fixed user-side chat (profile.tsx Pesan panel) to use normalizeImageUrl + referrerPolicy="no-referrer" + onError fallback (mirroring admin's ChatMsgBubble). Added chatOpen flag — when chat is open, incoming messages play a soft synthesized "ding" via Web Audio API instead of the full ringtone.
+- Dispatched subagent 1-admin-stability: Added key={view} prop to all 17 <AdminView/> instances in app-shell.tsx so React remounts the component when navigating between admin sidebar items. This fixes the "admin panel kosong" issue where the internal tab state didn't reset.
+- My Ads (dashboard.tsx): Removed location + condition from grid/line cards. Moved viewer (Eye count) to where location used to be. Edit button → blue (border-blue-500 bg-blue-500). Hapus button → orange (border-orange-500 bg-orange-500).
+- Admin Iklan Baru tab (admin.tsx IklanBaruTab): Restructured buttons into 2 rows. Row 1: viewer + Publikasi. Row 2: Tolak + Hapus (full-width, side-by-side). Both grid and line cards.
+- Admin Iklan Ditolak tab (admin.tsx IklanDitolakTab): Replaced icon-only buttons with text buttons. Pulihkan → blue (border-blue-500 bg-blue-500). Hapus → orange (border-orange-500 bg-orange-500). Both grid and line cards.
+- Admin TransaksiTab (sales history): Added lightbox state + click handler on grid/table images. Clicking an image opens a full-screen popup with the image, click-outside-or-X-to-close.
+- CRITICAL FIX for missing payment proof images: tmpfiles.org changed their /dl/ URL behavior — old /dl/ URLs now 302-redirect to the viewer HTML page instead of serving the image. Updated /api/img-proxy to (1) allow tmpfiles.org + files.catbox.moe domains, (2) detect HTML responses and extract the new direct /dl/ URL from the viewer page, (3) re-fetch the actual image bytes. Updated normalizeImageUrl in lib/image.ts to route tmpfiles.org + catbox.moe URLs through /api/img-proxy. This makes ALL legacy payment proof images render again in both admin and user chat.
+
+Stage Summary:
+- Files modified: src/components/gomesin/app-shell.tsx (key prop), src/components/gomesin/views/dashboard.tsx (card redesign), src/components/gomesin/views/admin.tsx (IklanBaru 2-row, IklanDitolak text buttons, TransaksiTab lightbox), src/components/gomesin/views/profile.tsx (ChatBubbleImage + chatOpen), src/components/gomesin/chat-widget.tsx (lightbox + chatOpen), src/components/gomesin/header.tsx (ding vs ringtone), src/lib/notification-sound.ts (chatOpen flag + playDingSound), src/lib/image.ts (normalizeImageUrl routes through proxy), src/app/api/img-proxy/route.ts (tmpfiles.org + catbox.moe support with viewer-page URL extraction).
+- Verified via Agent Browser: admin panel navigation stable (Dashboard → Iklan Baru → Iklan Ditolak → Riwayat Penjualan all render correctly), My Ads cards show viewer count (no location/condition) with blue Edit + orange Hapus buttons, Iklan Baru has 2-row buttons, Iklan Ditolak has text buttons (Pulihkan blue + Hapus orange), TransaksiTab image popup works, admin chat shows 8 payment proof images loaded successfully (0 fallbacks), user chat shows 4 payment proof images loaded successfully (0 fallbacks).
+- Lint: 17 pre-existing problems (6 errors in .cjs files, 11 warnings) — 0 new errors/warnings introduced.

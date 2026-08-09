@@ -85,7 +85,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { useChatSocket, type ChatMessage } from "@/lib/use-chat-socket";
-import { playNotificationSound, isChatSoundEnabled, setChatSoundEnabled } from "@/lib/notification-sound";
+import { playNotificationSound, isChatSoundEnabled, setChatSoundEnabled, setChatOpen } from "@/lib/notification-sound";
+import { normalizeImageUrl } from "@/lib/image";
 import { DashboardView } from "./dashboard";
 import { FavoritesView } from "./favorites";
 import EmojiPicker, { EmojiStyle, Theme } from "emoji-picker-react";
@@ -115,6 +116,39 @@ function dataUrlBytes(dataUrl: string): number {
   const b64 = dataUrl.slice(comma + 1);
   // base64: 4 chars ≈ 3 bytes
   return Math.floor((b64.length * 3) / 4);
+}
+
+// Chat image with error fallback — handles expired tmpfiles.org viewer URLs
+// and hotlink protection (referrerPolicy="no-referrer").
+// Mirrors the admin's ChatMsgBubble image rendering so payment proof images
+// (uploaded to catbox.moe / tmpfiles.org) display correctly on the user side.
+function ChatBubbleImage({ src, onLightbox }: { src: string; onLightbox: (url: string) => void }) {
+  const [err, setErr] = useState(false);
+  const url = normalizeImageUrl(src);
+  if (err) {
+    return (
+      <a
+        href={src}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => { e.preventDefault(); onLightbox(src); }}
+        className="mb-1 flex min-w-[180px] items-center gap-2 rounded-md bg-black/5 px-3 py-4 text-xs text-primary underline"
+      >
+        <ImageIcon className="size-4 shrink-0" />
+        Gambar tidak tersedia — klik untuk membuka
+      </a>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt="Gambar"
+      referrerPolicy="no-referrer"
+      onClick={() => onLightbox(src)}
+      onError={() => setErr(true)}
+      className="mb-1 max-h-60 min-w-[180px] cursor-pointer rounded-md object-cover transition hover:opacity-90"
+    />
+  );
 }
 
 export function ProfileView() {
@@ -456,13 +490,13 @@ export function ProfileView() {
       // Refresh conversation list so last message preview + unread count update.
       queryClient.invalidateQueries({ queryKey: ["messages"] });
 
-      // (Notification sound handled in Header.tsx — global, works in all views)
+      // (Notification sound handled in Header.tsx — global, works in all views.
+      //  Header checks isChatOpen() to decide: ding when chat is open,
+      //  full ringtone when chat is closed.)
 
       // Toast notification for incoming messages (not from self) so user is alerted
       // even when not on the chat panel.
       if (!isMine) {
-        // Play "Go mesin!" ringtone (like WhatsApp) for incoming chat — instant.
-        playNotificationSound();
         const preview = msg.content?.trim()
           ? msg.content.length > 60 ? msg.content.slice(0, 60) + "..." : msg.content
           : msg.image ? "📷 Mengirim gambar" : "Pesan baru";
@@ -517,6 +551,18 @@ export function ProfileView() {
       }, 100);
     }
   }, [chatMessages, activeChatId, panel]);
+
+  // Track whether a chat conversation is currently open & visible.
+  // The global Header reads this (via isChatOpen()) to decide which sound to
+  // play on incoming messages: a soft "ding" when chat is open, the full
+  // "Go mesin!" ringtone when chat is closed.
+  useEffect(() => {
+    setChatOpen(activeChatId !== null && panel === "pesan");
+    return () => {
+      // Reset on unmount or when chat closes so the ringtone resumes.
+      setChatOpen(false);
+    };
+  }, [activeChatId, panel]);
 
   // (body scroll lock removed — Pesan panel now renders inline, not as a fixed overlay)
 
@@ -1420,12 +1466,7 @@ export function ProfileView() {
                                   )}
                                 >
                                   {c.image && (
-                                    <img
-                                      src={c.image}
-                                      alt="Gambar"
-                                      onClick={() => setLightbox(c.image!)}
-                                      className="mb-1 max-h-48 cursor-pointer rounded-md object-cover transition hover:opacity-90"
-                                    />
+                                    <ChatBubbleImage src={c.image} onLightbox={(url) => setLightbox(url)} />
                                   )}
                                   {c.content && (
                                     <p className={cn(
@@ -1630,8 +1671,9 @@ export function ProfileView() {
                                 <XIcon className="size-6" />
                               </button>
                               <img
-                                src={lightbox}
+                                src={normalizeImageUrl(lightbox)}
                                 alt="Gambar besar"
+                                referrerPolicy="no-referrer"
                                 className="max-h-[90vh] max-w-full rounded-lg object-contain"
                                 onClick={(e) => e.stopPropagation()}
                               />

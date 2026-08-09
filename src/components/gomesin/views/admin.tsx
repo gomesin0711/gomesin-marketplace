@@ -70,6 +70,12 @@ export function AdminView({ initialTab }: { initialTab?: Tab }) {
   const mounted = useMounted();
   const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
   const [tab, setTab] = useState<Tab>(initialTab || "dashboard");
+  // NOTE: When `initialTab` changes, the parent (app-shell.tsx) uses a `key={view}`
+  // prop on <AdminView> so React fully remounts this component — meaning the
+  // useState initializer above is re-evaluated and `tab` correctly reflects the
+  // new `initialTab`. We intentionally do NOT sync via useEffect here because
+  // (a) the key-based remount already handles it, and (b) calling setState
+  // inside an effect triggers the `react-hooks/set-state-in-effect` lint rule.
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteCallback, setDeleteCallback] = useState<(() => void) | null>(null);
 
@@ -811,18 +817,23 @@ function IklanBaruTab() {
           <div className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
             <MapPin className="size-3 shrink-0" /> {l.city}{l.seller?.name ? ` · ${l.seller.name}` : ""}
           </div>
-          <div className="mt-auto flex items-center justify-between border-t border-border pt-2">
-            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-              <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0}
-            </span>
-            <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+          {/* Bottom — 2 rows of buttons */}
+          <div className="mt-auto space-y-1.5 border-t border-border pt-2" onClick={(e) => e.stopPropagation()}>
+            {/* Row 1: Viewer + Publikasi */}
+            <div className="flex items-center justify-between gap-1">
+              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0}
+              </span>
               <button onClick={() => approve(l.id)} className="flex items-center gap-1 rounded-md border border-blue-500 bg-blue-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-blue-600 hover:border-blue-600">
                 <CheckCircle2 className="size-3" /> Publikasi
               </button>
-              <button onClick={() => reject(l.id)} className="flex items-center gap-1 rounded-md border border-red-500 bg-red-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-600 hover:border-red-600">
+            </div>
+            {/* Row 2: Tolak + Hapus */}
+            <div className="flex items-center gap-1">
+              <button onClick={() => reject(l.id)} className="flex-1 flex items-center justify-center gap-1 rounded-md border border-red-500 bg-red-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-600 hover:border-red-600">
                 <XCircle className="size-3" /> Tolak
               </button>
-              <button onClick={() => setDeleteId(l.id)} className="flex items-center gap-1 rounded-md border border-gray-500 bg-gray-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-gray-600 hover:border-gray-600">
+              <button onClick={() => setDeleteId(l.id)} className="flex-1 flex items-center justify-center gap-1 rounded-md border border-gray-500 bg-gray-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-gray-600 hover:border-gray-600">
                 <Trash2 className="size-3" /> Hapus
               </button>
             </div>
@@ -860,14 +871,25 @@ function IklanBaruTab() {
             </span>
             <span className={cn("rounded-md border px-1.5 py-0.5 text-[10px] font-bold", pkg.bg)}>{pkg.name}</span>
           </div>
-          <div className="mt-auto flex items-center justify-between pt-2">
-            <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
-              <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0} dilihat
-            </span>
-            <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => approve(l.id)} className="flex items-center gap-1 rounded-md border border-blue-500 bg-blue-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-blue-600 hover:border-blue-600"><CheckCircle2 className="size-3" /> Publikasi</button>
-              <button onClick={() => reject(l.id)} className="flex items-center gap-1 rounded-md border border-red-500 bg-red-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-600 hover:border-red-600"><XCircle className="size-3" /> Tolak</button>
-              <button onClick={() => setDeleteId(l.id)} className="flex items-center gap-1 rounded-md border border-gray-500 bg-gray-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-gray-600 hover:border-gray-600"><Trash2 className="size-3" /> Hapus</button>
+          {/* Bottom — 2 rows of buttons */}
+          <div className="mt-auto space-y-1.5 pt-2" onClick={(e) => e.stopPropagation()}>
+            {/* Row 1: Viewer + Publikasi */}
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0} dilihat
+              </span>
+              <button onClick={() => approve(l.id)} className="flex items-center gap-1 rounded-md border border-blue-500 bg-blue-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-blue-600 hover:border-blue-600">
+                <CheckCircle2 className="size-3" /> Publikasi
+              </button>
+            </div>
+            {/* Row 2: Tolak + Hapus */}
+            <div className="flex items-center gap-1">
+              <button onClick={() => reject(l.id)} className="flex-1 flex items-center justify-center gap-1 rounded-md border border-red-500 bg-red-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-600 hover:border-red-600">
+                <XCircle className="size-3" /> Tolak
+              </button>
+              <button onClick={() => setDeleteId(l.id)} className="flex-1 flex items-center justify-center gap-1 rounded-md border border-gray-500 bg-gray-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-gray-600 hover:border-gray-600">
+                <Trash2 className="size-3" /> Hapus
+              </button>
             </div>
           </div>
         </div>
@@ -1407,14 +1429,13 @@ function IklanDitolakTab() {
           {l.violationReason && (
             <p className="mt-1 text-[10px] text-red-600">{l.violationReason}</p>
           )}
-          <div className="mt-auto flex items-center justify-between border-t border-border pt-2">
-            <span className="text-[10px] text-muted-foreground">{l.seller?.name}</span>
-            <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => restore.mutate({ id: l.id })} className="grid size-7 place-items-center rounded-md border border-border bg-background text-green-600 transition hover:bg-green-500 hover:text-white hover:border-green-500" title="Pulihkan & Tayangkan">
-                <CheckCircle2 className="size-3" />
+          <div className="mt-auto flex items-center justify-end gap-1.5 border-t border-border pt-2">
+            <div className="flex w-full gap-1" onClick={(e) => e.stopPropagation()}>
+              <button onClick={() => restore.mutate({ id: l.id })} className="flex-1 flex items-center justify-center gap-1 rounded-md border border-blue-500 bg-blue-500 px-2 py-1.5 text-[10px] font-bold text-white transition hover:bg-blue-600 hover:border-blue-600">
+                <CheckCircle2 className="size-3" /> Pulihkan
               </button>
-              <button onClick={() => { if (confirm("Hapus permanen?")) del.mutate(l.id); }} className="grid size-7 place-items-center rounded-md border border-destructive/30 bg-background text-destructive transition hover:bg-destructive hover:text-white hover:border-destructive" title="Hapus Permanen">
-                <Trash2 className="size-3" />
+              <button onClick={() => { if (confirm("Hapus permanen?")) del.mutate(l.id); }} className="flex-1 flex items-center justify-center gap-1 rounded-md border border-orange-500 bg-orange-500 px-2 py-1.5 text-[10px] font-bold text-white transition hover:bg-orange-600 hover:border-orange-600">
+                <Trash2 className="size-3" /> Hapus
               </button>
             </div>
           </div>
@@ -1452,11 +1473,14 @@ function IklanDitolakTab() {
             <span className={cn("rounded-md border px-1.5 py-0.5 text-[10px] font-bold", pkg.bg)}>{pkg.name}</span>
             {l.violationReason && <span className="text-[10px] text-red-600">{l.violationReason}</span>}
           </div>
-          <div className="mt-auto flex items-center justify-between pt-2">
-            <span className="text-[10px] text-muted-foreground">{l.seller?.name}</span>
-            <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => restore.mutate({ id: l.id })} className="grid size-7 place-items-center rounded-md border border-border bg-background text-green-600 transition hover:bg-green-500 hover:text-white hover:border-green-500" title="Pulihkan & Tayangkan"><CheckCircle2 className="size-3" /></button>
-              <button onClick={() => { if (confirm("Hapus permanen?")) del.mutate(l.id); }} className="grid size-7 place-items-center rounded-md border border-destructive/30 bg-background text-destructive transition hover:bg-destructive hover:text-white hover:border-destructive" title="Hapus Permanen"><Trash2 className="size-3" /></button>
+          <div className="mt-auto flex items-center justify-end gap-1.5 pt-2">
+            <div className="flex w-full gap-1" onClick={(e) => e.stopPropagation()}>
+              <button onClick={() => restore.mutate({ id: l.id })} className="flex-1 flex items-center justify-center gap-1 rounded-md border border-blue-500 bg-blue-500 px-2 py-1.5 text-[10px] font-bold text-white transition hover:bg-blue-600 hover:border-blue-600">
+                <CheckCircle2 className="size-3" /> Pulihkan
+              </button>
+              <button onClick={() => { if (confirm("Hapus permanen?")) del.mutate(l.id); }} className="flex-1 flex items-center justify-center gap-1 rounded-md border border-orange-500 bg-orange-500 px-2 py-1.5 text-[10px] font-bold text-white transition hover:bg-orange-600 hover:border-orange-600">
+                <Trash2 className="size-3" /> Hapus
+              </button>
             </div>
           </div>
         </div>
@@ -2339,6 +2363,8 @@ function TransaksiTab() {
   const [search, setSearch] = useState("");
   const [pkgFilter, setPkgFilter] = useState<"all" | "spotlight" | "highlight" | "sundul" | "colek">("all");
   const [viewMode, setViewMode] = useState<"grid" | "line">("line");
+  // Image lightbox — when user clicks an image in the grid/table, show a popup
+  const [lightbox, setLightbox] = useState<string | null>(null);
   if (isLoading || !data) return <SkeletonGrid count={3} />;
 
   const now = new Date();
@@ -2451,7 +2477,12 @@ function TransaksiTab() {
                 <div key={l.id} className="group flex cursor-pointer flex-col overflow-hidden rounded-xl border-2 border-border bg-card transition hover:shadow-lg">
                   <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
                     {l.images?.[0] ? (
-                      <img src={l.images[0]} alt={l.title} className="size-full object-cover transition group-hover:scale-105" />
+                      <img
+                        src={l.images[0]}
+                        alt={l.title}
+                        onClick={(e) => { e.stopPropagation(); setLightbox(l.images[0]); }}
+                        className="size-full cursor-zoom-in object-cover transition group-hover:scale-105"
+                      />
                     ) : (
                       <div className="flex h-full items-center justify-center text-muted-foreground"><ImageIcon className="size-8" /></div>
                     )}
@@ -2515,7 +2546,12 @@ function TransaksiTab() {
                         <div className="flex items-center gap-2">
                           <div className="size-10 shrink-0 overflow-hidden rounded-lg bg-muted">
                             {l.images?.[0] ? (
-                              <img src={l.images[0]} alt={l.title} className="size-full object-cover" />
+                              <img
+                                src={l.images[0]}
+                                alt={l.title}
+                                onClick={(e) => { e.stopPropagation(); setLightbox(l.images[0]); }}
+                                className="size-full cursor-zoom-in object-cover"
+                              />
                             ) : (
                               <div className="flex h-full items-center justify-center text-muted-foreground"><ImageIcon className="size-4" /></div>
                             )}
@@ -2575,6 +2611,28 @@ function TransaksiTab() {
 
       {/* Footer count */}
       <p className="text-xs text-muted-foreground">Menampilkan {filtered.length} dari {all.length} transaksi</p>
+
+      {/* Image lightbox popup — shown when user clicks an image */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setLightbox(null)}
+        >
+          <button
+            aria-label="Tutup"
+            className="absolute right-4 top-4 grid size-10 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20"
+            onClick={() => setLightbox(null)}
+          >
+            <X className="size-6" />
+          </button>
+          <img
+            src={lightbox}
+            alt="Gambar iklan"
+            className="max-h-[90vh] max-w-full rounded-lg object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

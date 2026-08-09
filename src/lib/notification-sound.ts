@@ -11,10 +11,26 @@
  *
  * Call `unlockNotificationSound()` once at app level (e.g. in a root effect),
  * and `playNotificationSound()` whenever a message arrives.
+ *
+ * --- Chat-open behavior ---
+ * When the user is actively viewing a chat conversation (chat widget/panel
+ * open), incoming messages should NOT play the full ringtone — only a soft
+ * short "ding" (generated via Web Audio API, no asset file needed).
+ * When the chat is NOT open, the full "Go mesin!" ringtone plays.
+ *
+ * Call `setChatOpen(true)` whenever a chat conversation becomes visible, and
+ * `setChatOpen(false)` when it closes. The header's global message handler
+ * checks this flag to decide which sound to play.
  */
 
 let audioEl: HTMLAudioElement | null = null;
 let unlocked = false;
+
+// --- Web Audio API context for the short "ding" sound ---
+let audioCtx: AudioContext | null = null;
+
+// --- Module-level flag: is the user currently viewing an open chat? ---
+let chatOpen = false;
 
 function getAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
@@ -27,6 +43,19 @@ function getAudio(): HTMLAudioElement | null {
     audioEl = null;
   }
   return audioEl;
+}
+
+function getAudioCtx(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  if (audioCtx) return audioCtx;
+  try {
+    const Ctor = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctor) return null;
+    audioCtx = new Ctor();
+  } catch {
+    audioCtx = null;
+  }
+  return audioCtx;
 }
 
 /**
@@ -60,6 +89,25 @@ export function unlockNotificationSound() {
     el.muted = false;
     unlocked = true;
   }
+  // Also unlock the Web Audio API AudioContext (for the ding sound).
+  // A user gesture allows us to create & resume an AudioContext.
+  try {
+    const ctx = getAudioCtx();
+    if (ctx && ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function isSoundEnabled(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem("gomesin-chat-sound") !== "off";
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -69,15 +117,7 @@ export function unlockNotificationSound() {
  * Respects the user's chat sound preference (localStorage "gomesin-chat-sound").
  */
 export function playNotificationSound() {
-  // Respect user preference — if chat sound is disabled in settings, don't play.
-  if (typeof window !== "undefined") {
-    try {
-      const enabled = window.localStorage.getItem("gomesin-chat-sound");
-      if (enabled === "off") return;
-    } catch {
-      // localStorage not available — proceed.
-    }
-  }
+  if (!isSoundEnabled()) return;
   const el = getAudio();
   if (!el) return;
   try {
@@ -94,15 +134,47 @@ export function playNotificationSound() {
 }
 
 /**
+ * Play a short soft "ding" notification sound (≈300ms) via the Web Audio API.
+ * No audio file needed — synthesized as a descending sine-wave tone.
+ * Used when a chat is currently open (so the user is already looking at it)
+ * and a new message arrives — a soft ding is less intrusive than the full
+ * ringtone.
+ */
+export function playDingSound() {
+  if (!isSoundEnabled()) return;
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  try {
+    // Resume if suspended (shouldn't happen after unlock, but just in case).
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    // Start at E6 (1318.51 Hz) — a pleasant notification ding.
+    osc.frequency.setValueAtTime(1318.51, now);
+    // Slide down to A5 (880 Hz) over 150ms for a gentle "ding-dong" feel.
+    osc.frequency.exponentialRampToValueAtTime(880, now + 0.15);
+    // Quick attack (10ms) then exponential decay to silence over 350ms.
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.25, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.4);
+  } catch {
+    // ignore — audio is best-effort, not critical
+  }
+}
+
+/**
  * Check if chat notification sound is enabled (default: on).
  */
 export function isChatSoundEnabled(): boolean {
-  if (typeof window === "undefined") return true;
-  try {
-    return window.localStorage.getItem("gomesin-chat-sound") !== "off";
-  } catch {
-    return true;
-  }
+  return isSoundEnabled();
 }
 
 /**
@@ -115,6 +187,27 @@ export function setChatSoundEnabled(enabled: boolean) {
   } catch {
     // ignore
   }
+}
+
+/**
+ * Set whether the user is currently viewing an open chat conversation.
+ * When true, incoming messages play a soft "ding" instead of the full
+ * ringtone. When false (chat closed / not visible), the full ringtone plays.
+ *
+ * Call this from:
+ *   - profile.tsx Pesan panel (when activeChatId is set)
+ *   - chat-widget.tsx (when the floating chat dialog is open)
+ */
+export function setChatOpen(isOpen: boolean) {
+  chatOpen = isOpen;
+}
+
+/**
+ * Returns true if the user is currently viewing an open chat conversation.
+ * Used by the header's global message:new handler to decide which sound to play.
+ */
+export function isChatOpen(): boolean {
+  return chatOpen;
 }
 
 let globalListenersAttached = false;

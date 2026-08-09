@@ -13,7 +13,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Send, BadgeCheck, MessageCircle, Loader2, MapPin, Tag, Trash2, Ban, Eraser, Check, ImagePlus, Camera, FileImage, ArrowLeft, Settings } from "lucide-react";
+import { Send, BadgeCheck, MessageCircle, Loader2, MapPin, Tag, Trash2, Ban, Eraser, Check, ImagePlus, Camera, FileImage, ArrowLeft, Settings, X } from "lucide-react";
 import type { Listing, Seller } from "@/lib/types";
 import { formatRupiahFull } from "@/lib/types";
 import { toast } from "sonner";
@@ -22,6 +22,7 @@ import { useMounted } from "@/lib/use-mounted";
 import { cn } from "@/lib/utils";
 import { useChatSocket, type ChatMessage } from "@/lib/use-chat-socket";
 import { compressImage, normalizeImageUrl } from "@/lib/image";
+import { setChatOpen } from "@/lib/notification-sound";
 import { useChatBg } from "@/lib/use-chat-bg";
 import {
   Popover,
@@ -52,10 +53,11 @@ function ChatBubbleImage({ src, onLightbox }: { src: string; onLightbox?: (url: 
   return (
     <img
       src={url}
-      alt=""
+      alt="Gambar"
       referrerPolicy="no-referrer"
+      onClick={() => onLightbox?.(src)}
       onError={() => setErr(true)}
-      className="block w-full min-w-[180px] max-w-full cursor-pointer object-cover"
+      className="block w-full min-w-[180px] max-w-full cursor-pointer object-cover transition hover:opacity-90"
       style={{ maxHeight: 300 }}
     />
   );
@@ -87,6 +89,7 @@ export function ChatWidget({
   const [blocked, setBlocked] = useState(false);
   const [imgSending, setImgSending] = useState(false);
   const [bgOpen, setBgOpen] = useState(false);
+  const [lightbox, setLightbox] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const imgFileRef = useRef<HTMLInputElement>(null);
@@ -171,6 +174,16 @@ export function ChatWidget({
       setMenu({ visible: false, x: 0, y: 0, msgIndex: -1 });
       setSelectedMsg(null);
     }
+  }, [open]);
+
+  // Track chat-open state so the global Header knows to play a soft "ding"
+  // (instead of the full ringtone) when a new message arrives while the user
+  // is already viewing this chat.
+  useEffect(() => {
+    setChatOpen(open);
+    return () => {
+      setChatOpen(false);
+    };
   }, [open]);
 
   useEffect(() => {
@@ -435,7 +448,7 @@ export function ChatWidget({
                   )}
                 >
                   {m.image && (
-                    <ChatBubbleImage src={m.image} />
+                    <ChatBubbleImage src={m.image} onLightbox={(url) => setLightbox(url)} />
                   )}
                   {m.content && m.image && (
                     <p className="whitespace-pre-wrap break-words px-2.5 pt-1.5">{m.content}</p>
@@ -516,6 +529,28 @@ export function ChatWidget({
                 {item.label}
               </button>
             ))}
+          </div>
+        )}
+
+        {/* ===== IMAGE LIGHTBOX — click image to view full size ===== */}
+        {lightbox && (
+          <div
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 p-4"
+            onClick={() => setLightbox(null)}
+          >
+            <button
+              aria-label="Tutup"
+              className="absolute right-4 top-4 grid size-10 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20"
+            >
+              <X className="size-6" />
+            </button>
+            <img
+              src={normalizeImageUrl(lightbox)}
+              alt="Gambar besar"
+              referrerPolicy="no-referrer"
+              className="max-h-[90vh] max-w-full rounded-lg object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
           </div>
         )}
       </DialogContent>

@@ -97,23 +97,23 @@ export function AppShell() {
               {tr("adminMenu")}
             </button>
             <div className="p-0">
-              {view === "admin" && <AdminView />}
-              {view === "admin-sellers" && <AdminView initialTab="penjual" />}
-              {view === "admin-categories" && <AdminView initialTab="kategori" />}
-              {view === "admin-listings" && <AdminView initialTab="iklan" />}
-              {view === "admin-new-listings" && <AdminView initialTab="iklanbaru" />}
-              {view === "admin-expired-listings" && <AdminView initialTab="iklanexpired" />}
-              {view === "admin-rejected-listings" && <AdminView initialTab="iklanditolak" />}
-              {view === "admin-transactions" && <AdminView initialTab="transaksi" />}
-              {view === "admin-reports" && <AdminView initialTab="laporan" />}
-              {view === "admin-monthly-report" && <AdminView initialTab="laporanbulanan" />}
-              {view === "admin-users" && <AdminView initialTab="pengguna" />}
-              {view === "admin-paket" && <AdminView initialTab="paket" />}
-              {view === "admin-merek" && <AdminView initialTab="merek" />}
-              {view === "admin-lokasi" && <AdminView initialTab="lokasi" />}
-              {view === "admin-banner" && <AdminView initialTab="banner" />}
-              {view === "admin-audit" && <AdminView initialTab="audit" />}
-              {view === "admin-chat" && <AdminView initialTab="chat" />}
+              {view === "admin" && <AdminView key={view} />}
+              {view === "admin-sellers" && <AdminView key={view} initialTab="penjual" />}
+              {view === "admin-categories" && <AdminView key={view} initialTab="kategori" />}
+              {view === "admin-listings" && <AdminView key={view} initialTab="iklan" />}
+              {view === "admin-new-listings" && <AdminView key={view} initialTab="iklanbaru" />}
+              {view === "admin-expired-listings" && <AdminView key={view} initialTab="iklanexpired" />}
+              {view === "admin-rejected-listings" && <AdminView key={view} initialTab="iklanditolak" />}
+              {view === "admin-transactions" && <AdminView key={view} initialTab="transaksi" />}
+              {view === "admin-reports" && <AdminView key={view} initialTab="laporan" />}
+              {view === "admin-monthly-report" && <AdminView key={view} initialTab="laporanbulanan" />}
+              {view === "admin-users" && <AdminView key={view} initialTab="pengguna" />}
+              {view === "admin-paket" && <AdminView key={view} initialTab="paket" />}
+              {view === "admin-merek" && <AdminView key={view} initialTab="merek" />}
+              {view === "admin-lokasi" && <AdminView key={view} initialTab="lokasi" />}
+              {view === "admin-banner" && <AdminView key={view} initialTab="banner" />}
+              {view === "admin-audit" && <AdminView key={view} initialTab="audit" />}
+              {view === "admin-chat" && <AdminView key={view} initialTab="chat" />}
             </div>
           </main>
         </div>
@@ -129,7 +129,7 @@ export function AppShell() {
           {view === "upgrade" && <UpgradeView />}
           {view === "seller" && <SellerView />}
           {/* fallback: if non-admin somehow reaches admin view */}
-          {isAdminView && !isAdmin && <AdminView />}
+          {isAdminView && !isAdmin && <AdminView key={view} />}
         </main>
       )}
       {/* Hide footer on account/dashboard/admin views for cleaner UX */}
