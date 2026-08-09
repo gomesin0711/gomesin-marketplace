@@ -1466,3 +1466,35 @@ Stage Summary:
 - Realtime guarantee strengthened: profile messages now have 5s polling fallback alongside socket.io push invalidation
 - Admin (3s polling + socket) and homepage (3s polling + socket) already had realtime — unchanged
 - Deploying to Vercel
+
+---
+Task ID: 7-detail-supabase-chat-input-darkmode
+Agent: Main (Z.ai Code)
+Task: Fix listing detail page returning 404 on production (clicking ad on beranda) + fix chat input font invisible in dark mode
+
+Work Log:
+- Confirmed production bug via curl: listing "tes-wv9lz" appeared on beranda (GET /api/listings returned it) but GET /api/listings/tes-wv9lz returned HTTP 404 "Iklan tidak ditemukan". Tested 5 slugs from beranda — all returned 404 on detail endpoint.
+- Root cause: GET handler in /api/listings/[slug]/route.ts only tried Prisma (db.listing.findUnique). On Vercel, Prisma cannot connect to PostgreSQL (SQLite provider), so it threw, and the catch block fell back to getFallbackListingBySlug(slug) which reads STATIC seed-data.json. Live Supabase listings (shown on beranda after the previous beranda Supabase fix) do NOT exist in seed-data.json → 404. The PATCH and DELETE handlers already had Supabase fallback (Path B), but GET was missed.
+- Fix: Rewrote GET handler with the same Path A → Path B pattern:
+  - Path A (Prisma, local dev): unchanged logic, but now wrapped in `if (isDbAvailable())` with try/catch that falls through to Path B on error or not-found.
+  - Path B (Supabase, Vercel): queries `Listing.select("*").eq("slug", slug).single()`. If not found → falls back to seed-data.json (legacy) → 404. If found: increments views (fire-and-forget), batch-fetches Category/Seller/User by ID (3 parallel queries), and fetches related listings (same category, exclude self, active, top 6). For related listings, batch-fetches their Category/Seller/User via `.in("id", ids)` queries (3 parallel) and joins client-side via Map. All rows parsed via parseSupabaseListing().
+  - Outer catch: falls back to seed-data.json as last resort.
+- Chat input dark mode fix: In profile.tsx line 1621, the chat input had `bg-white` (hardcoded white) but NO explicit text color. In dark mode, inherited `text-foreground` = near-white (oklch 0.97) → white text on white bg = invisible while typing. Added `text-black` + `placeholder:text-black/40` so typed text and placeholder are always black on the white input background. (The chat-widget.tsx Input uses theme-aware bg-card + text-foreground which correctly inverts in dark mode — verified via computed styles: formBg oklch(0.22) dark + inputColor oklch(0.97) light = visible. No fix needed there.)
+- Verified via Agent Browser on production (dark mode):
+  - Clicked "Excavator Komatsu PC200-8 Bekas" listing on beranda → detail page rendered fully with title, Deskripsi, Spesifikasi, Iklan Serupa (related: "Concrete Mixer 350L Diesel Engine"), Chat Penjual button. Previously this would have shown "Iklan tidak ditemukan".
+  - Verified chat-widget input visible in dark mode (formBg dark + text light = visible).
+  - No console errors, no hydration errors.
+- Lint: 17 pre-existing problems (6 errors in .cjs + 11 warnings) — 0 new errors introduced.
+- Deployed to Vercel production (commit 1de769b). Verified 5/5 beranda slugs now return HTTP 200 on detail endpoint (was 404 for all 5).
+
+Stage Summary:
+- Files modified (2):
+  - src/app/api/listings/[slug]/route.ts — GET handler: added Path B (raw Supabase) with batch-fetch of Category/Seller/User + related listings (same pattern as /api/listings GET). Previously only tried Prisma + static seed-data.json fallback.
+  - src/components/gomesin/views/profile.tsx — chat input: added text-black + placeholder:text-black/40 on the bg-white input (line 1621). Typed text now visible in dark mode.
+- Lint: 17 pre-existing problems — 0 new errors
+- Deployed to: https://gomesin.vercel.app (production, commit 1de769b)
+- Production verification:
+  - /api/listings/tes-wv9lz: 404 → 200 ✅ (with category="Mesin Tekstil & Garment", seller="Admin Gomesin")
+  - 5/5 beranda slugs: all 404 → all 200 ✅
+  - Detail page renders fully (title, description, specs, related listings, chat button) ✅
+  - Chat input in dark mode: black text on white bg = visible ✅
