@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, isDbAvailable } from "@/lib/db";
 import { fallbackGetUserById, fallbackUpdateUser } from "@/lib/auth-fallback";
 
 // ---------------------------------------------------------------------------
@@ -24,35 +24,37 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "User ID wajib" }, { status: 400 });
   }
 
-  // Try SQLite/Prisma first
-  try {
-    const user = await db.user.findUnique({ where: { id: userId } });
-    if (user) {
-      return NextResponse.json({
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          city: user.city,
-          company: user.company,
-          address: user.address,
-          bannerImage: user.bannerImage,
-          logoImage: user.logoImage,
-          role: user.role,
-          createdAt:
-            user.createdAt instanceof Date
-              ? user.createdAt.toISOString()
-              : user.createdAt,
-        },
-      });
+  // --- Path A: local dev (Prisma + SQLite) ---
+  if (isDbAvailable()) {
+    try {
+      const user = await db.user.findUnique({ where: { id: userId } });
+      if (user) {
+        return NextResponse.json({
+          user: {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            phone: user.phone,
+            city: user.city,
+            company: user.company,
+            address: user.address,
+            bannerImage: user.bannerImage,
+            logoImage: user.logoImage,
+            role: user.role,
+            createdAt:
+              user.createdAt instanceof Date
+                ? user.createdAt.toISOString()
+                : user.createdAt,
+          },
+        });
+      }
+      // not found in Prisma → fall through to Supabase
+    } catch {
+      // fall through to Supabase
     }
-    // If Prisma found no user, fall through to the Supabase fallback.
-  } catch {
-    // SQLite unavailable — try Supabase next
   }
 
-  // --- Supabase fallback (Vercel) ---
+  // --- Path B: Vercel (raw Supabase) ---
   try {
     const supabase = await getSupabase();
     const { data: supaUser, error } = await supabase
@@ -81,6 +83,7 @@ export async function GET(req: NextRequest) {
     console.error("[auth/profile] Supabase GET fallback error:", supaErr);
   }
 
+  // --- Path C: in-memory fallback (last resort) ---
   const user = await fallbackGetUserById(userId);
   if (!user) {
     return NextResponse.json({ error: "User tidak ditemukan" }, { status: 404 });
@@ -118,55 +121,54 @@ export async function PATCH(req: NextRequest) {
   if (bannerImage !== undefined) updateData.bannerImage = bannerImage?.trim() || null;
   if (logoImage !== undefined) updateData.logoImage = logoImage?.trim() || null;
 
-  // Try SQLite/Prisma first
-  try {
-    const existing = await db.user.findUnique({ where: { id: userId } });
-    if (!existing) {
-      return NextResponse.json(
-        { error: "User tidak ditemukan." },
-        { status: 404 }
-      );
+  // --- Path A: local dev (Prisma + SQLite) ---
+  if (isDbAvailable()) {
+    try {
+      const existing = await db.user.findUnique({ where: { id: userId } });
+      if (existing) {
+        const updated = await db.user.update({
+          where: { id: userId },
+          data: updateData,
+        });
+
+        // Sync seller records
+        if (updateData.phone !== undefined || updateData.name) {
+          const sellerUpdate: { phone?: string | null; name?: string } = {};
+          if (updateData.phone !== undefined) sellerUpdate.phone = updateData.phone;
+          if (updateData.name) sellerUpdate.name = updateData.name;
+          await db.seller.updateMany({
+            where: { listings: { some: { userId } } },
+            data: sellerUpdate,
+          });
+        }
+
+        return NextResponse.json({
+          user: {
+            id: updated.id,
+            name: updated.name,
+            email: updated.email,
+            phone: updated.phone,
+            city: updated.city,
+            company: updated.company,
+            address: updated.address,
+            bannerImage: updated.bannerImage,
+            logoImage: updated.logoImage,
+            role: updated.role,
+            createdAt:
+              updated.createdAt instanceof Date
+                ? updated.createdAt.toISOString()
+                : updated.createdAt,
+          },
+        });
+      }
+      // not found in Prisma → fall through to Supabase
+    } catch (prismaErr) {
+      console.error("[auth/profile] Prisma PATCH error, falling back to Supabase:", prismaErr);
+      // fall through to Supabase
     }
-
-    const updated = await db.user.update({
-      where: { id: userId },
-      data: updateData,
-    });
-
-    // Sync seller records
-    if (updateData.phone !== undefined || updateData.name) {
-      const sellerUpdate: { phone?: string | null; name?: string } = {};
-      if (updateData.phone !== undefined) sellerUpdate.phone = updateData.phone;
-      if (updateData.name) sellerUpdate.name = updateData.name;
-      await db.seller.updateMany({
-        where: { listings: { some: { userId } } },
-        data: sellerUpdate,
-      });
-    }
-
-    return NextResponse.json({
-      user: {
-        id: updated.id,
-        name: updated.name,
-        email: updated.email,
-        phone: updated.phone,
-        city: updated.city,
-        company: updated.company,
-        address: updated.address,
-        bannerImage: updated.bannerImage,
-        logoImage: updated.logoImage,
-        role: updated.role,
-        createdAt:
-          updated.createdAt instanceof Date
-            ? updated.createdAt.toISOString()
-            : updated.createdAt,
-      },
-    });
-  } catch {
-    // SQLite unavailable — try Supabase next
   }
 
-  // --- Supabase fallback (Vercel) ---
+  // --- Path B: Vercel (raw Supabase) ---
   try {
     const supabase = await getSupabase();
     // Build Supabase update payload (only non-undefined fields)
@@ -178,8 +180,9 @@ export async function PATCH(req: NextRequest) {
     if (updateData.address !== undefined) supaUpdate.address = updateData.address;
     if (updateData.bannerImage !== undefined) supaUpdate.bannerImage = updateData.bannerImage;
     if (updateData.logoImage !== undefined) supaUpdate.logoImage = updateData.logoImage;
+    supaUpdate.updatedAt = new Date().toISOString();
 
-    if (Object.keys(supaUpdate).length > 0) {
+    if (Object.keys(supaUpdate).length > 1) {
       const { data: updated, error: updErr } = await supabase
         .from("User")
         .update(supaUpdate)
@@ -220,12 +223,15 @@ export async function PATCH(req: NextRequest) {
             createdAt: updated.createdAt,
           },
         });
+      } else if (updErr) {
+        console.error("[auth/profile] Supabase PATCH error:", updErr);
       }
     }
   } catch (supaErr) {
     console.error("[auth/profile] Supabase PATCH fallback error:", supaErr);
   }
 
+  // --- Path C: in-memory fallback (last resort) ---
   const user = await fallbackUpdateUser(userId, updateData);
   if (!user) {
     return NextResponse.json(

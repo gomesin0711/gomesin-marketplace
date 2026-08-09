@@ -311,7 +311,22 @@ function IklanTab() {
   const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
   const qc = useQueryClient();
   const { broadcastListings } = useChatSocket();
-  const { data, isLoading } = useQuery({ queryKey: ["admin-listings"], queryFn: () => fetchJson("/api/admin/listings"), ...RT });
+  // Track pending deletes so the 3s polling refetch canNOT bring back a
+  // listing that is being deleted (which caused the perceived 5-second delay:
+  // optimistic remove → poll re-adds → next poll finally removes for real).
+  const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-listings"],
+    queryFn: () => fetchJson("/api/admin/listings"),
+    // Filter out pending deletes from EVERY refetch result (including the
+    // 3s background poll) so deleted listings never reappear mid-mutation.
+    select: (raw: any) => {
+      if (!raw?.listings) return raw;
+      if (pendingDeletes.size === 0) return raw;
+      return { ...raw, listings: raw.listings.filter((l: any) => !pendingDeletes.has(l.id)) };
+    },
+    ...RT,
+  });
   const [previewListing, setPreviewListing] = useState<any>(null);
   const [activeImg, setActiveImg] = useState(0);
   const [activeTab, setActiveTab] = useState<AdminPkgTabKey>("all");
@@ -330,8 +345,10 @@ function IklanTab() {
   const del = useMutation({
     mutationFn: (id: string) => fetch("/api/admin/listings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }),
     // Optimistic update: remove the listing from cache IMMEDIATELY so the UI
-    // updates instantly (0ms delay). If the API fails, rollback.
+    // updates instantly (0ms delay). Also add to pendingDeletes so the 3s
+    // polling refetch canNOT bring it back before the API completes.
     onMutate: async (id: string) => {
+      setPendingDeletes((prev) => new Set(prev).add(id));
       await qc.cancelQueries({ queryKey: ["admin-listings"] });
       const prev = qc.getQueryData<any>(["admin-listings"]);
       qc.setQueryData<any>(["admin-listings"], (old: any) => {
@@ -344,8 +361,14 @@ function IklanTab() {
       });
       return { prev };
     },
-    onSuccess: () => { toast.success(tr("admDeleted")); invalidateAllListings(); },
-    onError: (_e: any, _id: string, ctx: any) => {
+    onSuccess: (_data: any, id: string) => {
+      // Clear from pending now that Supabase has committed the delete.
+      setPendingDeletes((prev) => { const n = new Set(prev); n.delete(id); return n; });
+      toast.success(tr("admDeleted"));
+      invalidateAllListings();
+    },
+    onError: (_e: any, id: string, ctx: any) => {
+      setPendingDeletes((prev) => { const n = new Set(prev); n.delete(id); return n; });
       if (ctx?.prev) qc.setQueryData(["admin-listings"], ctx.prev);
       toast.error("Gagal menghapus iklan");
     },
