@@ -436,18 +436,18 @@ function IklanTab() {
               <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                 <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0}
               </span>
-              <button onClick={() => setStatus.mutate({ id: l.id, status: "active" })} className="rounded-md border border-green-300 bg-green-50 px-2 py-1 text-[10px] font-bold text-green-700 transition hover:bg-green-500 hover:text-white hover:border-green-500">
+              <button onClick={() => setStatus.mutate({ id: l.id, status: "active" })} className="rounded-md border border-orange-500 bg-orange-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-orange-600 hover:border-orange-600">
                 Approve
               </button>
             </div>
             {/* Row 2: Pelanggaran + Hapus */}
             <div className="flex items-center gap-1">
               <button onClick={() => setViolation.mutate({ id: l.id, flag: !l.violationFlag, reason: tr("admViolationReason") })} className={cn("flex-1 rounded-md border px-2 py-1 text-[10px] font-bold transition text-center",
-                l.violationFlag ? "border-red-500 bg-red-500 text-white" : "border-red-300 bg-red-50 text-red-700 hover:bg-red-500 hover:text-white hover:border-red-500"
+                l.violationFlag ? "border-yellow-600 bg-yellow-500 text-white" : "border-yellow-400 bg-yellow-400 text-yellow-900 hover:bg-yellow-500 hover:border-yellow-500"
               )}>
                 {l.violationFlag ? "Batal" : "Pelanggaran"}
               </button>
-              <button onClick={() => { setDeleteId(l.id); setDeleteCallback(() => del.mutate(l.id)); }} className="flex-1 rounded-md border border-red-300 bg-red-50 px-2 py-1 text-[10px] font-bold text-red-700 transition hover:bg-red-500 hover:text-white hover:border-red-500">
+              <button onClick={() => setDeleteId(l.id)} className="flex-1 rounded-md border border-red-500 bg-red-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-600 hover:border-red-600">
                 Hapus
               </button>
             </div>
@@ -499,14 +499,14 @@ function IklanTab() {
             {/* Row 1: Views + Approve */}
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground"><Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0}</span>
-              <button onClick={() => setStatus.mutate({ id: l.id, status: "active" })} className="rounded-md border border-green-300 bg-green-50 px-2 py-1 text-[10px] font-bold text-green-700 transition hover:bg-green-500 hover:text-white hover:border-green-500">Approve</button>
+              <button onClick={() => setStatus.mutate({ id: l.id, status: "active" })} className="rounded-md border border-orange-500 bg-orange-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-orange-600 hover:border-orange-600">Approve</button>
             </div>
             {/* Row 2: Pelanggaran + Hapus */}
             <div className="flex items-center gap-1">
               <button onClick={() => setViolation.mutate({ id: l.id, flag: !l.violationFlag, reason: tr("admViolationReason") })} className={cn("flex-1 rounded-md border px-2 py-1 text-[10px] font-bold transition text-center",
-                l.violationFlag ? "border-red-500 bg-red-500 text-white" : "border-red-300 bg-red-50 text-red-700 hover:bg-red-500 hover:text-white hover:border-red-500"
+                l.violationFlag ? "border-yellow-600 bg-yellow-500 text-white" : "border-yellow-400 bg-yellow-400 text-yellow-900 hover:bg-yellow-500 hover:border-yellow-500"
               )}>{l.violationFlag ? "Batal" : "Pelanggaran"}</button>
-              <button onClick={() => { setDeleteId(l.id); setDeleteCallback(() => del.mutate(l.id)); }} className="flex-1 rounded-md border border-red-300 bg-red-50 px-2 py-1 text-[10px] font-bold text-red-700 transition hover:bg-red-500 hover:text-white hover:border-red-500">Hapus</button>
+              <button onClick={() => setDeleteId(l.id)} className="flex-1 rounded-md border border-red-500 bg-red-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-600 hover:border-red-600">Hapus</button>
             </div>
           </div>
         </div>
@@ -677,7 +677,7 @@ function IklanTab() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDeleteId(null)}>Batal</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => { if (deleteCallback) deleteCallback(); setDeleteId(null); }}>
+            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => { if (deleteId) del.mutate(deleteId); setDeleteId(null); }}>
               Hapus
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -784,10 +784,10 @@ function IklanBaruTab() {
               <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0}
             </span>
             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => approve(l.id)} className="grid size-7 place-items-center rounded-md border border-border bg-background text-green-600 transition hover:bg-green-500 hover:text-white hover:border-green-500" title="Setujui">
+              <button onClick={() => approve(l.id)} className="grid size-7 place-items-center rounded-md border border-blue-500 bg-blue-500 text-white transition hover:bg-blue-600 hover:border-blue-600" title="Setujui">
                 <CheckCircle2 className="size-3" />
               </button>
-              <button onClick={() => reject(l.id)} className="grid size-7 place-items-center rounded-md border border-red-300 bg-background text-red-600 transition hover:bg-red-500 hover:text-white hover:border-red-500" title="Tolak">
+              <button onClick={() => reject(l.id)} className="grid size-7 place-items-center rounded-md border border-red-500 bg-red-500 text-white transition hover:bg-red-600 hover:border-red-600" title="Tolak">
                 <XCircle className="size-3" />
               </button>
             </div>
@@ -830,8 +830,8 @@ function IklanBaruTab() {
               <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0} dilihat
             </span>
             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => approve(l.id)} className="grid size-7 place-items-center rounded-md border border-border bg-background text-green-600 transition hover:bg-green-500 hover:text-white hover:border-green-500" title="Setujui"><CheckCircle2 className="size-3" /></button>
-              <button onClick={() => reject(l.id)} className="grid size-7 place-items-center rounded-md border border-red-300 bg-background text-red-600 transition hover:bg-red-500 hover:text-white hover:border-red-500" title="Tolak"><XCircle className="size-3" /></button>
+              <button onClick={() => approve(l.id)} className="grid size-7 place-items-center rounded-md border border-blue-500 bg-blue-500 text-white transition hover:bg-blue-600 hover:border-blue-600" title="Setujui"><CheckCircle2 className="size-3" /></button>
+              <button onClick={() => reject(l.id)} className="grid size-7 place-items-center rounded-md border border-red-500 bg-red-500 text-white transition hover:bg-red-600 hover:border-red-600" title="Tolak"><XCircle className="size-3" /></button>
             </div>
           </div>
         </div>
@@ -1089,7 +1089,7 @@ function IklanExpiredTab() {
               <button onClick={() => renew.mutate({ id: l.id, days: 30 })} className="grid size-7 place-items-center rounded-md border border-border bg-background text-orange-600 transition hover:bg-orange-500 hover:text-white hover:border-orange-500" title="Perpanjang 30 hari">
                 <RefreshCw className="size-3" />
               </button>
-              <button onClick={() => { setDeleteId(l.id); setDeleteCallback(() => del.mutate(l.id)); }} className="grid size-7 place-items-center rounded-md border border-destructive/30 bg-background text-destructive transition hover:bg-destructive hover:text-white hover:border-destructive" title={tr("admDelete")}>
+              <button onClick={() => { setDeleteId(l.id); }} className="grid size-7 place-items-center rounded-md border border-destructive/30 bg-background text-destructive transition hover:bg-destructive hover:text-white hover:border-destructive" title={tr("admDelete")}>
                 <Trash2 className="size-3" />
               </button>
             </div>
@@ -1132,7 +1132,7 @@ function IklanExpiredTab() {
             <span className="text-[10px] text-muted-foreground">{l.seller?.name}</span>
             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
               <button onClick={() => renew.mutate({ id: l.id, days: 30 })} className="grid size-7 place-items-center rounded-md border border-border bg-background text-orange-600 transition hover:bg-orange-500 hover:text-white hover:border-orange-500" title="Perpanjang 30 hari"><RefreshCw className="size-3" /></button>
-              <button onClick={() => { setDeleteId(l.id); setDeleteCallback(() => del.mutate(l.id)); }} className="grid size-7 place-items-center rounded-md border border-destructive/30 bg-background text-destructive transition hover:bg-destructive hover:text-white hover:border-destructive" title={tr("admDelete")}><Trash2 className="size-3" /></button>
+              <button onClick={() => { setDeleteId(l.id); }} className="grid size-7 place-items-center rounded-md border border-destructive/30 bg-background text-destructive transition hover:bg-destructive hover:text-white hover:border-destructive" title={tr("admDelete")}><Trash2 className="size-3" /></button>
             </div>
           </div>
         </div>
@@ -1276,7 +1276,7 @@ function IklanExpiredTab() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDeleteId(null)}>Batal</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => { if (deleteCallback) deleteCallback(); setDeleteId(null); }}>
+            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => { if (deleteId) del.mutate(deleteId); setDeleteId(null); }}>
               Hapus
             </AlertDialogAction>
           </AlertDialogFooter>

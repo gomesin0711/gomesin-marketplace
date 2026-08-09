@@ -13,7 +13,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Send, BadgeCheck, MessageCircle, Loader2, MapPin, Tag, Trash2, Ban, Eraser, Check, ImagePlus, Camera, FileImage } from "lucide-react";
+import { Send, BadgeCheck, MessageCircle, Loader2, MapPin, Tag, Trash2, Ban, Eraser, Check, ImagePlus, Camera, FileImage, ArrowLeft, Settings } from "lucide-react";
 import type { Listing, Seller } from "@/lib/types";
 import { formatRupiahFull } from "@/lib/types";
 import { toast } from "sonner";
@@ -22,6 +22,12 @@ import { useMounted } from "@/lib/use-mounted";
 import { cn } from "@/lib/utils";
 import { useChatSocket, type ChatMessage } from "@/lib/use-chat-socket";
 import { compressImage } from "@/lib/image";
+import { useChatBg } from "@/lib/use-chat-bg";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 type Msg = { id?: string; role: "user" | "assistant"; content: string; image?: string | null; time?: string };
 
@@ -50,6 +56,7 @@ export function ChatWidget({
   const [selectedMsg, setSelectedMsg] = useState<number | null>(null);
   const [blocked, setBlocked] = useState(false);
   const [imgSending, setImgSending] = useState(false);
+  const [bgOpen, setBgOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const imgFileRef = useRef<HTMLInputElement>(null);
@@ -64,6 +71,7 @@ export function ChatWidget({
   const ownerName = (listing as any).user?.name || seller.name;
   const currentUser = useStore((s) => s.user);
   const goToLogin = useStore((s) => s.goToLogin);
+  const { bgKey, setBg, bgStyle, isDark: bgIsDark, presets } = useChatBg();
 
   const queryClient = useQueryClient();
   const { sendMessage, markRead, subscribe } = useChatSocket();
@@ -297,7 +305,14 @@ export function ChatWidget({
       <DialogContent className="max-w-md gap-0 overflow-hidden p-0 sm:max-w-md" showCloseButton={false}>
         {/* ===== HEADER ===== */}
         <DialogHeader className="border-b border-border bg-primary p-3 text-primary-foreground">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onOpenChange(false)}
+              aria-label="Kembali"
+              className="grid size-8 shrink-0 place-items-center rounded-full text-primary-foreground transition hover:bg-white/15"
+            >
+              <ArrowLeft className="size-5" />
+            </button>
             <Avatar className="size-10 border-2 border-white/30">
               <AvatarFallback className="bg-white/20 text-sm font-bold text-primary-foreground">{initials}</AvatarFallback>
             </Avatar>
@@ -311,6 +326,34 @@ export function ChatWidget({
                 <span className={cn("size-1.5 rounded-full", blocked ? "bg-red-400" : "bg-orange-400")} /> {blocked ? "Diblokir" : tr("chatOnline")}
               </DialogDescription>
             </div>
+            <Popover open={bgOpen} onOpenChange={setBgOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  className="grid size-8 shrink-0 place-items-center rounded-full text-primary-foreground transition hover:bg-white/15"
+                  aria-label="Pengaturan chat"
+                >
+                  <Settings className="size-5" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-3" align="end">
+                <p className="mb-2 text-xs font-bold text-foreground">Warna Background Chat</p>
+                <div className="grid grid-cols-5 gap-2">
+                  {presets.map((p) => (
+                    <button
+                      key={p.key}
+                      onClick={() => { setBg(p.key); }}
+                      className={cn(
+                        "size-9 rounded-full border-2 transition",
+                        bgKey === p.key ? "border-primary ring-2 ring-primary/30" : "border-border hover:scale-110"
+                      )}
+                      style={{ backgroundColor: p.color }}
+                      title={p.label}
+                      aria-label={p.label}
+                    />
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         </DialogHeader>
 
@@ -331,8 +374,8 @@ export function ChatWidget({
         {/* ===== MESSAGES ===== */}
         <div
           ref={scrollRef}
-          className="gomesin-scroll max-h-[40vh] min-h-[180px] space-y-1 overflow-y-auto p-3"
-          style={{ backgroundColor: "#e5ddd5", backgroundImage: "radial-gradient(circle at 50% 50%, rgba(0,0,0,0.03) 1px, transparent 1px)", backgroundSize: "20px 20px" }}
+          className={cn("gomesin-scroll max-h-[40vh] min-h-[180px] space-y-1 overflow-y-auto p-3", bgIsDark && "text-white")}
+          style={bgStyle}
         >
           {messages.length === 0 && loadedHistory && (
             <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -356,7 +399,7 @@ export function ChatWidget({
                   onTouchMove={handleTouchEnd}
                   className={cn(
                     "max-w-[85%] cursor-pointer rounded-2xl px-3 py-2 text-sm shadow-sm transition select-none",
-                    m.role === "user" ? "rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-white text-foreground",
+                    m.role === "user" ? "rounded-br-sm bg-primary text-primary-foreground" : cn("rounded-bl-sm", bgIsDark ? "bg-white/15 text-white" : "bg-white text-foreground"),
                     selectedMsg === i && "ring-2 ring-blue-400 ring-offset-1"
                   )}
                 >

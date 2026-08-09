@@ -223,3 +223,29 @@ Stage Summary:
 - All API endpoints returning 200 OK with real data (no fallback to seed data needed)
 - Admin credentials: gomesin0711@gmail.com / admin123
 - Architecture decision: Used Prisma+SQLite locally (instead of Supabase) because supabase-db.ts was missing from tar and Supabase credentials aren't available. The chat-service already uses Prisma+SQLite, so this keeps both services consistent and lets them share the same DB file.
+
+---
+Task ID: 2
+Agent: Main
+Task: Fix admin Iklan Aktif delete button, change button colors, remove header icon, remove mobile Dashboard menu, add chat back icon + background color settings
+
+Work Log:
+- Root cause of delete button not working: `setDeleteCallback(() => del.mutate(l.id))` was treated by React as a state UPDATER function (not a value), executing `del.mutate(l.id)` during render and storing `undefined` as the callback. The AlertDialog "Hapus" confirm then did nothing because deleteCallback was undefined.
+- Fixed IklanTab: removed buggy deleteCallback pattern, AlertDialogAction now calls `del.mutate(deleteId)` directly. Applied same fix to IklanExpiredTab.
+- Changed IklanTab button colors (grid + line cards): Approve → solid orange (bg-orange-500), Pelanggaran → solid yellow (bg-yellow-400), Hapus → solid red (bg-red-500).
+- Changed IklanBaruTab icon buttons: Setujui (approve) → solid blue button (bg-blue-500), Tolak (reject) → solid red button (bg-red-500).
+- Removed desktop Store (Penjual) icon button from header.tsx — the icon immediately right of the dark mode toggle. Mobile Store icon kept for navigation.
+- Removed Dashboard menu item from mobile hamburger drawer in profile.tsx (line 936). Desktop sidebar already had no Dashboard item.
+- Created src/lib/use-chat-bg.ts: shared hook with 10 background color presets (default, blue, teal, green, gray, lavender, pink, cream, dark, white), persisted to localStorage (key: gomesin-chat-bg). Uses lazy init to avoid setState-in-effect lint error.
+- ChatWidget (chat-widget.tsx): added ArrowLeft back button (closes dialog) + Settings gear button with Popover color picker in header. Applied dynamic bgStyle to messages container. Dark mode bg uses white/15 bubbles.
+- Profile pesan panel (profile.tsx): made back arrow visible on ALL screen sizes (removed md:hidden), added Settings gear button with Popover color picker in chat header. Applied dynamic bgStyle to messages container.
+- Verified with Agent Browser: delete confirmation dialog opens + listing deleted (count decreased), button colors confirmed via className inspection, Iklan Baru icon colors confirmed, desktop Store icon confirmed removed (mobile still present), Dashboard confirmed removed from hamburger menu, chat back button + settings popover working in both chat interfaces, background color persists to localStorage.
+
+Stage Summary:
+- Admin Iklan Aktif delete button now functional (closure bug fixed in IklanTab + IklanExpiredTab)
+- Button colors: Approve=orange, Pelanggaran=yellow, Hapus=red (Iklan Aktif); Setujui=blue, Tolak=red (Iklan Baru)
+- Desktop header Store icon removed (right of dark mode toggle)
+- Mobile hamburger menu Dashboard item removed
+- Chat back icon + background color settings added to both ChatWidget popup and profile Pesan panel
+- 10 color presets persisted via localStorage, shared across both chat interfaces
+- All changes browser-verified with 0 console errors

@@ -485,22 +485,6 @@ export function Header() {
               {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
             </button>
           )}
-          <button
-            onClick={() => {
-              const st = useStore.getState() as any;
-              if (st?.user?.id) {
-                const sid = st.user.sellerId || st.user.id;
-                useStore.getState().goToSeller(sid);
-              } else {
-                goToLogin();
-              }
-            }}
-            className="relative hidden h-10 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-foreground hover:bg-accent md:flex"
-            aria-label="Penjual"
-          >
-            <Store className="size-5" />
-          </button>
-
           {/* House icon: goes to seller store page (desktop only) */}
           {mounted && user && (
             <button

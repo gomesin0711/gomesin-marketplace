@@ -89,6 +89,12 @@ import { playNotificationSound, isChatSoundEnabled, setChatSoundEnabled } from "
 import { DashboardView } from "./dashboard";
 import { FavoritesView } from "./favorites";
 import EmojiPicker, { EmojiStyle, Theme } from "emoji-picker-react";
+import { useChatBg } from "@/lib/use-chat-bg";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 type PanelType =
   | "pesan"
@@ -237,6 +243,8 @@ export function ProfileView() {
   const [msgMenu, setMsgMenu] = useState<{ visible: boolean; x: number; y: number; msgIndex: number | null }>({ visible: false, x: 0, y: 0, msgIndex: null });
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const { bgKey: chatBgKey, setBg: setChatBg, bgStyle: chatBgStyle, isDark: chatBgIsDark, presets: chatBgPresets } = useChatBg();
+  const [chatBgOpen, setChatBgOpen] = useState(false);
   const [payFilter, setPayFilter] = useState<"all" | "paid" | "pending">("all");
   const [payViewMode, setPayViewMode] = useState<"grid" | "line">("grid");
   const [myAdsView, setMyAdsView] = useState<"grid" | "line">("grid");
@@ -933,7 +941,6 @@ export function ProfileView() {
               <p className="px-2.5 pb-0.5 pt-1.5 text-[9px] font-bold uppercase tracking-wide text-muted-foreground/50">Iklan & Transaksi</p>
               {[
                 ...(user?.role === "admin" ? [{ icon: ShieldCheck, label: tr("adminPanel"), action: () => { goToAdmin(); setDrawerOpen(false); }, navigate: true, key: "admin" }] : []),
-                { icon: LayoutDashboard, label: "Dashboard", action: () => { goToDashboard(); setPanel(null); setDrawerOpen(false); }, navigate: true, key: "dashboard" },
                 { icon: Tag, label: tr("profMyAds"), action: () => { setPanel("iklan-saya"); setDrawerOpen(false); }, navigate: false, key: "iklan-saya" },
                 { icon: Heart, label: tr("myFavorites"), action: () => { setPanel("favorit-saya"); setDrawerOpen(false); }, navigate: false, key: "favorit-saya" },
                 { icon: MessageSquare, label: tr("messages"), action: () => { setPanel("pesan"); setDrawerOpen(false); }, navigate: false, key: "pesan" },
@@ -1271,12 +1278,12 @@ export function ProfileView() {
                       const convo = chatMessages[activeChatId as any] || [];
                       return (
                         <>
-                          {/* Chat header — light gray, back arrow on mobile only */}
+                          {/* Chat header — light gray, back arrow + settings */}
                           <div className="flex items-center gap-2 border-b border-border bg-[#f0f2f5] p-2.5">
                             <button
                               onClick={() => setActiveChatId(null)}
                               aria-label="Kembali"
-                              className="grid size-9 shrink-0 place-items-center rounded-full hover:bg-black/5 md:hidden"
+                              className="grid size-9 shrink-0 place-items-center rounded-full text-foreground hover:bg-black/5"
                             >
                               <ChevronLeft className="size-5" />
                             </button>
@@ -1296,16 +1303,40 @@ export function ProfileView() {
                               </div>
                               <p className="text-[10px] text-muted-foreground">online</p>
                             </div>
+                            <Popover open={chatBgOpen} onOpenChange={setChatBgOpen}>
+                              <PopoverTrigger asChild>
+                                <button
+                                  className="grid size-9 shrink-0 place-items-center rounded-full text-foreground transition hover:bg-black/5"
+                                  aria-label="Pengaturan chat"
+                                >
+                                  <Settings className="size-5" />
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-64 p-3" align="end">
+                                <p className="mb-2 text-xs font-bold text-foreground">Warna Background Chat</p>
+                                <div className="grid grid-cols-5 gap-2">
+                                  {chatBgPresets.map((p) => (
+                                    <button
+                                      key={p.key}
+                                      onClick={() => { setChatBg(p.key); }}
+                                      className={cn(
+                                        "size-9 rounded-full border-2 transition",
+                                        chatBgKey === p.key ? "border-primary ring-2 ring-primary/30" : "border-border hover:scale-110"
+                                      )}
+                                      style={{ backgroundColor: p.color }}
+                                      title={p.label}
+                                      aria-label={p.label}
+                                    />
+                                  ))}
+                                </div>
+                              </PopoverContent>
+                            </Popover>
                           </div>
                           {/* Messages — listing shown as a chat bubble (not a banner) */}
                           <div
                             ref={chatScrollRef}
-                            className="flex-1 space-y-1.5 overflow-y-auto p-4"
-                            style={{
-                              backgroundColor: "#e5ddd5",
-                              backgroundImage: "radial-gradient(circle at 50% 50%, rgba(0,0,0,0.03) 1px, transparent 1px)",
-                              backgroundSize: "20px 20px",
-                            }}
+                            className={cn("flex-1 space-y-1.5 overflow-y-auto p-4", chatBgIsDark && "text-white")}
+                            style={chatBgStyle}
                           >
                             <div className="flex justify-center py-1">
                               <span className="rounded-full bg-white/80 px-3 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">Hari ini</span>
