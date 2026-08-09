@@ -510,3 +510,32 @@ Stage Summary:
 - New order: 1.Informasi Dasar → 2.Detail & Deskripsi → 3.Foto Mesin → 4.Konfirmasi
 - Validation logic correctly moved with content (description check at step 2, images check at step 3)
 - Stepper labels, step titles, content blocks, and validation all consistent
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Move Simpan Dulu button to step 3 and make it fit-width
+
+Work Log:
+- User request: "tombol simpan dulu dipindahin ke step 3. tombolnya dibuat fit dengan tulisan" (move Simpan Dulu button to step 3, make it fit with text)
+- File: /home/z/my-project/src/components/gomesin/views/post-ad.tsx
+- Before: Simpan Dulu button was in Step 2 (Detail & Deskripsi), full-width (w-full)
+- Located button at lines 756-769 (inside Step 2 block, after Spesifikasi section)
+- Located Step 3 (Foto Mesin) block ending at line 697 (after photo count <p>)
+- Changes via MultiEdit:
+  1. Removed the entire Simpan Dulu Button + <p> description block from Step 2
+  2. Added the Simpan Dulu button to Step 3 (Foto Mesin), after the photo count paragraph
+  3. Changed className from "w-full gap-2 ..." → "w-fit gap-2 ..." (fit to content width)
+  4. Wrapped button + description in a centered flex column (items-center) so the fit-width button is centered
+- Verified via Agent Browser (end-to-end):
+  - Filled Step 1 → clicked Lanjut → Step 2 (Detail & Deskripsi): confirmed "Simpan Dulu ABSENT"
+  - Filled description → clicked Lanjut → Step 3 (Foto Mesin): confirmed "Simpan Dulu PRESENT"
+  - Button dimensions: width=140px, height=36px (fit to content "Simpan Dulu" + Save icon, NOT full-width)
+  - Button centered with description text below it
+- Dev server compiled cleanly
+
+Stage Summary:
+- Simpan Dulu button moved from Step 2 (Detail & Deskripsi) → Step 3 (Foto Mesin)
+- Button width changed from w-full (full width) → w-fit (fits content: 140px wide)
+- Button centered with help text below, preserving orange styling
+- Step 2 is now cleaner (just description + specs), Step 3 has photo upload + Simpan Dulu option

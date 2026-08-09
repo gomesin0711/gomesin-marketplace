@@ -694,6 +694,23 @@ export function PostAdView() {
             <p className="text-center text-xs text-muted-foreground">
               {images.length} foto diunggah {images.length < 3 && "(min. 3)"}
             </p>
+
+            {/* Simpan Dulu button */}
+            <div className="flex flex-col items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-fit gap-2 border-orange-600 bg-orange-600 text-white hover:bg-orange-700 hover:text-white"
+                disabled={mutation.isPending || savingDraft}
+                onClick={handleSaveDraft}
+              >
+                {savingDraft ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                {savingDraft ? "Menyimpan..." : "Simpan Dulu"}
+              </Button>
+              <p className="text-center text-[11px] text-muted-foreground">
+                Simpan dulu untuk menunda pasang iklan. Iklan tersimpan dengan status &quot;Belum Aktif&quot; dan bisa Anda terbitkan nanti.
+              </p>
+            </div>
           </div>
         )}
 
@@ -753,20 +770,6 @@ export function PostAdView() {
               </div>
             </div>
 
-            {/* Simpan Dulu button */}
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full gap-2 border-orange-600 bg-orange-600 text-white hover:bg-orange-700 hover:text-white"
-              disabled={mutation.isPending || savingDraft}
-              onClick={handleSaveDraft}
-            >
-              {savingDraft ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              {savingDraft ? "Menyimpan..." : "Simpan Dulu"}
-            </Button>
-            <p className="text-center text-[11px] text-muted-foreground">
-              Simpan dulu untuk menunda pasang iklan. Iklan tersimpan dengan status &quot;Belum Aktif&quot; dan bisa Anda terbitkan nanti.
-            </p>
           </div>
         )}
 
