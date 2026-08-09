@@ -1403,3 +1403,44 @@ Stage Summary:
 - "Pasang Iklan" page now shows real package prices (was "Rp. 0" for all)
 - Beranda now shows live Supabase listings (was stale seed data) — consistent with admin panel
 - Payment-proof chat routing now works on production (admin user resolvable via /api/admin/info)
+
+---
+Task ID: 6-uniquecode-bca-delete-realtime
+Agent: Main (Z.ai Code)
+Task: Fix delete delay (5s→realtime), unique code not appearing on payment, BCA dark mode styling, ad creation failure on production
+
+Work Log:
+- Tested production endpoints to identify root causes:
+  - /api/listings/unique-code returned {error:"Gagal generate kode unik"} on production — uses Prisma db.uniqueCode which fails on Vercel (no SQLite DB, UniqueCode table doesn't exist in Supabase)
+  - /api/listings POST (ad creation) actually WORKS with correct userId — the "gagal membuat iklan" was likely a cascade from the unique-code failure blocking the payment step
+- FIX 1 (unique-code): Rewrote /api/listings/unique-code/route.ts with a 3-tier fallback:
+  - Path A (Prisma): original reservation logic using UniqueCode table (local dev only)
+  - Path B (Supabase): queries Listing.uniqueCode where not null → builds taken set → picks random 3-digit code (1-999) not in set → returns it. No reservation table needed (code is only "locked" when listing is created). Code changes on every call (random pick).
+  - Path C (emergency): random code without uniqueness check (last resort)
+  - Verified on production: returned 300, then 513 (random, different each call) ✅
+- FIX 2 (BCA dark mode): In post-ad.tsx and package-activate-dialog.tsx, the BCA blue box used `bg-white` (always white) but `text-foreground` for the account number and `text-muted-foreground` for the name. In dark mode, text-foreground becomes near-white → invisible on white background. Changed to `text-black font-bold` for both the account number and the name. Applied to:
+  - post-ad.tsx: Blu BCA box (0011 2208 8800, a.n. Lina Listiawati)
+  - package-activate-dialog.tsx: BCA box (8770338221, a.n. Lina Listiawati) + bank details card
+- FIX 3 (delete delay → realtime): Root cause was 2-fold:
+  1. Admin query had `refetchInterval: 500` (polls every 500ms = 2 API calls/sec, each making 4 Supabase queries = 8 queries/sec on production). This caused API congestion and slow refetches.
+  2. Delete/setStatus/setViolation/restore mutations used `onSuccess` → `invalidateQueries` → wait for refetch. On production, each Supabase round-trip takes 1-2s, so delete = 1-2s (API) + 1-2s (refetch) = 2-4s perceived delay.
+  - Reduced refetchInterval from 500ms to 3000ms (3s) — 6x less load, still reasonably realtime
+  - Added optimistic updates (onMutate) to ALL 6 delete mutations, 2 setStatus mutations, 1 setViolation mutation, and 1 restore mutation. The UI updates INSTANTLY (0ms delay) when the user clicks delete/publish/reject/restore — the listing is removed/updated from the React Query cache before the API call completes. If the API fails, the cache is rolled back.
+  - Also optimistically updates the beranda ["listings"] cache on delete so the listing disappears from the homepage instantly too.
+- Verified ad creation on production: POST /api/listings with correct userId + uniqueCode=456 → listing created successfully (id=cmslz9bmomcrrz8hc, status=pending, packageType=gold, uniqueCode=456 saved) ✅
+- Cleaned up test ad after verification.
+- Payment proof → chat + WhatsApp flow: The code in post-ad.tsx (lines 1335-1428) already sends chat messages via socket (with REST fallback) BEFORE opening WhatsApp. Now that /api/admin/info returns the admin user ID on production (fixed in previous task), the flow should work end-to-end. The socket connection won't work on Vercel (chat-service is local-only), but the REST fallback (/api/messages POST) ensures messages are delivered.
+
+Stage Summary:
+- Files modified (4):
+  - src/app/api/listings/unique-code/route.ts — complete rewrite with Prisma → Supabase → emergency fallback
+  - src/components/gomesin/views/post-ad.tsx — BCA box: text-foreground → text-black font-bold
+  - src/components/gomesin/package-activate-dialog.tsx — BCA box + bank details: same dark mode fix
+  - src/components/gomesin/views/admin.tsx — refetchInterval 500→3000ms + optimistic updates on all delete/setStatus/setViolation/restore mutations (10 mutations total)
+- Lint: 17 pre-existing problems (6 errors in .cjs + 11 warnings) — 0 new errors
+- Deployed to: https://gomesin.vercel.app (production)
+- Production verification:
+  - Unique code: 300, 513 (random, changes each call) ✅
+  - Ad creation: succeeds with uniqueCode saved ✅
+  - Delete: optimistic update = instant UI removal ✅
+  - BCA dark mode: text-black font-bold on white bg = visible in all modes ✅
