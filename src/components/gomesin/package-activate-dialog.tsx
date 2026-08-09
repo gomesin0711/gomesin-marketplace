@@ -244,6 +244,7 @@ export function PackageActivateDialog({
         body: JSON.stringify({
           package: selectedPackage,
           paymentMethod: needsPayment ? paymentMethod : undefined,
+          uniqueCode: uniqueCode !== null ? uniqueCode : undefined,
         }),
       });
       const data = await res.json();

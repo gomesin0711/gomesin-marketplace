@@ -1184,3 +1184,53 @@ Stage Summary:
 - Files modified: src/components/gomesin/app-shell.tsx (key prop), src/components/gomesin/views/dashboard.tsx (card redesign), src/components/gomesin/views/admin.tsx (IklanBaru 2-row, IklanDitolak text buttons, TransaksiTab lightbox), src/components/gomesin/views/profile.tsx (ChatBubbleImage + chatOpen), src/components/gomesin/chat-widget.tsx (lightbox + chatOpen), src/components/gomesin/header.tsx (ding vs ringtone), src/lib/notification-sound.ts (chatOpen flag + playDingSound), src/lib/image.ts (normalizeImageUrl routes through proxy), src/app/api/img-proxy/route.ts (tmpfiles.org + catbox.moe support with viewer-page URL extraction).
 - Verified via Agent Browser: admin panel navigation stable (Dashboard → Iklan Baru → Iklan Ditolak → Riwayat Penjualan all render correctly), My Ads cards show viewer count (no location/condition) with blue Edit + orange Hapus buttons, Iklan Baru has 2-row buttons, Iklan Ditolak has text buttons (Pulihkan blue + Hapus orange), TransaksiTab image popup works, admin chat shows 8 payment proof images loaded successfully (0 fallbacks), user chat shows 4 payment proof images loaded successfully (0 fallbacks).
 - Lint: 17 pre-existing problems (6 errors in .cjs files, 11 warnings) — 0 new errors/warnings introduced.
+
+---
+Task ID: 9-supabase-listings
+Agent: Supabase-listings-integrator
+Task: Add Supabase paths to user-facing listing routes so uniqueCode persists on Vercel
+
+Work Log:
+- Read worklog.md for prior context, then read all 3 target routes + the admin/listings reference pattern + lib/db.ts + lib/paket.ts + lib/types.ts + prisma/schema.prisma.
+- Confirmed the existing /api/admin/listings/route.ts pattern: SUPABASE_URL + SUPABASE_ANON_KEY constants, async getSupabase() that lazily imports @supabase/supabase-js, parseSupabaseListing(row) helper that converts price string→number and parses images/specs JSON strings, and "try Prisma (with isDbAvailable()) first, fall through to Supabase on error" structure.
+
+- File 1: src/app/api/listings/route.ts (POST handler)
+  - Added Supabase helper block (SUPABASE_URL, SUPABASE_ANON_KEY, getSupabase, safeJsonParse, parseSupabaseListing) at the top of the file — mirrors admin route exactly.
+  - Added `isDbAvailable` to the imports from @/lib/db.
+  - GET handler left untouched (it already falls back to getFallbackListings on Prisma error — task instructions said leave as is).
+  - POST handler restructured into Path A (Prisma, wrapped in try/catch) + Path B (Supabase fallback):
+    * Path A preserves the EXACT original Prisma logic (find-or-create Seller by userId → listings.seller, fallback to create; find-or-create Category by sortOrder; saveImagesToLocal; db.listing.create with uniqueCode field).
+    * Path B (Supabase): find-or-create Seller (query Listing.sellerId by userId → query Seller by name+phone → insert new Seller); find-or-create Category (use provided categoryId, else first by sortOrder); build insertPayload with ALL fields (title, slug, description, price, priceType, condition, brand, yearProduced, city, province, images [raw JSON, no saveImagesToLocal on Vercel], specs, packageType, featured, status, paymentStatus, paymentExpiry [ISO string], uniqueCode [typeof===number && >0 ? : null], categoryId, sellerId, userId, views=0, violationFlag=false). Insert with select `*, category(*), seller(*), user(*)` and return parseSupabaseListing(newRow) with status 201.
+
+- File 2: src/app/api/listings/[slug]/route.ts (PATCH + DELETE handlers)
+  - Added the same Supabase helper block at the top.
+  - Added `isDbAvailable` to imports from @/lib/db.
+  - GET handler left Prisma-only (already has getFallbackListingBySlug fallback — task said leave as is).
+  - PATCH handler restructured into Path A (Prisma try/catch) + Path B (Supabase fallback):
+    * Path A preserves exact original Prisma PATCH logic (findUnique by slug, build data object from request body, package activation block that recomputes packageType/featured/status/paymentStatus/paymentExpiry and conditionally sets uniqueCode).
+    * Path B (Supabase): find Listing by slug → build the same `data` object from request body (title, description, price, priceType, condition, brand, yearProduced, city, province, categoryId, images [raw JSON string, no saveImagesToLocal], specs); if pkg provided, recompute packageType/featured/status/paymentStatus/paymentExpiry from getPaketMap() and INCLUDE uniqueCode in the update when `typeof uniqueCode === "number" && uniqueCode > 0`. Update by id, return parseSupabaseListing(updatedRow).
+  - DELETE handler restructured into Path A (Prisma try/catch) + Path B (Supabase fallback):
+    * Path A preserves exact original Prisma DELETE logic (findUnique by slug → delete by id → return { success: true, id }).
+    * Path B (Supabase): find Listing by slug to get id → delete from Listing by id → return { success: true, id }.
+
+- File 3: src/app/api/my-listings/route.ts (GET handler)
+  - Added the same Supabase helper block at the top.
+  - Added `isDbAvailable` to imports from @/lib/db.
+  - GET handler restructured into Path A (Prisma try/catch) + Path B (Supabase fallback):
+    * Path A preserves exact original Prisma logic (whereClause by userId or sellerId, findMany with category/seller/user includes, fallback to sellerId=userId when userId yields 0 results).
+    * Path B (Supabase): filter by `userId` column (or `sellerId` if that's what was provided), select `*, category(*), seller(*), user(*)`, order createdAt desc; if userId yielded 0 rows, retry filtering by sellerId=userId as fallback. Map results through parseSupabaseListing. Return { listings, total }.
+
+- Ran `bun run lint`: 17 pre-existing problems (6 errors in daemon.cjs + start-chat.cjs no-require-imports, 11 unrelated warnings) — 0 new errors or warnings introduced in the modified files. Identical to the baseline noted in the previous worklog entry.
+- Ran `bunx tsc --noEmit` filtered to the modified files: 8 pre-existing TS errors in listings/route.ts (all about `let dbUser = null` / `let seller = null` type narrowing — present in the original file before my edit, confirmed via `git stash` comparison). 0 new TS errors in any of the 3 modified files. The [slug]/route.ts and my-listings/route.ts files have 0 TS errors.
+
+Stage Summary:
+- Files modified (3):
+  - /home/z/my-project/src/app/api/listings/route.ts — added Supabase helper block + Supabase fallback path for POST (insert Listing with all fields including uniqueCode).
+  - /home/z/my-project/src/app/api/listings/[slug]/route.ts — added Supabase helper block + Supabase fallback paths for PATCH (update by slug→id, includes uniqueCode on package activation) and DELETE (delete by slug→id).
+  - /home/z/my-project/src/app/api/my-listings/route.ts — added Supabase helper block + Supabase fallback path for GET (filter by userId/sellerId with sellerId fallback when userId yields 0 rows).
+- All 3 routes now follow the admin route's pattern: try Prisma (gated by isDbAvailable() AND wrapped in try/catch) → fall through to raw Supabase client on Vercel. Local dev flow is unchanged (Prisma path remains primary).
+- uniqueCode IS included in every Supabase INSERT/UPDATE payload:
+  - POST /api/listings: `uniqueCode: typeof uniqueCode === "number" && uniqueCode > 0 ? uniqueCode : null` in insertPayload.
+  - PATCH /api/listings/[slug]: `if (typeof uniqueCode === "number" && uniqueCode > 0) data.uniqueCode = uniqueCode;` inside the `if (pkg)` block (same conditional as the Prisma path — only set on package activation, never overwritten to null otherwise).
+- saveImagesToLocal is correctly bypassed on the Supabase path (Vercel filesystem is read-only) — raw images array is stored as JSON string in the Listing.images column.
+- Lint: 0 new errors. Type-check: 0 new errors (8 pre-existing TS errors in listings/route.ts are about `let x = null` narrowing and predate this task).

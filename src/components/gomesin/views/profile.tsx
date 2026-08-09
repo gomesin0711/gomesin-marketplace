@@ -1138,7 +1138,12 @@ export function ProfileView() {
             {(() => {
               const totalValue = myListings.reduce((a: number, l: any) => a + (Number(l.price) || 0), 0);
               const soldCount = myListings.filter((l: any) => l.status === "sold").length;
-              const totalAdFee = myListings.reduce((sum: number, l: any) => sum + (paketMap[l.packageType]?.price ?? 0), 0);
+              // Biaya Pasang Iklan = sum of (package price + unique code) for every listing.
+              const totalAdFee = myListings.reduce((sum: number, l: any) => {
+                const pkgPrice = paketMap[l.packageType]?.price ?? 0;
+                const code = typeof l.uniqueCode === "number" && l.uniqueCode > 0 ? l.uniqueCode : 0;
+                return sum + pkgPrice + code;
+              }, 0);
               const stats = [
                 { label: "Nilai Aset", value: formatRupiahFull(totalValue), icon: Wallet, color: "text-orange-600" },
                 { label: "Iklan Terjual", value: soldCount.toLocaleString("id-ID"), icon: CheckCircle2, color: "text-blue-500" },
@@ -1724,7 +1729,13 @@ export function ProfileView() {
 
             {/* RIWAYAT PEMBAYARAN — user-friendly: summary stats + filter tabs + card list */}
             {panel === "saldo" && (() => {
-              const totalAdFee = myListings.reduce((sum: number, l: any) => sum + (paketMap[l.packageType]?.price ?? 0), 0);
+              // Total = sum of (package price + unique code) for every listing.
+              // Unique code is the 3-digit payment identifier stored on each listing.
+              const totalAdFee = myListings.reduce((sum: number, l: any) => {
+                const pkgPrice = paketMap[l.packageType]?.price ?? 0;
+                const code = typeof l.uniqueCode === "number" && l.uniqueCode > 0 ? l.uniqueCode : 0;
+                return sum + pkgPrice + code;
+              }, 0);
               const paidCount = myListings.filter((l: any) => l.paymentStatus === "paid").length;
               const pendingCount = myListings.filter((l: any) => l.paymentStatus !== "paid").length;
               const filtered = payFilter === "paid" ? myListings.filter((l: any) => l.paymentStatus === "paid")
@@ -1795,6 +1806,9 @@ export function ProfileView() {
                           const pkgName = l.packageType === "spotlight" ? "Titanium" : l.packageType === "highlight" ? "Platinum" : l.packageType === "sundul" ? "Colek" : "Gold";
                           const pkgColor = l.packageType === "spotlight" ? "bg-amber-100 text-amber-700" : l.packageType === "highlight" ? "bg-orange-100 text-orange-700" : l.packageType === "sundul" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700";
                           const isPaid = l.paymentStatus === "paid";
+                          const pkgPrice = paketMap[l.packageType]?.price ?? 0;
+                          const uc = typeof l.uniqueCode === "number" && l.uniqueCode > 0 ? l.uniqueCode : 0;
+                          const totalPaid = pkgPrice + uc;
                           return (
                             <div key={l.id} className="overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:shadow-md">
                               {/* Image — top, full width */}
@@ -1823,9 +1837,26 @@ export function ProfileView() {
                                   <Clock className="size-3" />
                                   {new Date(l.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
                                 </p>
-                                <div className="mt-2 flex items-end justify-between border-t border-border/50 pt-2">
-                                  <p className="text-[10px] text-muted-foreground md:text-xs">Harga Iklan</p>
-                                  <p className="text-base font-extrabold text-primary md:text-lg">{formatAdFee(l.packageType)}</p>
+                                {/* Price breakdown — package price + unique code = total */}
+                                <div className="mt-2 space-y-1 border-t border-border/50 pt-2">
+                                  <div className="flex items-center justify-between text-[10px] text-muted-foreground md:text-xs">
+                                    <span>Harga Paket</span>
+                                    <span className="font-medium text-foreground">
+                                      {pkgPrice > 0 ? `Rp ${pkgPrice.toLocaleString("id-ID")}` : "Gratis"}
+                                    </span>
+                                  </div>
+                                  {uc > 0 && (
+                                    <div className="flex items-center justify-between text-[10px] text-muted-foreground md:text-xs">
+                                      <span>Kode Unik</span>
+                                      <span className="font-semibold text-amber-600">+{String(uc).padStart(3, "0")}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex items-end justify-between pt-1">
+                                    <p className="text-[10px] text-muted-foreground md:text-xs">Total Bayar</p>
+                                    <p className="text-base font-extrabold text-primary md:text-lg">
+                                      {totalPaid > 0 ? `Rp ${totalPaid.toLocaleString("id-ID")}` : "Gratis"}
+                                    </p>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -1839,13 +1870,15 @@ export function ProfileView() {
                       </div>
                       ) : (
                       <div className="overflow-x-auto rounded-xl border border-border bg-card">
-                        <table className="w-full min-w-[480px]">
+                        <table className="w-full min-w-[640px]">
                           <thead>
                             <tr className="border-b border-border bg-secondary/50 text-left text-xs font-semibold text-muted-foreground">
                               <th className="p-2">Iklan</th>
                               <th className="p-2">Paket</th>
                               <th className="hidden p-2 sm:table-cell">Tanggal</th>
-                              <th className="p-2 text-right">Harga Iklan</th>
+                              <th className="p-2 text-right">Harga Paket</th>
+                              <th className="p-2 text-center">Kode Unik</th>
+                              <th className="p-2 text-right">Total Bayar</th>
                               <th className="p-2 text-center">Status</th>
                             </tr>
                           </thead>
@@ -1856,6 +1889,9 @@ export function ProfileView() {
                               const pkgName = l.packageType === "spotlight" ? "Titanium" : l.packageType === "highlight" ? "Platinum" : l.packageType === "sundul" ? "Colek" : "Gold";
                               const pkgColor = l.packageType === "spotlight" ? "bg-amber-100 text-amber-700" : l.packageType === "highlight" ? "bg-orange-100 text-orange-700" : l.packageType === "sundul" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700";
                               const isPaid = l.paymentStatus === "paid";
+                              const pkgPrice = paketMap[l.packageType]?.price ?? 0;
+                              const uc = typeof l.uniqueCode === "number" && l.uniqueCode > 0 ? l.uniqueCode : 0;
+                              const totalPaid = pkgPrice + uc;
                               return (
                                 <tr key={l.id} className="border-b border-border transition hover:bg-accent/30">
                                   <td className="p-2">
@@ -1866,13 +1902,21 @@ export function ProfileView() {
                                   </td>
                                   <td className="p-2"><span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", pkgColor)}>{pkgName}</span></td>
                                   <td className="hidden p-2 text-xs text-muted-foreground sm:table-cell">{new Date(l.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</td>
-                                  <td className="p-2 text-right text-xs font-bold text-primary">{formatAdFee(l.packageType)}</td>
+                                  <td className="p-2 text-right text-xs font-medium text-foreground">
+                                    {pkgPrice > 0 ? `Rp ${pkgPrice.toLocaleString("id-ID")}` : "Gratis"}
+                                  </td>
+                                  <td className="p-2 text-center text-xs font-semibold text-amber-600">
+                                    {uc > 0 ? `+${String(uc).padStart(3, "0")}` : "-"}
+                                  </td>
+                                  <td className="p-2 text-right text-xs font-bold text-primary">
+                                    {totalPaid > 0 ? `Rp ${totalPaid.toLocaleString("id-ID")}` : "Gratis"}
+                                  </td>
                                   <td className="p-2 text-center"><span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", isPaid ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700")}>{isPaid ? "Lunas" : "Pending"}</span></td>
                                 </tr>
                               );
                             })}
                             {filtered.length === 0 && (
-                              <tr><td colSpan={5} className="p-8 text-center text-sm text-muted-foreground">Tidak ada iklan dengan status ini.</td></tr>
+                              <tr><td colSpan={7} className="p-8 text-center text-sm text-muted-foreground">Tidak ada iklan dengan status ini.</td></tr>
                             )}
                           </tbody>
                         </table>

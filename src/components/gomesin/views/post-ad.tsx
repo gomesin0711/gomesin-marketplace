@@ -442,6 +442,7 @@ export function PostAdView() {
       featured: selectedPackage === "spotlight" || selectedPackage === "highlight",
       package: selectedPackage,
       paymentMethod: paymentMethod || undefined,
+      uniqueCode: uniqueCode > 0 ? uniqueCode : undefined,
       userId: user?.id,
       userName: user?.name,
       userPhone: user?.phone,

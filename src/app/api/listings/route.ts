@@ -1,10 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, isDbAvailable } from "@/lib/db";
 import { parseListing } from "@/lib/types";
 import { getPaketMap } from "@/lib/paket";
 import { saveImagesToLocal } from "@/lib/save-image";
 import { getFallbackListings } from "@/lib/fallback-data";
 import type { ListingFilters } from "@/lib/fallback-data";
+
+// ---------------------------------------------------------------------------
+// Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
+// connect to PostgreSQL. Locally we use Prisma + SQLite.
+// Mirrors /api/admin/listings/route.ts.
+// ---------------------------------------------------------------------------
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://nyyvmttbwlwqunigkrms.supabase.co";
+const SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55eXZtdHRid2x3cXVuaWdrcm1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMTY1NjIsImV4cCI6MjEwMDU5MjU2Mn0.yME5cuLw6bAnZ3-Pdq4IoFwEkyDATjJ3XcaJXBNcWe8";
+
+async function getSupabase() {
+  const { createClient } = await import("@supabase/supabase-js");
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+function safeJsonParse(s: string, fallback: any) {
+  try { return JSON.parse(s); } catch { return fallback; }
+}
+
+// Parse a raw Supabase row into the same shape as parseListing(Prisma row).
+function parseSupabaseListing(row: any) {
+  if (!row) return row;
+  return {
+    ...row,
+    price: typeof row.price === "string" ? Number(row.price) : row.price ?? 0,
+    images: row.images ? (typeof row.images === "string" ? safeJsonParse(row.images, []) : row.images) : [],
+    specs: row.specs ? (typeof row.specs === "string" ? safeJsonParse(row.specs, {}) : row.specs) : {},
+    createdAt: row.createdAt ?? null,
+    paymentExpiry: row.paymentExpiry ?? null,
+    category: row.category ?? null,
+    seller: row.seller ?? null,
+    user: row.user ?? null,
+  };
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -124,7 +160,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { title, description, price, priceType, condition, brand, yearProduced, city, province, categoryId, images, specs, featured, package: pkg, paymentMethod, userId, userName, userPhone, saveAsDraft } = body;
+    const { title, description, price, priceType, condition, brand, yearProduced, city, province, categoryId, images, specs, featured, package: pkg, paymentMethod, uniqueCode, userId, userName, userPhone, saveAsDraft } = body;
 
     // Draft mode ("Simpan Dulu"): only title is required, skip payment verification.
     const isDraft = saveAsDraft === true;
@@ -135,105 +171,247 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Judul wajib diisi untuk menyimpan dulu." }, { status: 400 });
     }
 
-    // Fetch the actual user from DB to get their latest name + phone
-    // (more reliable than client-sent values which may be stale).
-    let dbUser = null;
-    if (userId) {
-      dbUser = await db.user.findUnique({ where: { id: userId } });
-    }
-    const finalName = dbUser?.name || userName || "Anda (Pengguna Gomesin)";
-    const finalPhone = dbUser?.phone || userPhone || "0812-0000-0000";
+    // --- Path A: local dev (Prisma + SQLite) ---
+    if (isDbAvailable()) {
+      try {
+        // Fetch the actual user from DB to get their latest name + phone
+        // (more reliable than client-sent values which may be stale).
+        let dbUser = null;
+        if (userId) {
+          dbUser = await db.user.findUnique({ where: { id: userId } });
+        }
+        const finalName = dbUser?.name || userName || "Anda (Pengguna Gomesin)";
+        const finalPhone = dbUser?.phone || userPhone || "0812-0000-0000";
 
-    // Find or create a seller record tied to this user.
-    // Each user gets their own seller profile so their ads are isolated.
-    // Try to find existing seller by matching listings with this userId.
-    let seller = null;
-    if (userId) {
-      const userListings = await db.listing.findFirst({
-        where: { userId },
-        include: { seller: true },
-      });
-      if (userListings) {
-        seller = userListings.seller;
+        // Find or create a seller record tied to this user.
+        // Each user gets their own seller profile so their ads are isolated.
+        // Try to find existing seller by matching listings with this userId.
+        let seller = null;
+        if (userId) {
+          const userListings = await db.listing.findFirst({
+            where: { userId },
+            include: { seller: true },
+          });
+          if (userListings) {
+            seller = userListings.seller;
+          }
+        }
+        if (!seller) {
+          seller = await db.seller.create({
+            data: {
+              name: finalName,
+              phone: finalPhone,
+              city: city,
+              province: province,
+              verified: false,
+              rating: 5.0,
+              reviewCount: 0,
+            },
+          });
+        } else {
+          // Update existing seller with latest user info (in case profile changed)
+          seller = await db.seller.update({
+            where: { id: seller.id },
+            data: { name: finalName, phone: finalPhone },
+          });
+        }
+
+        const slugBase = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+        const slug = slugBase + "-" + Math.random().toString(36).slice(2, 7);
+
+        // Package pricing from DB (admin can edit via Paket tab)
+        const paketMap = await getPaketMap();
+        const pkgKey = pkg || "colek";
+        const pkgPrice = paketMap[pkgKey]?.price ?? 0;
+        const pkgDays = paketMap[pkgKey]?.duration ?? 30;
+
+        // For draft ("Simpan Dulu"), categoryId may be empty — fallback to first category.
+        let finalCategoryId = categoryId;
+        if (!finalCategoryId) {
+          const firstCat = await db.category.findFirst({ orderBy: { sortOrder: "asc" } });
+          finalCategoryId = firstCat?.id;
+        }
+
+        // If payment method provided, mark as pending. Otherwise pending.
+        const isPaid = !!paymentMethod;
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() + pkgDays);
+
+        // Save all images to local filesystem (base64 → file, external URL → download)
+        // This ensures images NEVER disappear as long as the listing exists.
+        const rawImages: string[] = images || [];
+        const localImages = await saveImagesToLocal(rawImages);
+
+        const created = await db.listing.create({
+          data: {
+            title,
+            slug,
+            description,
+            price: Math.floor(Number(price) || 0),
+            priceType: priceType || "fixed",
+            condition: condition || "bekas",
+            brand: brand || null,
+            yearProduced: yearProduced ? parseInt(yearProduced, 10) : null,
+            city,
+            province,
+            images: JSON.stringify(localImages),
+            specs: JSON.stringify(specs || {}),
+            packageType: pkgKey,
+            featured: pkgKey === "spotlight" || pkgKey === "highlight",
+            // "Simpan Dulu" → status "draft" (Belum Aktif, tidak tayang, belum perlu bayar).
+            // Iklan normal → "pending" (menunggu verifikasi admin sebelum tayang).
+            // Admin menyetujui via /api/admin/listings (PATCH status=active) yang juga
+            // mengeset paymentStatus=paid agar langsung muncul di beranda.
+            status: isDraft ? "draft" : "pending",
+            paymentStatus: isDraft ? "unpaid" : (isPaid ? "paid" : "unpaid"),
+            paymentExpiry: isPaid ? expiryDate : null,
+            // Save the unique 3-digit payment code so that Riwayat Pembayaran can
+            // display the total amount the user was asked to pay (pkgPrice + uniqueCode).
+            uniqueCode: typeof uniqueCode === "number" && uniqueCode > 0 ? uniqueCode : null,
+            categoryId: finalCategoryId,
+            sellerId: seller.id,
+            userId: userId || null,
+          },
+          include: { category: true, seller: true, user: { select: { id: true, name: true, phone: true, email: true, city: true, logoImage: true, bannerImage: true } } },
+        });
+
+        return NextResponse.json({ listing: parseListing(created) }, { status: 201 });
+      } catch (prismaErr) {
+        console.error("[listings] POST Prisma error, falling back to Supabase:", prismaErr);
+        // fall through to Supabase
       }
     }
-    if (!seller) {
-      seller = await db.seller.create({
-        data: {
+
+    // --- Path B: Vercel (raw Supabase) ---
+    const supabase = await getSupabase();
+
+    // Find-or-create the Seller: query by userId (via existing listings) first,
+    // then by name+phone, else insert a new row.
+    let sellerId: string | null = null;
+    if (userId) {
+      const { data: existingByUser } = await supabase
+        .from("Listing")
+        .select("sellerId")
+        .eq("userId", userId)
+        .limit(1);
+      if (existingByUser && existingByUser.length > 0) {
+        sellerId = existingByUser[0].sellerId;
+      }
+    }
+    const finalName = userName || "Anda (Pengguna Gomesin)";
+    const finalPhone = userPhone || "0812-0000-0000";
+    if (!sellerId) {
+      const { data: existingByName } = await supabase
+        .from("Seller")
+        .select("id")
+        .eq("name", finalName)
+        .eq("phone", finalPhone)
+        .limit(1);
+      if (existingByName && existingByName.length > 0) {
+        sellerId = existingByName[0].id;
+      }
+    }
+    if (!sellerId) {
+      const { data: newSeller, error: sellerErr } = await supabase
+        .from("Seller")
+        .insert({
+          // Supabase Seller.id has no default — generate a cuid-compatible id.
+          id: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10),
           name: finalName,
           phone: finalPhone,
-          city: city,
-          province: province,
+          city: city || "",
+          province: province || "",
           verified: false,
           rating: 5.0,
           reviewCount: 0,
-        },
-      });
+        })
+        .select("id")
+        .single();
+      if (sellerErr || !newSeller) {
+        console.error("[listings] Supabase Seller insert error:", sellerErr);
+        return NextResponse.json({ error: "Gagal membuat seller: " + (sellerErr?.message || "unknown") }, { status: 500 });
+      }
+      sellerId = newSeller.id;
     } else {
-      // Update existing seller with latest user info (in case profile changed)
-      seller = await db.seller.update({
-        where: { id: seller.id },
-        data: { name: finalName, phone: finalPhone },
-      });
+      // Update existing seller with latest user info
+      await supabase
+        .from("Seller")
+        .update({ name: finalName, phone: finalPhone })
+        .eq("id", sellerId);
+    }
+
+    // Find-or-create Category: if categoryId provided, use it; else grab the first.
+    let finalCategoryId = categoryId;
+    if (!finalCategoryId) {
+      const { data: firstCat } = await supabase
+        .from("Category")
+        .select("id")
+        .order("sortOrder", { ascending: true })
+        .limit(1)
+        .single();
+      finalCategoryId = firstCat?.id || null;
+    }
+    if (!finalCategoryId) {
+      return NextResponse.json({ error: "Kategori tidak ditemukan." }, { status: 400 });
     }
 
     const slugBase = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     const slug = slugBase + "-" + Math.random().toString(36).slice(2, 7);
 
-    // Package pricing from DB (admin can edit via Paket tab)
     const paketMap = await getPaketMap();
     const pkgKey = pkg || "colek";
     const pkgPrice = paketMap[pkgKey]?.price ?? 0;
     const pkgDays = paketMap[pkgKey]?.duration ?? 30;
 
-    // For draft ("Simpan Dulu"), categoryId may be empty — fallback to first category.
-    let finalCategoryId = categoryId;
-    if (!finalCategoryId) {
-      const firstCat = await db.category.findFirst({ orderBy: { sortOrder: "asc" } });
-      finalCategoryId = firstCat?.id;
-    }
-
-    // If payment method provided, mark as pending. Otherwise pending.
     const isPaid = !!paymentMethod;
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + pkgDays);
 
-    // Save all images to local filesystem (base64 → file, external URL → download)
-    // This ensures images NEVER disappear as long as the listing exists.
+    // On Vercel we cannot save images to the local filesystem — store the
+    // raw images array (already URLs or base64) directly as a JSON string.
     const rawImages: string[] = images || [];
-    const localImages = await saveImagesToLocal(rawImages);
 
-    const created = await db.listing.create({
-      data: {
-        title,
-        slug,
-        description,
-        price: Math.floor(Number(price) || 0),
-        priceType: priceType || "fixed",
-        condition: condition || "bekas",
-        brand: brand || null,
-        yearProduced: yearProduced ? parseInt(yearProduced, 10) : null,
-        city,
-        province,
-        images: JSON.stringify(localImages),
-        specs: JSON.stringify(specs || {}),
-        packageType: pkgKey,
-        featured: pkgKey === "spotlight" || pkgKey === "highlight",
-        // "Simpan Dulu" → status "draft" (Belum Aktif, tidak tayang, belum perlu bayar).
-        // Iklan normal → "pending" (menunggu verifikasi admin sebelum tayang).
-        // Admin menyetujui via /api/admin/listings (PATCH status=active) yang juga
-        // mengeset paymentStatus=paid agar langsung muncul di beranda.
-        status: isDraft ? "draft" : "pending",
-        paymentStatus: isDraft ? "unpaid" : (isPaid ? "paid" : "unpaid"),
-        paymentExpiry: isPaid ? expiryDate : null,
-        categoryId: finalCategoryId,
-        sellerId: seller.id,
-        userId: userId || null,
-      },
-      include: { category: true, seller: true, user: { select: { id: true, name: true, phone: true, email: true, city: true, logoImage: true, bannerImage: true } } },
-    });
+    const insertPayload: Record<string, any> = {
+      // Supabase Listing.id has no default — generate a cuid-compatible id.
+      id: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10),
+      title,
+      slug,
+      description: description || "",
+      price: Math.floor(Number(price) || 0),
+      priceType: priceType || "fixed",
+      condition: condition || "bekas",
+      brand: brand || null,
+      yearProduced: yearProduced ? parseInt(yearProduced, 10) : null,
+      city: city || "",
+      province: province || "",
+      images: JSON.stringify(rawImages),
+      specs: JSON.stringify(specs || {}),
+      packageType: pkgKey,
+      featured: pkgKey === "spotlight" || pkgKey === "highlight",
+      status: isDraft ? "draft" : "pending",
+      paymentStatus: isDraft ? "unpaid" : (isPaid ? "paid" : "unpaid"),
+      paymentExpiry: isPaid ? expiryDate.toISOString() : null,
+      // Save the unique 3-digit payment code so Riwayat Pembayaran can show pkgPrice + uniqueCode.
+      uniqueCode: typeof uniqueCode === "number" && uniqueCode > 0 ? uniqueCode : null,
+      categoryId: finalCategoryId,
+      sellerId,
+      userId: userId || null,
+      views: 0,
+      violationFlag: false,
+    };
 
-    return NextResponse.json({ listing: parseListing(created) }, { status: 201 });
+    const { data: newRow, error: insertErr } = await supabase
+      .from("Listing")
+      .insert(insertPayload)
+      .select("*")
+      .single();
+
+    if (insertErr || !newRow) {
+      console.error("[listings] Supabase Listing insert error:", insertErr);
+      return NextResponse.json({ error: "Gagal membuat iklan: " + (insertErr?.message || "unknown") }, { status: 500 });
+    }
+
+    return NextResponse.json({ listing: parseSupabaseListing(newRow) }, { status: 201 });
   } catch (e: any) {
     return NextResponse.json({ error: "Gagal membuat iklan: " + (e?.message || "unknown") }, { status: 500 });
   }

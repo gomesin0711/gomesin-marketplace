@@ -1,6 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, isDbAvailable } from "@/lib/db";
 import { parseListing } from "@/lib/types";
+
+// ---------------------------------------------------------------------------
+// Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
+// connect to PostgreSQL. Locally we use Prisma + SQLite.
+// Mirrors /api/admin/listings/route.ts.
+// ---------------------------------------------------------------------------
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://nyyvmttbwlwqunigkrms.supabase.co";
+const SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55eXZtdHRid2x3cXVuaWdrcm1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMTY1NjIsImV4cCI6MjEwMDU5MjU2Mn0.yME5cuLw6bAnZ3-Pdq4IoFwEkyDATjJ3XcaJXBNcWe8";
+
+async function getSupabase() {
+  const { createClient } = await import("@supabase/supabase-js");
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+function safeJsonParse(s: string, fallback: any) {
+  try { return JSON.parse(s); } catch { return fallback; }
+}
+
+// Parse a raw Supabase row into the same shape as parseListing(Prisma row).
+function parseSupabaseListing(row: any) {
+  if (!row) return row;
+  return {
+    ...row,
+    price: typeof row.price === "string" ? Number(row.price) : row.price ?? 0,
+    images: row.images ? (typeof row.images === "string" ? safeJsonParse(row.images, []) : row.images) : [],
+    specs: row.specs ? (typeof row.specs === "string" ? safeJsonParse(row.specs, {}) : row.specs) : {},
+    createdAt: row.createdAt ?? null,
+    paymentExpiry: row.paymentExpiry ?? null,
+    category: row.category ?? null,
+    seller: row.seller ?? null,
+    user: row.user ?? null,
+  };
+}
 
 // GET listings owned by a specific user or seller (for "My Ads" dashboard & seller page)
 export async function GET(req: NextRequest) {
@@ -15,25 +51,75 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Try userId first; if none found, fall back to sellerId
-  const whereClause: any = userId ? { userId } : { sellerId };
-  let listings = await db.listing.findMany({
-    where: whereClause,
-    orderBy: { createdAt: "desc" },
-    include: { category: true, seller: true, user: true },
-  });
+  // --- Path A: local dev (Prisma + SQLite) ---
+  if (isDbAvailable()) {
+    try {
+      // Try userId first; if none found, fall back to sellerId
+      const whereClause: any = userId ? { userId } : { sellerId };
+      let listings = await db.listing.findMany({
+        where: whereClause,
+        orderBy: { createdAt: "desc" },
+        include: { category: true, seller: true, user: true },
+      });
 
-  // If userId was provided but no listings found, try sellerId as fallback
-  if (listings.length === 0 && userId) {
-    listings = await db.listing.findMany({
-      where: { sellerId: userId },
-      orderBy: { createdAt: "desc" },
-      include: { category: true, seller: true, user: true },
-    });
+      // If userId was provided but no listings found, try sellerId as fallback
+      if (listings.length === 0 && userId) {
+        listings = await db.listing.findMany({
+          where: { sellerId: userId },
+          orderBy: { createdAt: "desc" },
+          include: { category: true, seller: true, user: true },
+        });
+      }
+
+      return NextResponse.json({
+        listings: listings.map(parseListing),
+        total: listings.length,
+      });
+    } catch (prismaErr) {
+      console.error("[my-listings] Prisma GET error, falling back to Supabase:", prismaErr);
+      // fall through to Supabase
+    }
   }
 
-  return NextResponse.json({
-    listings: listings.map(parseListing),
-    total: listings.length,
-  });
+  // --- Path B: Vercel (raw Supabase) ---
+  try {
+    const supabase = await getSupabase();
+
+    // Try userId first; if none found, fall back to sellerId
+    const filterCol = userId ? "userId" : "sellerId";
+    const filterVal = userId || sellerId;
+
+    const { data: rows, error } = await supabase
+      .from("Listing")
+      .select("*")
+      .eq(filterCol, filterVal as string)
+      .order("createdAt", { ascending: false });
+
+    let finalRows = rows || [];
+
+    // If userId was provided but no listings found, try sellerId as fallback
+    if (finalRows.length === 0 && userId) {
+      const { data: sellerRows, error: sellerErr } = await supabase
+        .from("Listing")
+        .select("*")
+        .eq("sellerId", userId)
+        .order("createdAt", { ascending: false });
+      if (!sellerErr) finalRows = sellerRows || [];
+    }
+
+    if (error) {
+      console.error("[my-listings] Supabase GET error:", error);
+    }
+
+    return NextResponse.json({
+      listings: finalRows.map(parseSupabaseListing),
+      total: finalRows.length,
+    });
+  } catch (error) {
+    console.error("[my-listings] GET error:", error);
+    return NextResponse.json({
+      listings: [],
+      total: 0,
+    });
+  }
 }

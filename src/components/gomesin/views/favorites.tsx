@@ -124,21 +124,62 @@ export function FavoritesView() {
           )}
           {viewMode === "grid" ? (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-              {listings.map((l) => <ListingCard key={l.id} listing={l} />)}
+              {listings.map((l) => (
+                <div key={l.id} className="group relative">
+                  <ListingCard listing={l} />
+                  {/* Hapus favorite button — orange, overlaid bottom-right of card */}
+                  <button
+                    type="button"
+                    title="Hapus dari favorit"
+                    aria-label="Hapus dari favorit"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFavorite(l.id);
+                      toast.success(tr("removedFromFav"), { duration: 1400 });
+                    }}
+                    className="absolute bottom-2 right-2 z-20 flex items-center gap-1 rounded-md border border-orange-500 bg-orange-500 px-2 py-1 text-[10px] font-semibold text-white shadow-lg transition hover:bg-orange-600 hover:border-orange-600"
+                  >
+                    <Trash2 className="size-3" /> <span className="hidden sm:inline">Hapus</span>
+                  </button>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-border bg-card">
-              <table className="w-full min-w-[480px]">
+              <table className="w-full min-w-[640px]">
                 <thead>
                   <tr className="border-b border-border bg-secondary/50 text-left text-xs font-semibold text-muted-foreground">
                     <th className="p-2">Mesin</th>
                     <th className="p-2">Detail</th>
                     <th className="hidden p-2 text-right sm:table-cell">Harga</th>
                     <th className="p-2 text-right">Waktu</th>
+                    <th className="p-2 text-center">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {listings.map((l) => <ListingRow key={l.id} listing={l} />)}
+                  {listings.map((l) => (
+                    <ListingRow
+                      key={l.id}
+                      listing={l}
+                      extraCells={
+                        <td className="p-2 text-center align-middle">
+                          <button
+                            type="button"
+                            title="Hapus dari favorit"
+                            aria-label="Hapus dari favorit"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(l.id);
+                              toast.success(tr("removedFromFav"), { duration: 1400 });
+                            }}
+                            className="mx-auto flex items-center gap-1 rounded-md border border-orange-500 bg-orange-500 px-2 py-1 text-[10px] font-semibold text-white transition hover:bg-orange-600 hover:border-orange-600"
+                          >
+                            <Trash2 className="size-3" /> Hapus
+                          </button>
+                        </td>
+                      }
+                    />
+                  ))}
                 </tbody>
               </table>
             </div>
