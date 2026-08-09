@@ -26,44 +26,9 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(matches[2], "base64");
     const mime = `image/${matches[1]}`;
 
-    // === PRIMARY: tmpfiles.org (60-day expiry) ===
-    // tmpfiles.org expire parameter is in MINUTES. Max 172800 (120 days).
-    // We use 86400 minutes = 60 days.
-    try {
-      const form = new FormData();
-      form.append("file", new Blob([buffer], { type: mime }), `proof.${ext}`);
-      form.append("expire", "86400"); // 60 days
-
-      const upRes = await fetch("https://tmpfiles.org/api/v1/upload", {
-        method: "POST",
-        body: form,
-      });
-
-      if (upRes.ok) {
-        const upData = await upRes.json();
-        const viewerUrl: string = upData?.data?.url;
-        if (viewerUrl) {
-          // Fetch viewer page HTML → extract direct image URL
-          // Pattern: https://tmpfiles.org/dl/{token}/{filename}
-          const viewerRes = await fetch(viewerUrl);
-          const html = await viewerRes.text();
-          const directMatch = html.match(
-            /https:\/\/tmpfiles\.org\/dl\/[^"' ]+\.(?:png|jpg|jpeg|gif|webp)/i
-          );
-          const directUrl = directMatch?.[0];
-          if (directUrl) {
-            return NextResponse.json({ url: directUrl, direct: true, host: "tmpfiles" });
-          }
-          // Fallback: return viewer URL (less ideal — WhatsApp shows as link, not image)
-          return NextResponse.json({ url: viewerUrl, direct: false, host: "tmpfiles" });
-        }
-      }
-    } catch (e) {
-      console.error("tmpfiles upload failed:", e);
-      // Continue to fallback
-    }
-
-    // === FALLBACK: catbox.moe (permanent storage, no expiry) ===
+    // === PRIMARY: catbox.moe (PERMANENT storage, no expiry) ===
+    // catbox.moe is used first because tmpfiles.org expires after 60 days,
+    // which caused payment proof images to disappear from chat.
     try {
       const form = new FormData();
       form.append("reqtype", "fileupload");
@@ -83,6 +48,40 @@ export async function POST(req: NextRequest) {
       }
     } catch (e) {
       console.error("catbox upload failed:", e);
+      // Continue to fallback
+    }
+
+    // === FALLBACK: tmpfiles.org (60-day expiry) ===
+    // Used only if catbox.moe is unavailable.
+    try {
+      const form = new FormData();
+      form.append("file", new Blob([buffer], { type: mime }), `proof.${ext}`);
+      form.append("expire", "86400"); // 60 days
+
+      const upRes = await fetch("https://tmpfiles.org/api/v1/upload", {
+        method: "POST",
+        body: form,
+      });
+
+      if (upRes.ok) {
+        const upData = await upRes.json();
+        const viewerUrl: string = upData?.data?.url;
+        if (viewerUrl) {
+          // Fetch viewer page HTML → extract direct image URL
+          const viewerRes = await fetch(viewerUrl);
+          const html = await viewerRes.text();
+          const directMatch = html.match(
+            /https:\/\/tmpfiles\.org\/dl\/[^"' ]+\.(?:png|jpg|jpeg|gif|webp)/i
+          );
+          const directUrl = directMatch?.[0];
+          if (directUrl) {
+            return NextResponse.json({ url: directUrl, direct: true, host: "tmpfiles" });
+          }
+          return NextResponse.json({ url: viewerUrl, direct: false, host: "tmpfiles" });
+        }
+      }
+    } catch (e) {
+      console.error("tmpfiles upload failed:", e);
     }
 
     return NextResponse.json(

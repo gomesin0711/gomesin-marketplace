@@ -5,33 +5,95 @@ import { getPaketMap } from "@/lib/paket";
 
 export const dynamic = "force-dynamic";
 
+// ---------------------------------------------------------------------------
+// Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
+// connect to PostgreSQL. Locally we use Prisma + SQLite.
+// ---------------------------------------------------------------------------
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://nyyvmttbwlwqunigkrms.supabase.co";
+const SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55eXZtdHRid2x3cXVuaWdrcm1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMTY1NjIsImV4cCI6MjEwMDU5MjU2Mn0.yME5cuLw6bAnZ3-Pdq4IoFwEkyDATjJ3XcaJXBNcWe8";
+
+async function getSupabase() {
+  const { createClient } = await import("@supabase/supabase-js");
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+// Parse a raw Supabase row into the same shape as parseListing(Prisma row).
+// Supabase returns columns as-is: price is a string (bigint), images/specs
+// are JSON strings, createdAt is an ISO string.
+function parseSupabaseListing(row: any) {
+  if (!row) return row;
+  return {
+    ...row,
+    price: typeof row.price === "string" ? Number(row.price) : row.price ?? 0,
+    images: row.images ? (typeof row.images === "string" ? safeJsonParse(row.images, []) : row.images) : [],
+    specs: row.specs ? (typeof row.specs === "string" ? safeJsonParse(row.specs, {}) : row.specs) : {},
+    createdAt: row.createdAt ?? null,
+    paymentExpiry: row.paymentExpiry ?? null,
+    category: row.category ?? null,
+    seller: row.seller ?? null,
+    user: row.user ?? null,
+  };
+}
+
+function safeJsonParse(s: string, fallback: any) {
+  try { return JSON.parse(s); } catch { return fallback; }
+}
+
 // GET all listings (admin, include inactive/violation/unpaid)
 export async function GET(req: NextRequest) {
-  if (!isDbAvailable()) {
-    return NextResponse.json({ listings: [] });
+  const { searchParams } = new URL(req.url);
+  const status = searchParams.get("status") || "";
+
+  // --- Path A: local dev (Prisma + SQLite) ---
+  if (isDbAvailable()) {
+    try {
+      const where: any = {};
+      if (status) where.status = status;
+      const [listings, paketMap] = await Promise.all([
+        db.listing.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          take: 100,
+          include: { category: true, seller: true },
+        }),
+        getPaketMap(),
+      ]);
+      const withFee = listings.map((l) => {
+        const parsed = parseListing(l);
+        const fee = paketMap[parsed.packageType || ""]?.price ?? 0;
+        return { ...parsed, adFee: fee };
+      });
+      return NextResponse.json({ listings: withFee });
+    } catch (error) {
+      console.error("[admin/listings] Prisma GET error, falling back to Supabase:", error);
+      // fall through to Supabase
+    }
   }
+
+  // --- Path B: Vercel (raw Supabase) ---
   try {
-    const { searchParams } = new URL(req.url);
-    const status = searchParams.get("status") || "";
-    const where: any = {};
-    if (status) where.status = status;
+    const supabase = await getSupabase();
+    let query = supabase
+      .from("Listing")
+      .select("*, category(*), seller(*), user(*)")
+      .order("createdAt", { ascending: false })
+      .limit(100);
+    if (status) query = query.eq("status", status);
+    const { data: rows, error } = await query;
+    if (error) {
+      console.error("[admin/listings] Supabase GET error:", error);
+      return NextResponse.json({ listings: [] });
+    }
 
-    const [listings, paketMap] = await Promise.all([
-      db.listing.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        take: 100,
-        include: { category: true, seller: true },
-      }),
-      getPaketMap(),
-    ]);
-
-    const withFee = listings.map((l) => {
-      const parsed = parseListing(l);
+    const paketMap = await getPaketMap();
+    const withFee = (rows || []).map((row: any) => {
+      const parsed = parseSupabaseListing(row);
       const fee = paketMap[parsed.packageType || ""]?.price ?? 0;
       return { ...parsed, adFee: fee };
     });
-
     return NextResponse.json({ listings: withFee });
   } catch (error) {
     console.error("[admin/listings] GET error:", error);
@@ -60,15 +122,20 @@ export async function PATCH(req: NextRequest) {
       else data.status = "active"; // restore when violation cleared
     }
 
-    // Update using low-level Supabase (avoid .select().single() issues with RLS)
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://nyyvmttbwlwqunigkrms.supabase.co',
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55eXZtdHRid2x3cXVuaWdrcm1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMTY1NjIsImV4cCI6MjEwMDU5MjU2Mn0.yME5cuLw6bAnZ3-Pdq4IoFwEkyDATjJ3XcaJXBNcWe8'
-    );
-    const { error } = await supabase.from('Listing').update(data).eq('id', id);
+    // Try Prisma (local) first, then Supabase (Vercel)
+    if (isDbAvailable()) {
+      try {
+        await db.listing.update({ where: { id }, data });
+        return NextResponse.json({ success: true });
+      } catch (prismaErr) {
+        console.error("[admin/listings] Prisma PATCH error, trying Supabase:", prismaErr);
+      }
+    }
+
+    const supabase = await getSupabase();
+    const { error } = await supabase.from("Listing").update(data).eq("id", id);
     if (error) {
-      console.error('Supabase update error:', error);
+      console.error("[admin/listings] Supabase PATCH error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     return NextResponse.json({ success: true });
@@ -84,15 +151,20 @@ export async function DELETE(req: NextRequest) {
     const { id } = await req.json();
     if (!id) return NextResponse.json({ error: "ID wajib" }, { status: 400 });
 
-    // Delete using low-level Supabase (avoid .select().single() issues with RLS)
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://nyyvmttbwlwqunigkrms.supabase.co',
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55eXZtdHRid2x3cXVuaWdrcm1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMTY1NjIsImV4cCI6MjEwMDU5MjU2Mn0.yME5cuLw6bAnZ3-Pdq4IoFwEkyDATjJ3XcaJXBNcWe8'
-    );
-    const { error } = await supabase.from('Listing').delete().eq('id', id);
+    // Try Prisma (local) first, then Supabase (Vercel)
+    if (isDbAvailable()) {
+      try {
+        await db.listing.delete({ where: { id } });
+        return NextResponse.json({ success: true });
+      } catch (prismaErr) {
+        console.error("[admin/listings] Prisma DELETE error, trying Supabase:", prismaErr);
+      }
+    }
+
+    const supabase = await getSupabase();
+    const { error } = await supabase.from("Listing").delete().eq("id", id);
     if (error) {
-      console.error('Supabase delete error:', error);
+      console.error("[admin/listings] Supabase DELETE error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     return NextResponse.json({ success: true });

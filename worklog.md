@@ -999,3 +999,26 @@ Stage Summary:
   more reliable, and the images persist as clickable links in the chat DB
 - Both QRIS and BCA proof flows in post-ad.tsx AND package-activate-dialog.tsx updated
 - Code pushed to GitHub; Vercel auto-deploy pending
+
+---
+Task ID: 21
+Agent: Main
+Task: Fix chat image rendering (WhatsApp-style), admin panel online (Supabase), delete buttons, rename Setujui→Publikasi
+
+Work Log:
+- Converted /api/admin/listings GET/PATCH/DELETE to use raw Supabase client with Prisma fallback (Prisma sqlite provider can't connect to PostgreSQL on Vercel)
+- Converted /api/admin/stats GET to use Supabase fallback (same root cause — admin dashboard was showing all zeros on Vercel)
+- Converted /api/messages GET/POST/PATCH/DELETE to use Supabase fallback (chat conversations and proof delivery were failing on Vercel)
+- Added normalizeImageUrl() helper to /src/lib/image.ts — converts tmpfiles.org viewer URLs to /dl/ direct URLs
+- Refactored ChatTab message rendering: extracted ChatMsgBubble component with WhatsApp-style layout (image edge-to-edge, caption below, time at bottom-right), referrerPolicy=no-referrer, onError fallback for expired images
+- Updated chat-widget.tsx with ChatBubbleImage component (same WhatsApp-style + error fallback)
+- Swapped upload-proof order: catbox.moe (PERMANENT) is now PRIMARY, tmpfiles.org (60-day expiry) is FALLBACK — prevents future proof images from expiring
+- IklanTab (active ads): renamed "Approve" → "Publikasi" in grid card, line card, and preview dialog; added onError toast to del mutation
+- IklanBaruTab (new ads): added del mutation (DELETE /api/admin/listings), added "Hapus" button to grid card + line card + preview dialog, wired AlertDialog action to del.mutate(deleteId), renamed "Setujui" → "Publikasi" and "Setujui & Tayangkan" → "Publikasi"
+
+Stage Summary:
+- Admin panel now works on Vercel (Supabase fallback for all admin APIs)
+- Chat images render WhatsApp-style with graceful fallback for expired URLs
+- All ad cards in IklanTab and IklanBaruTab have working delete buttons
+- "Setujui"/"Approve" buttons renamed to "Publikasi" everywhere
+- Verified with Agent Browser: Publikasi button works (listing moved pending→active), Hapus button shows confirmation dialog, chat images render with fallback for expired tmpfiles.org URLs

@@ -21,7 +21,7 @@ import { useLang, translations as i18nTranslations, formatT } from "@/lib/i18n";
 import { useMounted } from "@/lib/use-mounted";
 import { cn } from "@/lib/utils";
 import { useChatSocket, type ChatMessage } from "@/lib/use-chat-socket";
-import { compressImage } from "@/lib/image";
+import { compressImage, normalizeImageUrl } from "@/lib/image";
 import { useChatBg } from "@/lib/use-chat-bg";
 import {
   Popover,
@@ -30,6 +30,36 @@ import {
 } from "@/components/ui/popover";
 
 type Msg = { id?: string; role: "user" | "assistant"; content: string; image?: string | null; time?: string };
+
+// Chat image with error fallback — handles expired tmpfiles.org URLs.
+function ChatBubbleImage({ src, onLightbox }: { src: string; onLightbox?: (url: string) => void }) {
+  const [err, setErr] = useState(false);
+  const url = normalizeImageUrl(src);
+  if (err) {
+    return (
+      <a
+        href={src}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => { e.preventDefault(); onLightbox?.(src); }}
+        className="flex min-w-[180px] items-center gap-2 bg-black/5 px-3 py-4 text-xs underline opacity-80"
+      >
+        <FileImage className="size-4 shrink-0" />
+        Gambar tidak tersedia — klik untuk membuka
+      </a>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt=""
+      referrerPolicy="no-referrer"
+      onError={() => setErr(true)}
+      className="block w-full min-w-[180px] max-w-full cursor-pointer object-cover"
+      style={{ maxHeight: 300 }}
+    />
+  );
+}
 
 // ===== Context menu position =====
 type MenuState = {
@@ -398,21 +428,22 @@ export function ChatWidget({
                   onTouchEnd={handleTouchEnd}
                   onTouchMove={handleTouchEnd}
                   className={cn(
-                    "max-w-[85%] cursor-pointer rounded-2xl px-3 py-2 text-sm shadow-sm transition select-none",
+                    "max-w-[85%] cursor-pointer rounded-2xl text-sm shadow-sm transition select-none",
                     m.role === "user" ? "rounded-br-sm bg-primary text-primary-foreground" : cn("rounded-bl-sm", bgIsDark ? "bg-white/15 text-white" : "bg-white text-foreground"),
-                    selectedMsg === i && "ring-2 ring-blue-400 ring-offset-1"
+                    selectedMsg === i && "ring-2 ring-blue-400 ring-offset-1",
+                    m.image ? "overflow-hidden p-0" : "px-3 py-2"
                   )}
                 >
                   {m.image && (
-                    <img src={m.image} alt="" className="mb-1.5 max-h-48 w-auto rounded-lg object-contain" />
+                    <ChatBubbleImage src={m.image} />
+                  )}
+                  {m.content && m.image && (
+                    <p className="whitespace-pre-wrap break-words px-2.5 pt-1.5">{m.content}</p>
                   )}
                   {m.content && !m.image && m.content}
-                  {m.content && m.image && (
-                    <span className="text-xs opacity-70">{m.content}</span>
-                  )}
                   {!m.content && !m.image && ""}
                   {m.time && (
-                    <span className="ml-2 inline-block text-[9px] opacity-60">{m.time}</span>
+                    <span className={cn("inline-block text-[9px] opacity-60", m.image ? "block px-2.5 pb-1 pt-0.5 text-right" : "ml-2")}>{m.time}</span>
                   )}
                 </div>
               </div>

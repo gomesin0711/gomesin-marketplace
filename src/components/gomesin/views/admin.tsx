@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useChatSocket, type ChatMessage } from "@/lib/use-chat-socket";
+import { normalizeImageUrl } from "@/lib/image";
 
 type Tab = "dashboard" | "iklan" | "iklanbaru" | "iklanexpired" | "iklanditolak" | "penjual" | "kategori" | "merek" | "lokasi" | "banner" | "paket" | "transaksi" | "laporan" | "laporanbulanan" | "audit" | "pengguna" | "chat";
 
@@ -310,6 +311,7 @@ function IklanTab() {
   const del = useMutation({
     mutationFn: (id: string) => fetch("/api/admin/listings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }),
     onSuccess: () => { toast.success(tr("admDeleted")); qc.invalidateQueries({ queryKey: ["admin-listings"] }); },
+    onError: () => { toast.error("Gagal menghapus iklan"); },
   });
   const setStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => fetch("/api/admin/listings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) }),
@@ -438,7 +440,7 @@ function IklanTab() {
                 <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0}
               </span>
               <button onClick={() => setStatus.mutate({ id: l.id, status: "active" })} className="rounded-md border border-orange-500 bg-orange-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-orange-600 hover:border-orange-600">
-                Approve
+                Publikasi
               </button>
             </div>
             {/* Row 2: Pelanggaran + Hapus */}
@@ -500,7 +502,7 @@ function IklanTab() {
             {/* Row 1: Views + Approve */}
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground"><Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0}</span>
-              <button onClick={() => setStatus.mutate({ id: l.id, status: "active" })} className="rounded-md border border-orange-500 bg-orange-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-orange-600 hover:border-orange-600">Approve</button>
+              <button onClick={() => setStatus.mutate({ id: l.id, status: "active" })} className="rounded-md border border-orange-500 bg-orange-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-orange-600 hover:border-orange-600">Publikasi</button>
             </div>
             {/* Row 2: Pelanggaran + Hapus */}
             <div className="flex items-center gap-1">
@@ -661,7 +663,7 @@ function IklanTab() {
               </div>
               {/* actions */}
               <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
-                <Button size="sm" variant="default" onClick={() => { setStatus.mutate({ id: previewListing.id, status: "active" }); setPreviewListing(null); }}><CheckCircle2 className="size-4" /> Approve</Button>
+                <Button size="sm" variant="default" onClick={() => { setStatus.mutate({ id: previewListing.id, status: "active" }); setPreviewListing(null); }}><CheckCircle2 className="size-4" /> Publikasi</Button>
                 <Button size="sm" variant="outline" onClick={() => { setViolation.mutate({ id: previewListing.id, flag: !previewListing.violationFlag, reason: tr("admViolationReason") }); setPreviewListing(null); }}><XCircle className="size-4" /> {previewListing.violationFlag ? "Hapus Pelanggaran" : "Tandai Pelanggaran"}</Button>
                 <Button size="sm" variant="destructive" onClick={() => { del.mutate(previewListing.id); setPreviewListing(null); }}><Trash2 className="size-4" /> Hapus Iklan</Button>
               </div>
@@ -705,6 +707,11 @@ function IklanBaruTab() {
   const setStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => fetch("/api/admin/listings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) }),
     onSuccess: () => { toast.success(tr("admListingStatusUpdated")); qc.invalidateQueries({ queryKey: ["admin-listings"] }); },
+  });
+  const del = useMutation({
+    mutationFn: (id: string) => fetch("/api/admin/listings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }),
+    onSuccess: () => { toast.success(tr("admDeleted")); qc.invalidateQueries({ queryKey: ["admin-listings"] }); },
+    onError: () => { toast.error("Gagal menghapus iklan"); },
   });
 
   const newListings = useMemo(() => (data?.listings || []).filter((l: any) => l.status === "pending"), [data?.listings]);
@@ -786,10 +793,13 @@ function IklanBaruTab() {
             </span>
             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
               <button onClick={() => approve(l.id)} className="flex items-center gap-1 rounded-md border border-blue-500 bg-blue-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-blue-600 hover:border-blue-600">
-                <CheckCircle2 className="size-3" /> Setujui
+                <CheckCircle2 className="size-3" /> Publikasi
               </button>
               <button onClick={() => reject(l.id)} className="flex items-center gap-1 rounded-md border border-red-500 bg-red-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-600 hover:border-red-600">
                 <XCircle className="size-3" /> Tolak
+              </button>
+              <button onClick={() => setDeleteId(l.id)} className="flex items-center gap-1 rounded-md border border-gray-500 bg-gray-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-gray-600 hover:border-gray-600">
+                <Trash2 className="size-3" /> Hapus
               </button>
             </div>
           </div>
@@ -831,8 +841,9 @@ function IklanBaruTab() {
               <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0} dilihat
             </span>
             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => approve(l.id)} className="flex items-center gap-1 rounded-md border border-blue-500 bg-blue-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-blue-600 hover:border-blue-600"><CheckCircle2 className="size-3" /> Setujui</button>
+              <button onClick={() => approve(l.id)} className="flex items-center gap-1 rounded-md border border-blue-500 bg-blue-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-blue-600 hover:border-blue-600"><CheckCircle2 className="size-3" /> Publikasi</button>
               <button onClick={() => reject(l.id)} className="flex items-center gap-1 rounded-md border border-red-500 bg-red-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-600 hover:border-red-600"><XCircle className="size-3" /> Tolak</button>
+              <button onClick={() => setDeleteId(l.id)} className="flex items-center gap-1 rounded-md border border-gray-500 bg-gray-500 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-gray-600 hover:border-gray-600"><Trash2 className="size-3" /> Hapus</button>
             </div>
           </div>
         </div>
@@ -961,8 +972,9 @@ function IklanBaruTab() {
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
-                <Button size="sm" variant="default" onClick={() => { setStatus.mutate({ id: previewListing.id, status: "active" }); setPreviewListing(null); }}><CheckCircle2 className="size-4" /> Setujui & Tayangkan</Button>
+                <Button size="sm" variant="default" onClick={() => { setStatus.mutate({ id: previewListing.id, status: "active" }); setPreviewListing(null); }}><CheckCircle2 className="size-4" /> Publikasi</Button>
                 <Button size="sm" variant="destructive" onClick={() => { setStatus.mutate({ id: previewListing.id, status: "rejected" }); setPreviewListing(null); }}><XCircle className="size-4" /> Tolak Iklan</Button>
+                <Button size="sm" variant="outline" onClick={() => { setDeleteId(previewListing.id); }}><Trash2 className="size-4" /> Hapus Iklan</Button>
               </div>
             </div>
           </div>
@@ -977,7 +989,7 @@ function IklanBaruTab() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDeleteId(null)}>Batal</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => { if (deleteCallback) deleteCallback(); setDeleteId(null); }}>
+            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => { if (deleteId) del.mutate(deleteId); setDeleteId(null); }}>
               Hapus
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -2904,6 +2916,82 @@ function AuditTab() {
 }
 
 // ============ CHAT TAB (WhatsApp-style) ============
+// ============ CHAT MESSAGE BUBBLE (WhatsApp-style) ============
+// Reusable bubble for both desktop & mobile admin chat views.
+// Renders image edge-to-edge, caption below, time at bottom-right.
+// Uses referrerPolicy=no-referrer + normalizeImageUrl to handle
+// tmpfiles.org viewer URLs and hotlink protection.
+function ChatMsgBubble({
+  m,
+  isSent,
+  partnerImage,
+  onImageClick,
+}: {
+  m: any;
+  isSent: boolean;
+  partnerImage?: string | null;
+  onImageClick: (url: string) => void;
+}) {
+  const imgUrl = m.image ? normalizeImageUrl(m.image) : null;
+  const [imgError, setImgError] = useState(false);
+  return (
+    <div className={isSent ? "flex justify-end" : "flex justify-start"}>
+      {!isSent && partnerImage && (
+        <img
+          src={partnerImage}
+          alt=""
+          className="mr-1.5 mt-auto size-7 shrink-0 rounded-full object-cover"
+        />
+      )}
+      <div
+        className={cn(
+          "overflow-hidden rounded-lg shadow-sm",
+          isSent
+            ? "max-w-[80%] rounded-tr-sm bg-[#dcf8c6]"
+            : "max-w-[80%] rounded-tl-sm bg-white"
+        )}
+      >
+        {imgUrl && !imgError && (
+          <img
+            src={imgUrl}
+            alt="Gambar"
+            referrerPolicy="no-referrer"
+            onClick={() => onImageClick(m.image)}
+            onError={() => setImgError(true)}
+            className="block w-full min-w-[220px] max-w-full cursor-pointer object-cover transition hover:opacity-90"
+            style={{ maxHeight: 360 }}
+          />
+        )}
+        {imgUrl && imgError && (
+          <a
+            href={m.image}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => { e.preventDefault(); onImageClick(m.image); }}
+            className="flex min-w-[220px] items-center gap-2 bg-black/5 px-3 py-4 text-xs text-primary underline"
+          >
+            <ImageIcon className="size-4 shrink-0" />
+            Gambar tidak tersedia — klik untuk membuka
+          </a>
+        )}
+        {m.content && (
+          <p className="whitespace-pre-wrap break-words px-2.5 pt-1.5 text-sm text-foreground">
+            {m.content}
+          </p>
+        )}
+        <div className="px-2.5 pb-1 pt-0.5 text-right">
+          <span className="text-[9px] text-muted-foreground/60">
+            {new Date(m.createdAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+            {isSent && (
+              <span className={cn("ml-1", m.read ? "text-blue-500" : "text-muted-foreground/40")}>✓✓</span>
+            )}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ChatTab() {
   const user = useStore((s) => s.user);
   const [search, setSearch] = useState("");
@@ -3142,47 +3230,9 @@ function ChatTab() {
                 {selectedMessages.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Belum ada pesan.</div>
                 ) : (
-                  selectedMessages.map((m: any, i: number) => {
-                    const isSent = m.sent;
-                    return (
-                      <div key={m.id || i} className={isSent ? "flex justify-end" : "flex justify-start"}>
-                        {/* Show partner avatar next to received messages */}
-                        {!isSent && selected.partnerImage && (
-                          <img
-                            src={selected.partnerImage}
-                            alt={selected.name}
-                            className="mr-1.5 mt-auto size-7 shrink-0 rounded-full object-cover"
-                          />
-                        )}
-                        <div
-                          className={cn(
-                            "rounded-lg shadow-sm",
-                            isSent
-                              ? "max-w-[70%] rounded-tr-sm bg-[#dcf8c6] px-3 py-2 text-sm text-foreground"
-                              : "max-w-[70%] rounded-tl-sm bg-white px-3 py-2 text-sm text-foreground"
-                          )}
-                        >
-                          {m.image && (
-                            <img
-                              src={m.image}
-                              alt="Gambar"
-                              onClick={() => setLightbox(m.image)}
-                              className="mb-1 max-h-48 cursor-pointer rounded-md object-cover transition hover:opacity-90"
-                            />
-                          )}
-                          {m.content && (
-                            <p className="whitespace-pre-wrap break-words">{m.content}</p>
-                          )}
-                          <span className="block text-right text-[9px] text-muted-foreground/60">
-                            {new Date(m.createdAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
-                            {isSent && (
-                              <span className={cn("ml-1", m.read ? "text-blue-500" : "text-muted-foreground/40")}>✓✓</span>
-                            )}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })
+                  selectedMessages.map((m: any, i: number) => (
+                    <ChatMsgBubble key={m.id || i} m={m} isSent={m.sent} partnerImage={selected.partnerImage} onImageClick={setLightbox} />
+                  ))
                 )}
               </div>
 
@@ -3264,39 +3314,9 @@ function ChatTab() {
               {selectedMessages.length === 0 ? (
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Belum ada pesan.</div>
               ) : (
-                selectedMessages.map((m: any, i: number) => {
-                  const isSent = m.sent;
-                  return (
-                    <div key={m.id || i} className={isSent ? "flex justify-end" : "flex justify-start"}>
-                      <div
-                        className={cn(
-                          "rounded-lg shadow-sm",
-                          isSent
-                            ? "max-w-[70%] rounded-tr-sm bg-[#dcf8c6] px-3 py-2 text-sm text-foreground"
-                            : "max-w-[70%] rounded-tl-sm bg-white px-3 py-2 text-sm text-foreground"
-                        )}
-                      >
-                        {m.image && (
-                          <img
-                            src={m.image}
-                            alt="Gambar"
-                            onClick={() => setLightbox(m.image)}
-                            className="mb-1 max-h-48 cursor-pointer rounded-md object-cover transition hover:opacity-90"
-                          />
-                        )}
-                        {m.content && (
-                          <p className="whitespace-pre-wrap break-words">{m.content}</p>
-                        )}
-                        <span className="block text-right text-[9px] text-muted-foreground/60">
-                          {new Date(m.createdAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
-                          {isSent && (
-                            <span className={cn("ml-1", m.read ? "text-blue-500" : "text-muted-foreground/40")}>✓✓</span>
-                          )}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })
+                selectedMessages.map((m: any, i: number) => (
+                  <ChatMsgBubble key={m.id || i} m={m} isSent={m.sent} onImageClick={setLightbox} />
+                ))
               )}
             </div>
             <div className="border-t border-border bg-[#f0f2f5] px-4 py-2 text-center text-[11px] text-muted-foreground">

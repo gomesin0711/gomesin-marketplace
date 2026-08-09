@@ -21,6 +21,27 @@ export function proxyUrl(src: string | undefined | null): string {
   }
 }
 
+/**
+ * Normalize external image URLs for chat rendering.
+ *
+ * tmpfiles.org returns a "viewer" page URL (HTML) when you upload, but we need
+ * the DIRECT image URL to render in an <img> tag. The direct URL has /dl/ in
+ * the path. If the URL is already a /dl/ URL, catbox.moe, or a data URL, it
+ * passes through unchanged.
+ */
+export function normalizeImageUrl(src: string | undefined | null): string {
+  if (!src) return "";
+  // data URLs and relative paths — pass through
+  if (src.startsWith("data:") || src.startsWith("/") || src.startsWith("blob:")) return src;
+  // tmpfiles.org viewer URL → direct URL
+  // Viewer:  https://tmpfiles.org/12345/proof.jpg
+  // Direct:  https://tmpfiles.org/dl/12345/proof.jpg
+  if (src.includes("tmpfiles.org") && !src.includes("tmpfiles.org/dl/")) {
+    return src.replace(/(tmpfiles\.org\/)(?!dl\/)/, "$1dl/");
+  }
+  return src;
+}
+
 export async function compressImage(
   file: File,
   maxBytes: number = TARGET_BYTES
