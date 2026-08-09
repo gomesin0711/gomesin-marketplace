@@ -265,7 +265,7 @@ export function DashboardView() {
           else if (l.status === "active" && !l.violationFlag) goToUpgrade(l.slug);
         }}
         className={cn(
-          "group flex flex-col overflow-hidden rounded-xl border-2 bg-card transition",
+          "group flex flex-col overflow-hidden rounded-xl border bg-card transition sm:border-2",
           lineColor || "border-border",
           (l.status === "draft" || (l.status === "active" && !l.violationFlag))
             ? "cursor-pointer hover:shadow-lg"
@@ -379,7 +379,7 @@ export function DashboardView() {
 
           {/* bottom: views + actions */}
           <div className="mt-auto pt-2 border-t border-border">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-1">
               <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                 <Eye className="size-3" /> {l.views?.toLocaleString("id-ID") || 0}
               </span>
@@ -388,28 +388,31 @@ export function DashboardView() {
                   <button
                     onClick={(e) => { e.stopPropagation(); soldMutation.mutate({ slug: l.slug, isSold }); }}
                     disabled={soldMutation.isPending}
+                    title={isSold ? "Batal" : "Terjual"}
                     className={cn(
-                      "flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold transition",
+                      "flex items-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-semibold transition sm:px-2",
                       isSold
                         ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                         : "border-emerald-300 bg-background text-emerald-700 hover:bg-emerald-50"
                     )}
                   >
                     {soldMutation.isPending ? <Loader2 className="size-3 animate-spin" /> : <BadgeCheck className="size-3" />}
-                    {isSold ? "Batal" : "Terjual"}
+                    <span className="hidden sm:inline">{isSold ? "Batal" : "Terjual"}</span>
                   </button>
                 )}
                 <button
                   onClick={(e) => { e.stopPropagation(); goToEdit(l.slug); }}
-                  className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[10px] font-semibold text-foreground transition hover:bg-primary hover:text-white hover:border-primary"
+                  title="Edit"
+                  className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-1 text-[10px] font-semibold text-foreground transition hover:bg-primary hover:text-white hover:border-primary sm:px-2"
                 >
-                  <Edit className="size-3" /> Edit
+                  <Edit className="size-3" /> <span className="hidden sm:inline">Edit</span>
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); handleDelete(l.slug); }}
-                  className="flex items-center gap-1 rounded-md border border-destructive/30 bg-background px-2 py-1 text-[10px] font-semibold text-destructive transition hover:bg-destructive hover:text-white hover:border-destructive"
+                  title="Hapus"
+                  className="flex items-center gap-1 rounded-md border border-destructive/30 bg-background px-1.5 py-1 text-[10px] font-semibold text-destructive transition hover:bg-destructive hover:text-white hover:border-destructive sm:px-2"
                 >
-                  <Trash2 className="size-3" /> Hapus
+                  <Trash2 className="size-3" /> <span className="hidden sm:inline">Hapus</span>
                 </button>
               </div>
             </div>
@@ -698,9 +701,9 @@ export function DashboardView() {
         viewMode === "grid" ? (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="overflow-hidden rounded-xl border-2 border-border bg-card">
+              <div key={i} className="overflow-hidden rounded-xl border border-border bg-card sm:border-2">
                 <div className="aspect-square w-full animate-pulse bg-muted" />
-                <div className="space-y-2 p-3">
+                <div className="space-y-2 p-2.5">
                   <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
                   <div className="h-3 w-full animate-pulse rounded bg-muted" />
                   <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />

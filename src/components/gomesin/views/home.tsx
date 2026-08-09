@@ -9,6 +9,7 @@ import { ListingCard, ListingCardSkeleton } from "../listing-card";
 import { ListingCardCarousel } from "../listing-card-carousel";
 import { ListingRow, ListingRowSkeleton } from "../listing-row";
 import { AdBanner } from "../ad-banner";
+import { CategoryNav } from "../category-nav";
 import {
   LayoutGrid,
   List,
@@ -338,11 +339,14 @@ export function HomeView() {
             <div className="absolute inset-0 flex items-center">
               <div className="mx-auto w-full max-w-7xl px-4">
                 <div className="max-w-xl">
-                  <h1 className="text-2xl font-extrabold leading-tight text-white sm:text-3xl md:text-4xl">
+                  <h1 className="text-xl font-extrabold leading-tight text-white sm:text-3xl md:text-4xl">
                     Bingung Jual mesin baru/bekas dimana?
                   </h1>
-                  <p className="mt-2 text-lg font-bold text-orange-400 sm:text-xl md:text-2xl">
-                    Pasang iklan aja di gomesin!!!
+                  <p className="mt-2 text-sm font-bold text-orange-400 sm:text-lg md:text-xl">
+                    Pasang iklan di gomesin saja!!!
+                  </p>
+                  <p className="mt-1 text-xs text-white/90 sm:text-sm md:text-base">
+                    Ada ribuan Mesin CETAK, Mesin CNC dan Mesin industri lainnya...
                   </p>
                   <Button
                     onClick={goToPost}
@@ -357,6 +361,11 @@ export function HomeView() {
           </div>
         </div>
       </section>
+
+      {/* CATEGORY NAV — moved below banner per user request */}
+      <div className="border-b border-border bg-background">
+        <CategoryNav />
+      </div>
 
       {/* MAIN CONTENT */}
       <div className="mx-auto max-w-7xl px-4 py-6 space-y-6">

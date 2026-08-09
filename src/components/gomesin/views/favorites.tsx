@@ -66,9 +66,9 @@ export function FavoritesView() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 animate-fade-up">
-      <div className="mb-5 flex items-center gap-2">
-        <Heart className="size-6 fill-rose-500 text-rose-500" />
-        <h1 className="text-2xl font-bold">{tr("favTitle")}</h1>
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <Heart className="size-6 shrink-0 fill-rose-500 text-rose-500" />
+        <h1 className="whitespace-nowrap text-xl font-bold sm:text-2xl">{tr("favTitle")}</h1>
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-secondary px-2.5 py-0.5 text-sm font-semibold text-muted-foreground">{validCount}</span>
           <div className="flex overflow-hidden rounded-lg border border-border">
@@ -81,7 +81,7 @@ export function FavoritesView() {
           </div>
           {validCount > 0 && (
             <Button variant="ghost" size="sm" className="ml-auto gap-1.5 text-destructive hover:bg-destructive/5" onClick={clearAll}>
-              <Trash2 className="size-4" /> {tr("clearAll")}
+              <Trash2 className="size-4" /> <span className="whitespace-nowrap">{tr("clearAll")}</span>
             </Button>
           )}
         </div>

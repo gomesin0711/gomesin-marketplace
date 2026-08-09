@@ -121,7 +121,7 @@ export function Header() {
   const langFlag = (l: Lang) => (l === "id" ? "🇮🇩" : l === "zh" ? "🇨🇳" : "🇬🇧");
   // Before mounted: always use Indonesian to match SSR. After: use actual lang.
   const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
-  const hideCategoryNav = ["admin", "admin-sellers", "admin-categories", "admin-listings", "admin-new-listings", "admin-expired-listings", "admin-rejected-listings", "admin-transactions", "admin-reports", "admin-users", "admin-paket", "post", "edit", "login", "profile", "dashboard", "favorites", "detail", "seller"].includes(currentView);
+  const hideCategoryNav = ["admin", "admin-sellers", "admin-categories", "admin-listings", "admin-new-listings", "admin-expired-listings", "admin-rejected-listings", "admin-transactions", "admin-reports", "admin-users", "admin-paket", "post", "edit", "login", "profile", "dashboard", "favorites", "detail", "seller", "home"].includes(currentView);
 
   const [q, setQ] = useState(filters.q ?? "");
   const [prevQ, setPrevQ] = useState(filters.q);

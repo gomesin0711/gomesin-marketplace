@@ -270,3 +270,25 @@ Stage Summary:
 - Admin Iklan Baru: Setujui/Tolak are now proper text buttons (icon + label) instead of icon-only buttons
 - All changes browser-verified with Agent Browser (0 console errors, all API calls 200 OK)
 - Lint clean on all edited files (only pre-existing warnings in unrelated files)
+
+---
+Task ID: 4
+Agent: Main
+Task: Move categories below banner, update banner text, match dashboard card size to beranda on mobile, fix favorites title to 1 line on mobile
+
+Work Log:
+- home.tsx: Added CategoryNav import and rendered it in a new div below the banner section (with border-b). Banner text changed from "Pasang iklan aja di gomesin!!!" to "Pasang iklan di gomesin saja!!!" with smaller font (text-sm sm:text-lg md:text-xl, was text-lg sm:text-xl md:text-2xl). Added new subtitle "Ada ribuan Mesin CETAK, Mesin CNC dan Mesin industri lainnya..." (text-xs sm:text-sm md:text-base, white/90). Main h1 also reduced on mobile (text-xl sm:text-3xl md:text-4xl, was text-2xl sm:text-3xl md:text-4xl).
+- header.tsx: Added "home" to hideCategoryNav list so CategoryNav is hidden in header on the home view (it's now rendered inside HomeView below the banner instead).
+- dashboard.tsx: Changed grid card border from "border-2" to "border sm:border-2" (1px on mobile matching beranda, 2px on desktop for package color emphasis). Changed skeleton border from "border-2" to "border sm:border-2" and padding from "p-3" to "p-2.5". Made action buttons (Terjual/Edit/Hapus) icon-only on mobile — text labels wrapped in <span className="hidden sm:inline">, button padding reduced to "px-1.5 sm:px-2", added title attributes for accessibility.
+- favorites.tsx: Added flex-wrap to header container, shrink-0 to Heart icon, whitespace-nowrap + text-xl sm:text-2xl to h1 (prevents "Iklan Favorit Saya" from wrapping to 2 lines on mobile), whitespace-nowrap to clearAll button text.
+- profile.tsx: Added "iklan-saya" and "favorit-saya" to the main's max-md:px-0 condition (removes double padding on mobile — profile main had px-4 AND DashboardView/FavoritesView had px-4, causing cards to be 152px instead of 168px like beranda). Also hid the "Beranda > Akun" breadcrumb entirely for iklan-saya and favorit-saya panels (completes previous request's breadcrumb removal).
+
+Stage Summary:
+- Categories nav moved below banner on homepage (verified: nav top=385 = banner bottom=385 on desktop; nav top=313 = banner bottom=313 on mobile 375px)
+- Banner text: "Pasang iklan di gomesin saja!!!" at 14px on mobile (was ~20px), new subtitle "Ada ribuan Mesin CETAK..." at 12px on mobile
+- Dashboard card on mobile: 168px wide (was 152px), 1px border (was 2px), icon-only action buttons — now matches beranda card (168px, 1px border)
+- Favorites card on mobile: 168px wide (was 152px) — now matches beranda card
+- "Iklan Favorit Saya" title: 1 line on mobile (whitespace-nowrap, text-xl), 1 line on desktop (text-2xl)
+- "Beranda > Akun" breadcrumb fully removed from Iklan Saya and Favorit Saya panels
+- All changes browser-verified on mobile (375px) and desktop (1280px) with 0 console errors
+- Lint clean on all edited files
