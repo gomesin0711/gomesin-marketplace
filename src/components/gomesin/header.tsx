@@ -489,20 +489,6 @@ export function Header() {
           )}
           {/* Notification bell: shows count of new listings since last viewed */}
           <NotificationBell align="end" />
-          {/* House icon: goes to seller store page (desktop only) */}
-          {mounted && user && (
-            <button
-              onClick={() => {
-                const st = useStore.getState() as any;
-                const sid = st.user.sellerId || st.user.id;
-                useStore.getState().goToSeller(sid);
-              }}
-              className="hidden h-10 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-foreground hover:bg-accent lg:flex"
-              aria-label="Beranda Akun"
-            >
-              <Home className="size-5" />
-            </button>
-          )}
 
           {mounted && user ? (
             <button

@@ -324,3 +324,23 @@ Stage Summary:
 - Bonus: bottom-nav active highlighting now correctly reflects the open panel
 - All changes browser-verified with 0 errors; committed to git
 - Vercel deploy pending (no auth token available this session)
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Remove house icon at top-right corner of seller ad (header)
+
+Work Log:
+- User request (Indonesian): "icon (seperti gambar rumah) pojok sebelah kanan atas iklan penjual dihapus" — remove the house icon at the top-right corner of the seller ad page
+- Located the house icon in /home/z/my-project/src/components/gomesin/header.tsx (desktop header actions area, lines 492-505): a Home icon button placed between the NotificationBell and the Akun button that navigated to the seller store page
+- Removed the entire `{mounted && user && (<button>...<Home/></button>)}` block from the desktop header actions
+- Kept the `Home` import in header.tsx because it is still used by the Logo component (desktop "Home" text button next to the logo on the left side — NOT in the top-right corner)
+- Verified via Agent Browser on desktop viewport (1280x800): header right-side actions now show Chat → Language → Toggle theme → NotificationBell → Akun → Pasang Iklan. The house icon between NotificationBell and Akun is gone.
+- Verified mobile header still intact: Gomesin Beranda → Bahasa → Toggle theme → NotificationBell → Penjual
+- Dev server compiled cleanly, no new lint errors introduced (pre-existing errors are in start-chat.cjs and other unrelated files)
+
+Stage Summary:
+- House icon at top-right corner of desktop header (navigated to seller store) has been removed
+- Header right-side actions cleaned up: NotificationBell now directly followed by Akun button
+- Logo's left-side "Home" text button preserved (not in top-right corner)
+- Change verified in browser on both desktop and mobile viewports
