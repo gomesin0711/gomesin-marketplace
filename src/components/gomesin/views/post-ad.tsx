@@ -271,6 +271,53 @@ export function PostAdView() {
     };
   }, [qrisModal]);
 
+  // --- Fetch unique 3-digit code whenever selectedPackage changes ---
+  // This ensures switching Gold → Platinum fetches a DIFFERENT unique code
+  // (the API is idempotent per package, so switching back to Gold returns
+  // the same Gold code again). The total = packagePrice + uniqueCode
+  // updates reactively when the user picks a different package.
+  useEffect(() => {
+    if (!hydrated || !user?.id) return;
+    const pk = paketMap[selectedPackage];
+    const pkgPrice = pk?.price ?? 0;
+    // Free / draft package — no unique code needed.
+    if (pkgPrice <= 0 || selectedPackage === "simpan") {
+      setUniqueCode(0);
+      setQrisAmount(0);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const codeRes = await fetch("/api/listings/unique-code", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.id,
+            packageType: selectedPackage,
+            amount: pkgPrice,
+          }),
+        });
+        if (codeRes.ok && !cancelled) {
+          const codeData = await codeRes.json();
+          const uc = codeData.uniqueCode || 0;
+          setUniqueCode(uc);
+          setQrisAmount(pkgPrice + uc);
+        } else if (!cancelled) {
+          // API failed (e.g. ephemeral DB on Vercel) — fall back to package price.
+          setUniqueCode(0);
+          setQrisAmount(pkgPrice);
+        }
+      } catch {
+        if (!cancelled) {
+          setUniqueCode(0);
+          setQrisAmount(pkgPrice);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedPackage, hydrated, user?.id, paketData]);
+
   // --- Validation per step ---
   const validateStep = useCallback(
     (s: number): boolean => {
@@ -351,33 +398,13 @@ export function PostAdView() {
       toast.error(tr("choosePayment"));
       return;
     }
-    const pk = paketMap[selectedPackage];
-    const pkgPrice = pk?.price ?? 0;
-    if (pkgPrice > 0 && selectedPackage !== "simpan") {
-      if (qrisAmount === 0) {
-        try {
-          const codeRes = await fetch("/api/listings/unique-code", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              userId: user?.id,
-              packageType: selectedPackage,
-              amount: pkgPrice,
-            }),
-          });
-          if (codeRes.ok) {
-            const codeData = await codeRes.json();
-            const uc = codeData.uniqueCode || 0;
-            // Format as 3-digit with leading zeros for display, but keep numeric for math
-            setUniqueCode(uc);
-            setQrisAmount(pkgPrice + uc);
-          } else {
-            setQrisAmount(pkgPrice);
-          }
-        } catch {
-          setQrisAmount(pkgPrice);
-        }
-      }
+    // Paid package → open payment modal. The unique code is already fetched
+    // reactively by the useEffect on selectedPackage change, so qrisAmount
+    // and uniqueCode are always up-to-date for the currently-selected package.
+    if (selPkgPrice > 0 && selectedPackage !== "simpan") {
+      // Defensive: if the unique code hasn't loaded yet (rare race), the
+      // modal still opens and shows the package price; user can wait for
+      // the code to appear before transferring.
       setQrisModal(true);
       return;
     }
@@ -930,6 +957,11 @@ export function PostAdView() {
                         setSelectedPackage(key);
                         setShowPayment(price > 0);
                         setPaymentMethod("");
+                        // Reset unique-code state so the total briefly shows
+                        // just the new package price while the useEffect
+                        // fetches a fresh, DIFFERENT code for the new package.
+                        setUniqueCode(0);
+                        setQrisAmount(price);
                       }}
                       className={cn(
                         "relative rounded-xl border-2 bg-card p-3 text-left transition",
@@ -999,6 +1031,29 @@ export function PostAdView() {
                 <p className="text-xs text-muted-foreground">
                   Pilih metode pembayaran untuk mengaktifkan iklan Anda.
                 </p>
+
+                {/* Live payment summary — updates immediately when package
+                    changes. Shows: harga paket + kode unik = total. */}
+                <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Harga Paket {paketMap[selectedPackage]?.name || selectedPackage}</span>
+                    <span className="font-semibold text-foreground">{formatRupiahFull(paketMap[selectedPackage]?.price ?? 0)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Kode Unik (3 digit)</span>
+                    <span className="font-bold text-primary">
+                      {uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "..."}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between border-t border-border pt-1.5">
+                    <span className="font-semibold text-foreground">Total Transfer</span>
+                    <span className="text-base font-extrabold text-primary">{formatRupiahFull(qrisAmount)}</span>
+                  </div>
+                  <p className="pt-0.5 text-[10px] text-muted-foreground">
+                    Kode unik berbeda untuk setiap paket & pembayar — tidak akan sama dengan pembayar lain.
+                  </p>
+                </div>
+
                 <div className="grid gap-2">
                   {[
                     { key: "bca", label: "Transfer ke Blu BCA", desc: "Transfer manual ke rekening Blu BCA" },
@@ -1230,14 +1285,12 @@ export function PostAdView() {
 
                       setUploadingProof(true);
                       try {
-                        const caption =
-                          `*Bukti Pembayaran Iklan Gomesin*\n\n` +
-                          `Paket: ${pkgName}\n` +
-                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
-                          `User: ${user?.name || "-"}\n` +
-                          `Email: ${user?.email || "-"}\n` +
-                          `Judul Iklan: ${title}`;
+                        // === Ad image (gambar iklan) ===
+                        // images[0] is a compressed data URL; fall back to a
+                        // placeholder if the user somehow has no photo.
+                        const adImage = images[0] || PLACEHOLDER_IMAGES[0];
 
+                        // === Proof image (gambar bukti transfer) ===
                         const matches = proofImage.match(/^data:(image\/\w+);base64,(.+)$/);
                         if (!matches) { toast.error("Format gambar tidak valid"); return; }
                         const ext = matches[1] === "image/jpeg" ? "jpg" : matches[1].split("/")[1];
@@ -1247,50 +1300,111 @@ export function PostAdView() {
                         const blob = new Blob([buf], { type: matches[1] });
                         const fileName = `bukti-pembayaran-${pkgName.toLowerCase()}-${Date.now()}.${ext}`;
 
-                        // 1) WhatsApp share
+                        // If the ad image is a data URL, upload it too so we
+                        // can include a public URL in the WhatsApp caption.
+                        // (Remote URLs are included as-is.)
+                        let adImageUrl: string = adImage;
+                        if (adImage.startsWith("data:image/")) {
+                          try {
+                            const adUp = await fetch("/api/upload-proof", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ image: adImage }),
+                            });
+                            if (adUp.ok) {
+                              const adData = await adUp.json();
+                              if (adData?.url) adImageUrl = adData.url;
+                            }
+                          } catch { /* keep data URL fallback */ }
+                        }
+
+                        // === WhatsApp caption (includes BOTH ad image URL + proof info) ===
+                        const caption =
+                          `*Bukti Pembayaran Iklan Gomesin*\n\n` +
+                          `Paket: ${pkgName}\n` +
+                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+                          `Kode Unik: ${uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
+                          `User: ${user?.name || "-"}\n` +
+                          `Email: ${user?.email || "-"}\n` +
+                          `Judul Iklan: ${title}\n\n` +
+                          `Gambar Iklan:\n${adImageUrl}`;
+
+                        // 1) WhatsApp share — uploads proof image, opens wa.me
+                        //    with caption (which already contains the ad image URL).
                         const result = await shareImageToWhatsApp({ blob, fileName, caption, phone: "6285888082208" });
                         if (result.status === "shared") toast.success("Gambar bukti dibagikan ke WhatsApp!");
                         else if (result.status === "opened") toast.success("Bukti pembayaran terkirim ke WhatsApp admin!");
                         else if (result.status === "cancelled") { setUploadingProof(false); return; }
 
-                        // 2) Chat admin via socket
+                        // 2) Chat admin via socket — send TWO messages so the
+                        //    admin sees both the ad image and the proof image
+                        //    inline in the conversation.
                         if (user?.id) {
                           try {
                             const adminRes = await fetch("/api/admin/info");
                             if (adminRes.ok) {
-                              const { admin } = (await adminRes.json()) as { admin: { id: string; name: string } };
+                              const { admin } = (await adminRes.json()) as { admin: { id: string; name: string } | null };
                               const methodLabel = paymentMethod === "bca" ? "Transfer Blu BCA" : "QRIS";
-                              const chatCaption =
+                              const adCaption =
+                                `*Gambar Iklan*\n\n` +
+                                `Judul: ${title}\n` +
+                                `Paket: ${pkgName}\n` +
+                                `User: ${user.name || "-"} (${user.email || "-"})`;
+                              const proofCaption =
                                 `*Bukti Pembayaran Iklan*\n\n` +
                                 `Judul Iklan: ${title}\n` +
                                 `Paket: ${pkgName}\n` +
                                 `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+                                `Kode Unik: ${uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
                                 `Metode: ${methodLabel}\n` +
                                 `User: ${user.name || "-"} (${user.email || "-"})\n\n` +
                                 `Bukti pembayaran terlampir. Mohon diverifikasi agar iklan segera aktif.`;
 
-                              const ack = await sendMessage({
-                                senderId: user.id,
-                                receiverId: admin.id,
-                                content: chatCaption,
-                                image: proofImage,
-                                listingTitle: `Bukti Pembayaran — ${title}`,
-                              });
-
-                              if (!ack?.ok) {
-                                await fetch("/api/messages", {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({
-                                    senderId: user.id,
-                                    receiverId: admin.id,
-                                    content: chatCaption,
-                                    image: proofImage,
-                                    listingTitle: `Bukti Pembayaran — ${title}`,
-                                  }),
+                              if (admin?.id) {
+                                // Message 1: ad image
+                                const ack1 = await sendMessage({
+                                  senderId: user.id,
+                                  receiverId: admin.id,
+                                  content: adCaption,
+                                  image: adImage,
+                                  listingTitle: `Gambar Iklan — ${title}`,
                                 });
+                                if (!ack1?.ok) {
+                                  await fetch("/api/messages", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      senderId: user.id,
+                                      receiverId: admin.id,
+                                      content: adCaption,
+                                      image: adImage,
+                                      listingTitle: `Gambar Iklan — ${title}`,
+                                    }),
+                                  });
+                                }
+                                // Message 2: payment proof image
+                                const ack2 = await sendMessage({
+                                  senderId: user.id,
+                                  receiverId: admin.id,
+                                  content: proofCaption,
+                                  image: proofImage,
+                                  listingTitle: `Bukti Pembayaran — ${title}`,
+                                });
+                                if (!ack2?.ok) {
+                                  await fetch("/api/messages", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      senderId: user.id,
+                                      receiverId: admin.id,
+                                      content: proofCaption,
+                                      image: proofImage,
+                                      listingTitle: `Bukti Pembayaran — ${title}`,
+                                    }),
+                                  });
+                                }
+                                toast.success("Bukti pembayaran dikirim ke chat admin");
                               }
-                              toast.success("Bukti pembayaran dikirim ke chat admin");
                             }
                           } catch (chatErr) {
                             console.error("Gagal kirim bukti ke chat admin:", chatErr);

@@ -13,6 +13,7 @@ import { useLang, translations as i18nTranslations, listingTitle } from "@/lib/i
 import { useMounted } from "@/lib/use-mounted";
 import { compressImage } from "@/lib/image";
 import { shareImageToWhatsApp } from "@/lib/share-image";
+import { useChatSocket } from "@/lib/use-chat-socket";
 import { useStore } from "@/lib/store";
 
 type PackageKey = "simpan" | "colek" | "sundul" | "highlight" | "spotlight";
@@ -106,6 +107,7 @@ export function PackageActivateDialog({
   const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
   const queryClient = useQueryClient();
   const user = useStore((s) => s.user);
+  const { sendMessage } = useChatSocket();
 
   // Fetch paket pricing from DB (admin can edit)
   const { data: paketData } = useQuery({
@@ -383,7 +385,13 @@ export function PackageActivateDialog({
                 key={p.key}
                 type="button"
                 disabled={isDisabled}
-                onClick={() => setSelectedPackage(p.key)}
+                onClick={() => {
+                  setSelectedPackage(p.key);
+                  // Reset unique-code so the total briefly shows just the new
+                  // package price while the useEffect fetches a fresh, DIFFERENT
+                  // code for the newly-selected package.
+                  setUniqueCode(null);
+                }}
                 className={cn(
                   "relative rounded-lg border-2 p-3 text-left transition",
                   p.color,
@@ -609,13 +617,10 @@ export function PackageActivateDialog({
                     onClick={async () => {
                       setUploadingProof(true);
                       try {
-                        const caption =
-                          `*Bukti Pembayaran Upgrade Iklan Gomesin*\n\n` +
-                          `Paket: ${selectedPkg.name}\n` +
-                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
-                          `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}`;
+                        // === Ad image (gambar iklan) ===
+                        const adImage = listing.images?.[0] || "";
 
-                        // Convert base64 → Blob untuk Web Share API.
+                        // === Proof image (gambar bukti transfer) ===
                         const dataUrlPrefix = proofImage.substring(0, proofImage.indexOf(','));
                         const base64Data = proofImage.substring(proofImage.indexOf(',') + 1);
                         if (!dataUrlPrefix || !base64Data) { toast.error("Format gambar tidak valid"); return; }
@@ -628,12 +633,108 @@ export function PackageActivateDialog({
                         const blob = new Blob([buf], { type: `image/${mime}` });
                         const fileName = `${sanitizeFileName(user?.name || user?.email || "bukti-pembayaran")}.${ext}`;
 
-                        // Kirim bukti pembayaran LANGSUNG ke WhatsApp admin (085888082208).
-                        // Mobile & desktop sama-sama pakai wa.me link → langsung buka chat admin.
+                        // If ad image is a data URL, upload it to get a public URL
+                        // for the WhatsApp caption. Remote URLs are used as-is.
+                        let adImageUrl: string = adImage;
+                        if (adImage.startsWith("data:image/")) {
+                          try {
+                            const adUp = await fetch("/api/upload-proof", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ image: adImage }),
+                            });
+                            if (adUp.ok) {
+                              const adData = await adUp.json();
+                              if (adData?.url) adImageUrl = adData.url;
+                            }
+                          } catch { /* keep data URL fallback */ }
+                        }
+
+                        const caption =
+                          `*Bukti Pembayaran Upgrade Iklan Gomesin*\n\n` +
+                          `Paket: ${selectedPkg.name}\n` +
+                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+                          `Kode Unik: ${uniqueCode !== null ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
+                          `Metode: QRIS\n` +
+                          `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}\n\n` +
+                          `Gambar Iklan:\n${adImageUrl}`;
+
+                        // 1) WhatsApp — uploads proof, opens wa.me with caption.
                         const result = await shareImageToWhatsApp({ blob, fileName, caption, phone: "6285888082208" });
                         if (result.status === "shared") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
                         else if (result.status === "opened") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
                         else if (result.status === "cancelled") { setUploadingProof(false); return; }
+
+                        // 2) Chat admin via socket — send TWO messages (ad image + proof).
+                        if (user?.id) {
+                          try {
+                            const adminRes = await fetch("/api/admin/info");
+                            if (adminRes.ok) {
+                              const { admin } = (await adminRes.json()) as { admin: { id: string; name: string } | null };
+                              const adCaption =
+                                `*Gambar Iklan (Upgrade)*\n\n` +
+                                `Judul: ${listingTitle(listing, mounted ? lang : "id")}\n` +
+                                `Paket: ${selectedPkg.name}\n` +
+                                `User: ${user.name || "-"} (${user.email || "-"})`;
+                              const proofCaption =
+                                `*Bukti Pembayaran Upgrade Iklan*\n\n` +
+                                `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}\n` +
+                                `Paket: ${selectedPkg.name}\n` +
+                                `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+                                `Kode Unik: ${uniqueCode !== null ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
+                                `Metode: QRIS\n` +
+                                `User: ${user.name || "-"} (${user.email || "-"})\n\n` +
+                                `Bukti pembayaran terlampir. Mohon diverifikasi.`;
+                              if (admin?.id) {
+                                if (adImage) {
+                                  const ack1 = await sendMessage({
+                                    senderId: user.id,
+                                    receiverId: admin.id,
+                                    content: adCaption,
+                                    image: adImage,
+                                    listingTitle: `Gambar Iklan — ${listingTitle(listing, mounted ? lang : "id")}`,
+                                  });
+                                  if (!ack1?.ok) {
+                                    await fetch("/api/messages", {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({
+                                        senderId: user.id,
+                                        receiverId: admin.id,
+                                        content: adCaption,
+                                        image: adImage,
+                                        listingTitle: `Gambar Iklan — ${listingTitle(listing, mounted ? lang : "id")}`,
+                                      }),
+                                    });
+                                  }
+                                }
+                                const ack2 = await sendMessage({
+                                  senderId: user.id,
+                                  receiverId: admin.id,
+                                  content: proofCaption,
+                                  image: proofImage,
+                                  listingTitle: `Bukti Pembayaran — ${listingTitle(listing, mounted ? lang : "id")}`,
+                                });
+                                if (!ack2?.ok) {
+                                  await fetch("/api/messages", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      senderId: user.id,
+                                      receiverId: admin.id,
+                                      content: proofCaption,
+                                      image: proofImage,
+                                      listingTitle: `Bukti Pembayaran — ${listingTitle(listing, mounted ? lang : "id")}`,
+                                    }),
+                                  });
+                                }
+                                toast.success("Bukti pembayaran dikirim ke chat admin");
+                              }
+                            }
+                          } catch (chatErr) {
+                            console.error("Gagal kirim bukti ke chat admin:", chatErr);
+                          }
+                        }
                       } catch {
                         toast.error("Gagal mengirim bukti");
                       } finally {
@@ -783,14 +884,10 @@ export function PackageActivateDialog({
                     onClick={async () => {
                       setUploadingProof(true);
                       try {
-                        const caption =
-                          `*Bukti Pembayaran Upgrade Iklan Gomesin*\n\n` +
-                          `Paket: ${selectedPkg.name}\n` +
-                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
-                          `Metode: Transfer BCA\n` +
-                          `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}`;
+                        // === Ad image (gambar iklan) ===
+                        const adImage = listing.images?.[0] || "";
 
-                        // Convert base64 → Blob untuk Web Share API.
+                        // === Proof image (gambar bukti transfer) ===
                         const dataUrlPrefix = proofImage.substring(0, proofImage.indexOf(','));
                         const base64Data = proofImage.substring(proofImage.indexOf(',') + 1);
                         if (!dataUrlPrefix || !base64Data) { toast.error("Format gambar tidak valid"); return; }
@@ -803,11 +900,107 @@ export function PackageActivateDialog({
                         const blob = new Blob([buf], { type: `image/${mime}` });
                         const fileName = `${sanitizeFileName(user?.name || user?.email || "bukti-pembayaran")}.${ext}`;
 
-                        // Kirim bukti pembayaran LANGSUNG ke WhatsApp admin (085888082208).
+                        // Upload ad image if it's a data URL (for WhatsApp caption).
+                        let adImageUrl: string = adImage;
+                        if (adImage.startsWith("data:image/")) {
+                          try {
+                            const adUp = await fetch("/api/upload-proof", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ image: adImage }),
+                            });
+                            if (adUp.ok) {
+                              const adData = await adUp.json();
+                              if (adData?.url) adImageUrl = adData.url;
+                            }
+                          } catch { /* keep data URL fallback */ }
+                        }
+
+                        const caption =
+                          `*Bukti Pembayaran Upgrade Iklan Gomesin*\n\n` +
+                          `Paket: ${selectedPkg.name}\n` +
+                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+                          `Kode Unik: ${uniqueCode !== null ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
+                          `Metode: Transfer BCA\n` +
+                          `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}\n\n` +
+                          `Gambar Iklan:\n${adImageUrl}`;
+
+                        // 1) WhatsApp — uploads proof, opens wa.me with caption.
                         const result = await shareImageToWhatsApp({ blob, fileName, caption, phone: "6285888082208" });
                         if (result.status === "shared") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
                         else if (result.status === "opened") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
                         else if (result.status === "cancelled") { setUploadingProof(false); return; }
+
+                        // 2) Chat admin via socket — send TWO messages (ad image + proof).
+                        if (user?.id) {
+                          try {
+                            const adminRes = await fetch("/api/admin/info");
+                            if (adminRes.ok) {
+                              const { admin } = (await adminRes.json()) as { admin: { id: string; name: string } | null };
+                              const adCaption =
+                                `*Gambar Iklan (Upgrade)*\n\n` +
+                                `Judul: ${listingTitle(listing, mounted ? lang : "id")}\n` +
+                                `Paket: ${selectedPkg.name}\n` +
+                                `User: ${user.name || "-"} (${user.email || "-"})`;
+                              const proofCaption =
+                                `*Bukti Pembayaran Upgrade Iklan*\n\n` +
+                                `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}\n` +
+                                `Paket: ${selectedPkg.name}\n` +
+                                `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+                                `Kode Unik: ${uniqueCode !== null ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
+                                `Metode: Transfer BCA\n` +
+                                `User: ${user.name || "-"} (${user.email || "-"})\n\n` +
+                                `Bukti pembayaran terlampir. Mohon diverifikasi.`;
+                              if (admin?.id) {
+                                if (adImage) {
+                                  const ack1 = await sendMessage({
+                                    senderId: user.id,
+                                    receiverId: admin.id,
+                                    content: adCaption,
+                                    image: adImage,
+                                    listingTitle: `Gambar Iklan — ${listingTitle(listing, mounted ? lang : "id")}`,
+                                  });
+                                  if (!ack1?.ok) {
+                                    await fetch("/api/messages", {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({
+                                        senderId: user.id,
+                                        receiverId: admin.id,
+                                        content: adCaption,
+                                        image: adImage,
+                                        listingTitle: `Gambar Iklan — ${listingTitle(listing, mounted ? lang : "id")}`,
+                                      }),
+                                    });
+                                  }
+                                }
+                                const ack2 = await sendMessage({
+                                  senderId: user.id,
+                                  receiverId: admin.id,
+                                  content: proofCaption,
+                                  image: proofImage,
+                                  listingTitle: `Bukti Pembayaran — ${listingTitle(listing, mounted ? lang : "id")}`,
+                                });
+                                if (!ack2?.ok) {
+                                  await fetch("/api/messages", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      senderId: user.id,
+                                      receiverId: admin.id,
+                                      content: proofCaption,
+                                      image: proofImage,
+                                      listingTitle: `Bukti Pembayaran — ${listingTitle(listing, mounted ? lang : "id")}`,
+                                    }),
+                                  });
+                                }
+                                toast.success("Bukti pembayaran dikirim ke chat admin");
+                              }
+                            }
+                          } catch (chatErr) {
+                            console.error("Gagal kirim bukti ke chat admin:", chatErr);
+                          }
+                        }
                       } catch { toast.error("Gagal mengirim bukti"); }
                       finally { setUploadingProof(false); }
                       setTimeout(async () => { await doSubmit(); setBcaModal(false); setProofImage(""); }, 500);
