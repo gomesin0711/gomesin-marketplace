@@ -1314,3 +1314,92 @@ Stage Summary:
 - `/api/admin/info` now returns the admin user id+name on Vercel, unblocking payment-proof image routing to admin chat.
 - Lint: 17 pre-existing problems (6 errors in `.cjs` + 11 warnings) — 0 new errors introduced.
 - Local test results (Prisma path): sellers=15, users=2, categories=13, admin={id: cms1trinv0000pzao4vy44or8, name: "Admin Gomesin"}.
+
+---
+Task ID: 4-beranda-supabase
+Agent: Beranda Supabase fixer
+Task: Fix /api/listings GET to query live Supabase data instead of static seed-data.json
+
+Work Log:
+- Read worklog.md to understand the prior pattern established by /api/admin/listings/route.ts (Supabase fallback with batch-fetch of Category/Seller/User by ID; no nested .select("*, category(*)") because no FK relationships are declared on Supabase tables).
+- Read /home/z/my-project/src/app/api/listings/route.ts — confirmed the GET handler tried Prisma first, then on any error returned getFallbackListings() which reads the static seed-data.json. There was NO Supabase fallback in the GET handler at all (the POST handler already had one added by a prior agent — the Supabase helpers at the top of the file were reusable).
+- Hoisted `const weekOnly = searchParams.get("week") === "1";` from inside the Prisma try block up to the params-parsing section (lines 60-62), so it is in scope for the new Supabase path too.
+- Modified the Prisma catch block: replaced `return NextResponse.json(getFallbackListings(filters));` with a comment-only fall-through (`console.error(...); // fall through to Supabase`). The Prisma try block itself is untouched.
+- Added a new "Path B: Vercel (raw Supabase)" try/catch block immediately after the Prisma catch. The Supabase path:
+  - Resolves the `category` filter once at the top by either setting `categoryCondition="jasa"` (for the "jasa-teknisi" slug) or looking up `categoryId` via `Category.select("id").eq("slug",category).single()`. Hoisted so the resolved values can be reused for both the data query and the count query.
+  - Builds the main query: `Listing.select("*").eq("status","active").eq("paymentStatus","paid").eq("violationFlag",false)`.
+  - Applies all the same filters as the Prisma where clause: ids (in), q (or ilike on title/description/brand/city — seller.name skipped, no FK), categoryCondition, categoryIdFilter, condition (skipped when categoryCondition is set, mirroring Prisma priority), province (eq), city (ilike), minPrice/maxPrice (gte/lte on integer price), featured (eq), weekOnly (gte createdAt), packageType (eq or in).
+  - Applies the same sort options as Prisma orderBy: price-asc, price-desc, popular (views desc), default (createdAt desc).
+  - Applies pagination via `.range((page-1)*limit, (page-1)*limit + limit - 1)`.
+  - On Supabase query error → returns getFallbackListings(filters) as last resort.
+  - Batch-fetches related Category/Seller/User rows by ID using Promise.all (same pattern as admin/listings), then maps each row to { ...row, category, seller, user } and passes through parseSupabaseListing().
+  - Runs a separate count query with `.select("id", { count: "exact", head: true })` re-applying all the same filters (including categoryCondition / categoryIdFilter), to compute `total` and `totalPages` accurately.
+- Outer catch returns getFallbackListings(filters) only if Supabase itself throws unexpectedly.
+- Reused the existing SUPABASE_URL / SUPABASE_ANON_KEY / getSupabase / parseSupabaseListing / safeJsonParse helpers already defined at the top of the file (added previously for the POST handler) — did NOT duplicate them.
+- Ran `bun run lint` — 17 problems (6 errors in .cjs + 11 warnings), matching the pre-existing baseline exactly. 0 new errors introduced.
+- Tested the Prisma path locally against the running dev server (port 3000) — all filter combinations returned HTTP 200 with correct data:
+  - `?limit=5` → total=37, count=5
+  - `?limit=5&category=jasa-teknisi` → total=6, count=5, all rows have condition="jasa"
+  - `?limit=3&sort=price-asc` → total=37, count=3, prices=[234, 1234, 3456] (ascending)
+  - `?limit=3&featured=1` → total=13, count=3, all rows featured=true
+- Committed with message: `fix: beranda queries live Supabase data instead of static seed-data.json` (commit 3957cc9).
+
+Stage Summary:
+- Files modified: src/app/api/listings/route.ts (GET handler only — POST handler was already correct).
+- The beranda (https://gomesin.vercel.app) will now query LIVE Supabase data on Vercel instead of falling back to the static seed-data.json snapshot. New listings created via POST /api/listings and approved by admin (status=active, paymentStatus=paid) will appear immediately; deleted listings will no longer appear as stale seed entries.
+- Lint: 17 pre-existing problems (6 errors in .cjs + 11 warnings) — 0 new errors introduced.
+- Local test results (Prisma path): basic=37/5, jasa-teknisi=6/5, price-asc=37/3 sorted ascending, featured=13/3 all featured.
+- Git commit hash: 3957cc9b65749960e02c1c250f6d6f81403a4487.
+
+---
+Task ID: 5-admin-beranda-production-fix
+Agent: Main (Z.ai Code)
+Task: Fix admin "Iklan Aktif" showing 0 listings on production + "Pasang Iklan" showing Rp. 0 for all packages on production
+
+Work Log:
+- Verified both bugs via curl on https://gomesin.vercel.app:
+  - /api/admin/listings returned {listings:[]} (0 listings) even though /api/listings showed 31 listings on beranda
+  - /api/admin/paket returned {pakets:[]} (0 packages) — all package prices showed as "Rp. 0" on the Pasang Iklan page
+- ROOT CAUSE 1 (admin listings): The Supabase fallback in /api/admin/listings/route.ts used `.select("*, category(*), seller(*), user(*)")` — a nested PostgREST select that REQUIRES foreign-key relationships between Supabase tables. This project's Supabase tables have NO FK relationships declared, so the query failed silently and returned {listings:[]}. (The /api/my-listings route had been fixed earlier for the same bug, but /api/admin/listings was missed.)
+- ROOT CAUSE 2 (admin paket): The GET handler in /api/admin/paket/route.ts had `if (!isDbAvailable()) return { pakets: [] };` as an early return — bypassing the getPakets() function in lib/paket.ts which has a hardcoded fallback with real prices. On Vercel, isDbAvailable() is false (no SQLite), so the route returned empty without ever trying the fallback.
+- FIX 1 (/api/admin/listings/route.ts): Replaced `.select("*, category(*), seller(*), user(*)")` with `.select("*")` + manual batch-fetching of related Category/Seller/User rows by their IDs (3 separate Promise.all queries, then Map-based joining). Mirrors the pattern already used in /api/my-listings/route.ts.
+- FIX 2 (/api/admin/paket/route.ts): Replaced the early-return with a 3-tier fallback: Path A (Prisma) → Path B (Supabase Paket table) → Path C (hardcoded DEFAULT_PAKETS array with real prices: Gold 30k, Colek 20k, Platinum 50k, Titanium 80k). The hardcoded defaults match the data in lib/paket.ts.
+- BONUS FIXES (dispatched subagent Task 3-admin-supabase-fallbacks): Found 4 more admin routes with the same early-return bug that would make their respective admin tabs empty on production:
+  - /api/admin/sellers — "Penjual" tab would be empty
+  - /api/admin/users — "Pengguna" tab would be empty
+  - /api/admin/categories — "Kategori" tab would be empty
+  - /api/admin/info — CRITICAL: returns {admin:null} on production, which breaks payment-proof chat routing (frontend can't find the admin user ID to send chat messages to). This was likely the root cause of the recurring "payment proof image missing in chat" issue on production!
+  All 4 routes now have Supabase fallbacks following the same pattern.
+- BONUS FIX (dispatched subagent Task 4-beranda-supabase): Discovered that /api/listings GET (the beranda endpoint) was falling back to getFallbackListings() which reads from a STATIC seed-data.json file (a snapshot of the local dev DB exported earlier). This meant:
+  - New listings created on production (saved to Supabase) NEVER appeared on the beranda
+  - Deleted listings still appeared as stale seed data
+  - The beranda (31 stale seed listings) and admin (25 real Supabase listings) showed DIFFERENT data
+  Fixed by adding a Supabase fallback path to the GET handler that mirrors all the Prisma filtering/sorting/pagination logic (status=active, paymentStatus=paid, violationFlag=false, q search via .or() ilike, category lookup by slug, condition, province, city, price range, featured, week, packageType, sort, pagination via .range()). Batch-fetches related Category/Seller/User rows by ID (same pattern as admin). Falls back to getFallbackListings() ONLY if Supabase itself errors.
+- Deployed all fixes to Vercel production via `npx vercel --prod --token` (2 deployments: commit 0fe7841 for admin route fixes, commit 3957cc9 for beranda Supabase fix).
+- Verified on production via curl:
+  - /api/admin/listings: 0 → 26 total (25 active) ✅, with category + seller data populated
+  - /api/admin/paket: 0 → 4 packages with real prices (Gold Rp 30k, Colek Rp 20k, Platinum Rp 50k, Titanium Rp 80k) ✅
+  - /api/admin/info: null → admin user found (id=cms1trinv0000pzao4vy44or8, name='Admin Gomesin') ✅
+  - /api/admin/sellers: 0 → 21 sellers ✅
+  - /api/admin/users: 0 → 2 users ✅
+  - /api/admin/categories: 0 → 13 categories ✅
+  - /api/listings (beranda): 31 stale seed listings → 25 live Supabase listings ✅
+  - Cross-check: beranda total (25) == admin active count (25) ✅ — consistent data!
+- Verified via Agent Browser: beranda now shows real listings (Excavator Komatsu PC200-8, Mesin Table Saw Sliding, Mesin Bubut Logam WD6150, etc.) instead of stale seed data.
+
+Stage Summary:
+- Files modified (7):
+  - src/app/api/admin/listings/route.ts — GET: replaced nested .select("*, category(*), seller(*), user(*)") with .select("*") + manual batch lookups
+  - src/app/api/admin/paket/route.ts — GET: 3-tier fallback (Prisma → Supabase → hardcoded DEFAULT_PAKETS)
+  - src/app/api/admin/sellers/route.ts — GET: added Supabase fallback (batch listing counts)
+  - src/app/api/admin/users/route.ts — GET: added Supabase fallback
+  - src/app/api/admin/categories/route.ts — GET: added Supabase fallback (batch listing counts)
+  - src/app/api/admin/info/route.ts — GET: added Supabase fallback (CRITICAL for payment-proof chat routing)
+  - src/app/api/listings/route.ts — GET: added Supabase fallback path so beranda shows live data instead of static seed-data.json
+- Lint: 17 pre-existing problems (6 errors in .cjs + 11 warnings) — 0 new errors introduced
+- Deployed to: https://gomesin.vercel.app (production, 2 deployments)
+- All 7 endpoints verified working on production via curl
+- Admin "Iklan Aktif" tab now shows 25 active listings (was 0)
+- "Pasang Iklan" page now shows real package prices (was "Rp. 0" for all)
+- Beranda now shows live Supabase listings (was stale seed data) — consistent with admin panel
+- Payment-proof chat routing now works on production (admin user resolvable via /api/admin/info)
