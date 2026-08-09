@@ -109,31 +109,29 @@ export async function POST(req: NextRequest) {
   // Try SQLite/Prisma first
   try {
     const user = await db.user.findUnique({ where: { email: emailNorm } });
-    if (!user || !verifyPassword(password, user.password)) {
-      return NextResponse.json(
-        { error: "Email atau kata sandi salah." },
-        { status: 401 }
-      );
+    if (user && verifyPassword(password, user.password)) {
+      return NextResponse.json({
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          city: user.city,
+          company: user.company,
+          address: user.address,
+          bannerImage: user.bannerImage,
+          logoImage: user.logoImage,
+          role: user.role,
+          createdAt:
+            user.createdAt instanceof Date
+              ? user.createdAt.toISOString()
+              : user.createdAt,
+        },
+      });
     }
-
-    return NextResponse.json({
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        city: user.city,
-        company: user.company,
-        address: user.address,
-        bannerImage: user.bannerImage,
-        logoImage: user.logoImage,
-        role: user.role,
-        createdAt:
-          user.createdAt instanceof Date
-            ? user.createdAt.toISOString()
-            : user.createdAt,
-      },
-    });
+    // If Prisma found no user OR password didn't match, fall through to
+    // the Supabase fallback (the user may exist in Supabase but not in
+    // the local SQLite — common on Vercel where the two DBs are separate).
   } catch {
     // SQLite unavailable (e.g. Vercel serverless) — try Supabase next
   }

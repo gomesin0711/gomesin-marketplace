@@ -27,27 +27,27 @@ export async function GET(req: NextRequest) {
   // Try SQLite/Prisma first
   try {
     const user = await db.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      return NextResponse.json({ error: "User tidak ditemukan" }, { status: 404 });
+    if (user) {
+      return NextResponse.json({
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          city: user.city,
+          company: user.company,
+          address: user.address,
+          bannerImage: user.bannerImage,
+          logoImage: user.logoImage,
+          role: user.role,
+          createdAt:
+            user.createdAt instanceof Date
+              ? user.createdAt.toISOString()
+              : user.createdAt,
+        },
+      });
     }
-    return NextResponse.json({
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        city: user.city,
-        company: user.company,
-        address: user.address,
-        bannerImage: user.bannerImage,
-        logoImage: user.logoImage,
-        role: user.role,
-        createdAt:
-          user.createdAt instanceof Date
-            ? user.createdAt.toISOString()
-            : user.createdAt,
-      },
-    });
+    // If Prisma found no user, fall through to the Supabase fallback.
   } catch {
     // SQLite unavailable — try Supabase next
   }
