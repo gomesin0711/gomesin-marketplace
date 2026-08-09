@@ -875,3 +875,49 @@ Stage Summary:
   2. Chat admin via socket.io — 2 separate messages with each image inline
 - Same fix applied to package-activate-dialog (upgrade flow) for both QRIS and BCA
 - Code pushed to GitHub; Vercel deploy pending (no CLI token available)
+
+---
+Task ID: 20
+Agent: Main Agent (Z.ai Code)
+Task: Make the 3-digit unique payment code RANDOM and ensure it CHANGES when the page is refreshed or when the user navigates away and comes back. User request: "kode unik secara acak dan ganti apabila di refresh atau pindah halaman dan balik lagi. check and fix"
+
+Work Log:
+- Read /home/z/my-project/src/app/api/listings/unique-code/route.ts — found ROOT CAUSE:
+  1. The API was idempotent per (userId, packageType) — returned the SAME code on every call (step 1 checked for existing reservation and returned it)
+  2. The code was picked as the SMALLEST available (sequential 1, 2, 3...) instead of random
+- Read post-ad.tsx and package-activate-dialog.tsx — confirmed both useEffects already fetch on mount/refresh (uniqueCode is useState(0)/null, not persisted to localStorage draft). The frontend was correct; only the API was wrong.
+- Rewrote /api/listings/unique-code/route.ts completely:
+  - Removed the idempotency check (step 1 of old code)
+  - Added logic to DELETE the previous unused reservation for (userId, packageType) before creating a new one — this releases the old code back to the pool
+  - Captures previousCodes set and EXCLUDES them from candidates (guarantees the code visibly changes when >1 code is available)
+  - Picks a RANDOM code from candidates using Math.floor(Math.random() * candidates.length) instead of the smallest
+  - Extracted core logic into reserveRandomCode() helper to cleanly handle the P2002 retry path
+  - Fixed the req.json() double-read bug (body is now parsed once at the top and reused in retry)
+  - Added explicit "NO_CODES_AVAILABLE" error handling (503 response)
+- Added cache:'no-store' to the fetch() calls in post-ad.tsx and package-activate-dialog.tsx to ensure no HTTP caching layer returns a stale code
+
+Verification with Agent Browser (logged in as udin user, navigated to post-ad payment step):
+- Gold (initial): Kode Unik 324, Total Rp 30.324
+- Refresh page: Kode Unik 038, Total Rp 30.038 (CHANGED ✓)
+- Switch to Platinum: Kode Unik 249, Total Rp 50.249 (CHANGED ✓)
+- Switch to Titanium: Kode Unik 440, Total Rp 80.440 (CHANGED ✓)
+- Switch back to Gold: Kode Unik 073, Total Rp 30.073 (CHANGED — different from previous Gold 038 ✓)
+- Navigate to Home and back: Kode Unik 051, Total Rp 30.051 (CHANGED ✓)
+- Direct API test (5 sequential gold calls): 611, 752, 240, 840, 376 — all different and random ✓
+- Dev log: all POST /api/listings/unique-code returned 200, no errors
+- Lint: clean on all 3 edited files (only pre-existing warnings in unrelated files)
+
+Deployment:
+- Committed (3c591ec) and pushed to GitHub (gomesin0711/gomesin-marketplace, main branch)
+- Vercel CLI deploy failed: "The specified token is not valid" (no valid VERCEL_TOKEN in environment; .env.vercel only has OIDC token for GitHub Actions, not CLI auth)
+- No GitHub Actions workflow exists — deployment relies on Vercel's native GitHub auto-deploy integration
+- If auto-deploy is configured on the Vercel project, the push to main will trigger a production deployment automatically
+
+Stage Summary:
+- The 3-digit unique payment code is now fully RANDOM (not sequential) and CHANGES on every:
+  1. Page refresh
+  2. Package switch (Gold→Platinum→Titanium→back to Gold)
+  3. Navigation away and back (Home→Pasang Iklan)
+- Each code remains GLOBALLY UNIQUE at the time of reservation (DB @unique constraint + used-listing codes excluded from pool)
+- The previous unused reservation is released on each new request, so the 999-code pool is not exhausted
+- Code pushed to GitHub; Vercel auto-deploy pending (no CLI token available for manual deploy)
