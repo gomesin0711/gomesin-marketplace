@@ -252,7 +252,9 @@ export function ProfileView() {
     if (deleteSlug) deleteMutation.mutate(deleteSlug);
   };
 
-  // Fetch user's messages (conversations) — NO polling, socket invalidates on change.
+  // Fetch user's messages (conversations) — realtime via socket.io invalidation.
+  // Polling fallback (5s) guarantees freshness even if the socket is temporarily
+  // unavailable (e.g. chat-service restart, network glitch).
   const { data: messagesData, refetch: refetchMessages } = useQuery({
     queryKey: ["messages", user?.id],
     queryFn: async () => {
@@ -261,7 +263,9 @@ export function ProfileView() {
       return res.json();
     },
     enabled: !!user?.id,
-    staleTime: Infinity, // Socket invalidates on new message / read receipt.
+    staleTime: 0,
+    refetchInterval: 5000, // Polling fallback — socket invalidates instantly when up.
+    refetchIntervalInBackground: false,
   });
   const conversations: any[] = messagesData?.conversations ?? [];
   const unreadCount = conversations.reduce((a: number, c: any) => a + (c.unread || 0), 0);
@@ -1416,7 +1420,7 @@ export function ProfileView() {
                             style={chatBgStyle}
                           >
                             <div className="flex justify-center py-1">
-                              <span className="rounded-full bg-white/80 px-3 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">Hari ini</span>
+                              <span className="rounded-full bg-white/80 px-3 py-0.5 text-[10px] font-medium text-black/60 shadow-sm">Hari ini</span>
                             </div>
                             {/* Listing as a chat bubble (left-aligned, from partner) */}
                             {conv.listingTitle && (
@@ -1430,11 +1434,11 @@ export function ProfileView() {
                                     </div>
                                   )}
                                   <div className="p-2">
-                                    <p className="truncate text-xs font-semibold text-foreground">{conv.listingTitle}</p>
+                                    <p className="truncate text-xs font-semibold text-black">{conv.listingTitle}</p>
                                     {conv.listingPrice != null && (
-                                      <p className="text-xs font-bold text-primary">Rp {conv.listingPrice.toLocaleString("id-ID")}</p>
+                                      <p className="text-xs font-bold text-[#075E54]">Rp {conv.listingPrice.toLocaleString("id-ID")}</p>
                                     )}
-                                    <span className="mt-0.5 block text-right text-[9px] text-muted-foreground/60">
+                                    <span className="mt-0.5 block text-right text-[9px] text-black/50">
                                       {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
                                     </span>
                                   </div>
@@ -1463,10 +1467,10 @@ export function ProfileView() {
                                           c.role === "user" ? "rounded-tr-sm" : "rounded-tl-sm"
                                         )
                                       : cn(
-                                          "max-w-[70%] px-3 py-2 text-sm",
+                                          "max-w-[70%] px-3 py-2 text-sm font-medium",
                                           c.role === "user"
-                                            ? "rounded-tr-sm bg-[#dcf8c6] text-foreground"
-                                            : "rounded-tl-sm bg-white text-foreground"
+                                            ? "rounded-tr-sm bg-[#dcf8c6] text-black"
+                                            : "rounded-tl-sm bg-white text-black"
                                         )
                                   )}
                                 >
@@ -1484,7 +1488,7 @@ export function ProfileView() {
                                     </p>
                                   )}
                                   <span className={cn(
-                                    "block text-right text-[9px] text-muted-foreground/60",
+                                    "block text-right text-[9px] text-black/50",
                                     isEmojiOnly ? "mt-1" : "mt-0.5"
                                   )}>
                                     {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}

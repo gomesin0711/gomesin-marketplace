@@ -1444,3 +1444,25 @@ Stage Summary:
   - Ad creation: succeeds with uniqueCode saved ✅
   - Delete: optimistic update = instant UI removal ✅
   - BCA dark mode: text-black font-bold on white bg = visible in all modes ✅
+
+---
+Task ID: realtime-chat-darkmode
+Agent: Main
+Task: Make all transactions/activities realtime (no refresh) + fix dark mode chat font to black + deploy
+
+Work Log:
+- Investigated realtime architecture: socket.io chat-service (port 3003) + TanStack Query polling already in place for admin (3s) and homepage (3s)
+- Found profile.tsx messages query used `staleTime: Infinity` with NO polling fallback — if socket.io disconnected, messages would go stale forever
+- Changed profile.tsx messages query to `staleTime: 0, refetchInterval: 5000, refetchIntervalInBackground: false` — 5s polling fallback guarantees realtime even if socket fails
+- Fixed dark mode chat font in 3 files:
+  * chat-widget.tsx: incoming bubbles changed from `bg-white text-foreground` → `bg-white text-black font-medium`; "Hari ini" separator from `text-muted-foreground` → `text-black/60`
+  * profile.tsx: chat bubbles changed from `text-foreground` → `text-black` (both user bg-[#dcf8c6] and partner bg-white); timestamps from `text-muted-foreground/60` → `text-black/50`; listing card bubble title from `text-foreground` → `text-black`; date separator from `text-muted-foreground` → `text-black/60`
+  * admin.tsx ChatMsgBubble: message content from `text-foreground` → `text-black font-medium`; timestamps from `text-muted-foreground/60` → `text-black/50`; image error link from `text-primary` → `text-[#075E54]`
+  * admin.tsx ChatTab WhatsApp panel: search input, conversation list items, chat headers, listing card bubbles, footers all changed from `text-foreground`/`text-muted-foreground` → `text-black`/`text-black/50`/`text-black/60` (these use hardcoded light bg-[#f0f2f5]/bg-white backgrounds)
+- Verified with Agent Browser: dark mode active, chat dialog renders correctly, computed colors confirm black text on white bubble backgrounds
+
+Stage Summary:
+- All chat text now uses explicit `text-black` on light bubble backgrounds (bg-white, bg-[#dcf8c6], bg-[#f0f2f5]) — readable in both light AND dark mode
+- Realtime guarantee strengthened: profile messages now have 5s polling fallback alongside socket.io push invalidation
+- Admin (3s polling + socket) and homepage (3s polling + socket) already had realtime — unchanged
+- Deploying to Vercel

@@ -3149,22 +3149,22 @@ function ChatMsgBubble({
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => { e.preventDefault(); onImageClick(m.image); }}
-            className="flex min-w-[220px] items-center gap-2 bg-black/5 px-3 py-4 text-xs text-primary underline"
+            className="flex min-w-[220px] items-center gap-2 bg-black/5 px-3 py-4 text-xs text-[#075E54] underline"
           >
             <ImageIcon className="size-4 shrink-0" />
             Gambar tidak tersedia — klik untuk membuka
           </a>
         )}
         {m.content && (
-          <p className="whitespace-pre-wrap break-words px-2.5 pt-1.5 text-sm text-foreground">
+          <p className="whitespace-pre-wrap break-words px-2.5 pt-1.5 text-sm font-medium text-black">
             {m.content}
           </p>
         )}
         <div className="px-2.5 pb-1 pt-0.5 text-right">
-          <span className="text-[9px] text-muted-foreground/60">
+          <span className="text-[9px] text-black/50">
             {new Date(m.createdAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
             {isSent && (
-              <span className={cn("ml-1", m.read ? "text-blue-500" : "text-muted-foreground/40")}>✓✓</span>
+              <span className={cn("ml-1", m.read ? "text-blue-500" : "text-black/30")}>✓✓</span>
             )}
           </span>
         </div>
@@ -3291,12 +3291,12 @@ function ChatTab() {
           {/* Search bar inside list header */}
           <div className="border-b border-border bg-[#f0f2f5] p-2">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-black/40" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Cari percakapan..."
-                className="h-8 rounded-lg border-none bg-white pl-8 text-sm shadow-sm"
+                className="h-8 rounded-lg border-none bg-white pl-8 text-sm text-black shadow-sm placeholder:text-black/40"
               />
             </div>
           </div>
@@ -3331,11 +3331,11 @@ function ChatTab() {
                     </Avatar>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-sm font-semibold text-foreground">{c.name}</p>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgoShort(c.lastTime)}</span>
+                        <p className="truncate text-sm font-semibold text-black">{c.name}</p>
+                        <span className="shrink-0 text-[10px] text-black/50">{timeAgoShort(c.lastTime)}</span>
                       </div>
                       <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-xs text-muted-foreground">{c.lastMessage || "—"}</p>
+                        <p className="truncate text-xs text-black/60">{c.lastMessage || "—"}</p>
                         {c.unread > 0 && (
                           <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[#25D366] text-[9px] font-bold text-white">{c.unread}</span>
                         )}
@@ -3365,7 +3365,7 @@ function ChatTab() {
                   )}
                 </Avatar>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-foreground">{selected.name}</p>
+                  <p className="truncate text-sm font-bold text-black">{selected.name}</p>
                   {selected.listingTitle && (
                     <p className="truncate text-[10px] text-[#075E54]">{selected.listingTitle}</p>
                   )}
@@ -3395,11 +3395,11 @@ function ChatTab() {
                         </div>
                       )}
                       <div className="p-2">
-                        <p className="truncate text-xs font-semibold text-foreground">{selected.listingTitle}</p>
+                        <p className="truncate text-xs font-semibold text-black">{selected.listingTitle}</p>
                         {selected.listingPrice != null && (
                           <p className="text-xs font-bold text-[#075E54]">Rp {selected.listingPrice.toLocaleString("id-ID")}</p>
                         )}
-                        <span className="mt-0.5 block text-right text-[9px] text-muted-foreground/60">
+                        <span className="mt-0.5 block text-right text-[9px] text-black/50">
                           {timeAgoShort(selected.lastTime)}
                         </span>
                       </div>
@@ -3409,7 +3409,7 @@ function ChatTab() {
 
                 {/* Chat messages */}
                 {selectedMessages.length === 0 ? (
-                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Belum ada pesan.</div>
+                  <div className="flex h-full items-center justify-center text-sm text-black/50">Belum ada pesan.</div>
                 ) : (
                   selectedMessages.map((m: any, i: number) => (
                     <ChatMsgBubble key={m.id || i} m={m} isSent={m.sent} partnerImage={selected.partnerImage} onImageClick={setLightbox} />
@@ -3418,7 +3418,7 @@ function ChatTab() {
               </div>
 
               {/* Footer — view-only notice */}
-              <div className="border-t border-border bg-[#f0f2f5] px-4 py-2 text-center text-[11px] text-muted-foreground">
+              <div className="border-t border-border bg-[#f0f2f5] px-4 py-2 text-center text-[11px] text-black/50">
                 Mode baca saja — {selectedMessages.length} pesan
               </div>
             </>
@@ -3445,7 +3445,7 @@ function ChatTab() {
                 aria-label="Kembali"
                 className="grid size-9 shrink-0 place-items-center rounded-full hover:bg-black/5"
               >
-                <ChevronLeft className="size-5" />
+                <ChevronLeft className="size-5 text-black" />
               </button>
               <Avatar className="size-9 shrink-0 rounded-full">
                 {selected.partnerImage ? (
@@ -3457,7 +3457,7 @@ function ChatTab() {
                 )}
               </Avatar>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-foreground">{selected.name}</p>
+                <p className="truncate text-sm font-bold text-black">{selected.name}</p>
                 {selected.listingTitle && (
                   <p className="truncate text-[10px] text-[#075E54]">{selected.listingTitle}</p>
                 )}
@@ -3484,7 +3484,7 @@ function ChatTab() {
                       </div>
                     )}
                     <div className="p-2">
-                      <p className="truncate text-xs font-semibold text-foreground">{selected.listingTitle}</p>
+                      <p className="truncate text-xs font-semibold text-black">{selected.listingTitle}</p>
                       {selected.listingPrice != null && (
                         <p className="text-xs font-bold text-[#075E54]">Rp {selected.listingPrice.toLocaleString("id-ID")}</p>
                       )}
@@ -3493,14 +3493,14 @@ function ChatTab() {
                 </div>
               )}
               {selectedMessages.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Belum ada pesan.</div>
+                <div className="flex h-full items-center justify-center text-sm text-black/50">Belum ada pesan.</div>
               ) : (
                 selectedMessages.map((m: any, i: number) => (
                   <ChatMsgBubble key={m.id || i} m={m} isSent={m.sent} onImageClick={setLightbox} />
                 ))
               )}
             </div>
-            <div className="border-t border-border bg-[#f0f2f5] px-4 py-2 text-center text-[11px] text-muted-foreground">
+            <div className="border-t border-border bg-[#f0f2f5] px-4 py-2 text-center text-[11px] text-black/50">
               Mode baca saja — {selectedMessages.length} pesan
             </div>
           </div>
