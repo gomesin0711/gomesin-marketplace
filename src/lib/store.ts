@@ -12,6 +12,7 @@ export type View =
   | "favorites"
   | "profile"
   | "seller"
+  | "chat"
   | "login"
   | "dashboard"
   | "upgrade"
@@ -96,6 +97,7 @@ type NavState = {
   goToDashboard: () => void;
   goToUpgrade: (slug: string) => void;
   goToSeller: (userId: string) => void;
+  goToChat: (slug: string) => void;
   goToAdmin: () => void;
   goToAdminSub: (sub: "admin-sellers" | "admin-categories" | "admin-listings" | "admin-new-listings" | "admin-expired-listings" | "admin-rejected-listings" | "admin-transactions" | "admin-reports" | "admin-users" | "admin-paket" | "admin-merek" | "admin-lokasi" | "admin-banner" | "admin-audit" | "admin-monthly-report" | "admin-chat") => void;
   goBack: () => void;
@@ -268,6 +270,17 @@ export const useStore = create<NavState>()(
             view: "seller" as View,
             slug: undefined,
             sellerId: userId,
+            history: [...s.history, { view: s.view, slug: s.slug, filters: s.filters }].slice(-20),
+          };
+          if (typeof window !== "undefined") window.history.pushState({ gomesin: true }, "");
+          return state;
+        }),
+
+      goToChat: (slug) =>
+        set((s) => {
+          const state = {
+            view: "chat" as View,
+            slug,
             history: [...s.history, { view: s.view, slug: s.slug, filters: s.filters }].slice(-20),
           };
           if (typeof window !== "undefined") window.history.pushState({ gomesin: true }, "");

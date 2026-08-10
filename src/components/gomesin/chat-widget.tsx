@@ -71,14 +71,24 @@ type MenuState = {
   msgIndex: number;
 };
 
-export function ChatWidget({
+/**
+ * ChatInner — the reusable chat UI (header, listing card, messages, input,
+ * context menu, lightbox). Used by BOTH:
+ *   - ChatWidget: wraps ChatInner in a Dialog (modal)
+ *   - ChatView:   wraps ChatInner in a full-page container
+ *
+ * Because Radix Dialog only mounts DialogContent children when open, and
+ * ChatView only renders when view === "chat", ChatInner is ALWAYS "active"
+ * while mounted — no `open` prop needed.
+ */
+export function ChatInner({
   listing,
-  open,
-  onOpenChange,
+  onBack,
+  variant = "modal",
 }: {
   listing: Listing;
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
+  onBack: () => void;
+  variant?: "modal" | "page";
 }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -109,9 +119,8 @@ export function ChatWidget({
   const queryClient = useQueryClient();
   const { sendMessage, markRead, subscribe } = useChatSocket();
 
-  // Fetch conversation history. Poll every 5s when open so that messages
-  // sent via HTTP fallback (e.g. on Vercel where socket.io isn't running)
-  // still appear in the UI. Mirrors the polling used on profile.tsx.
+  // Fetch conversation history. Poll every 5s so messages sent via HTTP
+  // fallback (e.g. on Vercel where socket.io isn't running) still appear.
   const { data: historyData } = useQuery({
     queryKey: ["chat-history", currentUser?.id, ownerId, listing.id],
     queryFn: async () => {
@@ -120,17 +129,16 @@ export function ChatWidget({
       if (!res.ok) throw new Error("fail");
       return res.json();
     },
-    enabled: !!currentUser && !!ownerId && open,
-    refetchInterval: open ? 5000 : false,
+    enabled: !!currentUser && !!ownerId,
+    refetchInterval: 5000,
     refetchIntervalInBackground: false,
   });
 
   // Merge history data into local messages state. On the FIRST load we
-  // replace the entire list; on subsequent polls (e.g. new messages from
-  // the other party saved via HTTP fallback) we MERGE by id so that we
+  // replace the entire list; on subsequent polls we MERGE by id so that we
   // don't lose optimistic local messages and don't cause duplicate renders.
   useEffect(() => {
-    if (!open || !historyData?.conversations) return;
+    if (!historyData?.conversations) return;
     const conv = historyData.conversations.find(
       (c: any) => c.partnerId === ownerId && c.listingTitle === listing.title
     );
@@ -145,19 +153,16 @@ export function ChatWidget({
       : [];
 
     if (!loadedHistory) {
-      // First load — set messages directly.
       setMessages(dbMsgs);
       setLoadedHistory(true);
       if (currentUser && ownerId && conv?.messages?.length) {
         markRead(currentUser.id, ownerId);
       }
     } else {
-      // Subsequent poll — merge new messages by id.
       setMessages((prev) => {
         const existingIds = new Set(prev.filter((m) => m.id).map((m) => m.id));
         const newOnes = dbMsgs.filter((m) => m.id && !existingIds.has(m.id));
         if (newOnes.length === 0) return prev;
-        // Re-mark read if there are new incoming messages.
         const hasIncoming = newOnes.some((m) => m.role === "assistant");
         if (hasIncoming && currentUser && ownerId) {
           markRead(currentUser.id, ownerId);
@@ -165,10 +170,10 @@ export function ChatWidget({
         return [...prev, ...newOnes];
       });
     }
-  }, [open, historyData, ownerId, listing.title, loadedHistory, currentUser, markRead]);
+  }, [historyData, ownerId, listing.title, loadedHistory, currentUser, markRead]);
 
   useEffect(() => {
-    if (!open || !currentUser || !ownerId) return;
+    if (!currentUser || !ownerId) return;
     const off = subscribe<ChatMessage>("message:new", (msg) => {
       const isRelevant =
         (msg.sent === false && msg.senderId === ownerId && msg.receiverId === currentUser.id) ||
@@ -188,26 +193,17 @@ export function ChatWidget({
       }
     });
     return off;
-  }, [open, currentUser, ownerId, subscribe, markRead, queryClient]);
-
-  useEffect(() => {
-    if (!open) {
-      setLoadedHistory(false);
-      setMessages([]);
-      setMenu({ visible: false, x: 0, y: 0, msgIndex: -1 });
-      setSelectedMsg(null);
-    }
-  }, [open]);
+  }, [currentUser, ownerId, subscribe, markRead, queryClient]);
 
   // Track chat-open state so the global Header knows to play a soft "ding"
   // (instead of the full ringtone) when a new message arrives while the user
   // is already viewing this chat.
   useEffect(() => {
-    setChatOpen(open);
+    setChatOpen(true);
     return () => {
       setChatOpen(false);
     };
-  }, [open]);
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -303,7 +299,6 @@ export function ChatWidget({
   const handleTouchStart = (index: number) => {
     longPressTimer.current = setTimeout(() => {
       setSelectedMsg(index);
-      // Show menu at center of the message bubble.
       const el = document.querySelector(`[data-msg-index="${index}"]`) as HTMLElement;
       if (el) {
         const rect = el.getBoundingClientRect();
@@ -368,218 +363,253 @@ export function ChatWidget({
     { label: "Bersihkan Chat", icon: Eraser, action: handleClearChat, color: "text-foreground" },
   ] : [];
 
+  // Page variant uses a slimmer header (sticky bar) so the full-page chat
+  // looks like a native messaging app rather than a modal.
+  const isPage = variant === "page";
+
+  return (
+    <>
+      {/* ===== HEADER ===== */}
+      <div className={cn(
+        "flex items-center gap-2 border-b border-border bg-primary p-3 text-primary-foreground",
+        isPage && "sticky top-0 z-10"
+      )}>
+        <button
+          onClick={onBack}
+          aria-label="Kembali"
+          className="grid size-8 shrink-0 place-items-center rounded-full text-primary-foreground transition hover:bg-white/15"
+        >
+          <ArrowLeft className="size-5" />
+        </button>
+        <Avatar className="size-10 border-2 border-white/30">
+          <AvatarFallback className="bg-white/20 text-sm font-bold text-primary-foreground">{initials}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 text-sm text-primary-foreground">
+            <span className="truncate font-semibold">{ownerName}</span>
+            {seller.verified && <BadgeCheck className="size-3.5 shrink-0" />}
+            {blocked && <span className="rounded bg-red-500 px-1 text-[9px] font-bold">DIBLOKIR</span>}
+          </div>
+          <div className="flex items-center gap-1 text-[11px] text-primary-foreground/80">
+            <span className={cn("size-1.5 rounded-full", blocked ? "bg-red-400" : "bg-orange-400")} /> {blocked ? "Diblokir" : tr("chatOnline")}
+          </div>
+        </div>
+        <Popover open={bgOpen} onOpenChange={setBgOpen}>
+          <PopoverTrigger asChild>
+            <button
+              className="grid size-8 shrink-0 place-items-center rounded-full text-primary-foreground transition hover:bg-white/15"
+              aria-label="Pengaturan chat"
+            >
+              <Settings className="size-5" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-3" align="end">
+            <p className="mb-2 text-xs font-bold text-foreground">Warna Background Chat</p>
+            <div className="grid grid-cols-5 gap-2">
+              {presets.map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => { setBg(p.key); }}
+                  className={cn(
+                    "size-9 rounded-full border-2 transition",
+                    bgKey === p.key ? "border-primary ring-2 ring-primary/30" : "border-border hover:scale-110"
+                  )}
+                  style={{ backgroundColor: p.color }}
+                  title={p.label}
+                  aria-label={p.label}
+                />
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      {/* ===== LISTING CARD ===== */}
+      <div className="shrink-0 border-b border-border bg-card p-2.5">
+        <div className="flex items-center gap-2.5">
+          <div className="relative size-[60px] shrink-0 overflow-hidden rounded-lg bg-muted sm:size-[80px]">
+            {img ? <img src={img} alt="" className="size-full object-cover" /> : <div className="flex h-full items-center justify-center text-muted-foreground"><Tag className="size-6" /></div>}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="line-clamp-2 text-sm font-semibold text-foreground">{listing.title}</p>
+            <p className="mt-0.5 text-sm font-bold text-primary">{formatRupiahFull(listing.price)}</p>
+            <p className="flex items-center gap-0.5 text-[10px] text-muted-foreground"><MapPin className="size-2.5" /> {listing.city}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== MESSAGES ===== */}
+      <div
+        ref={scrollRef}
+        className={cn(
+          "gomesin-scroll min-h-0 flex-1 space-y-1 overflow-y-auto p-3",
+          bgIsDark && "text-white",
+          isPage ? "sm:max-h-none" : "max-h-[40vh] min-h-[180px]"
+        )}
+        style={bgStyle}
+      >
+        {messages.length === 0 && loadedHistory && (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <MessageCircle className="size-8 text-muted-foreground/40" />
+            <p className="mt-2 text-xs text-muted-foreground">Belum ada pesan. Mulai chat dengan penjual.</p>
+          </div>
+        )}
+        {messages.length > 0 && (
+          <div className="flex justify-center py-1">
+            <span className="rounded-full bg-white/80 px-3 py-0.5 text-[10px] font-medium text-black/60 shadow-sm">Hari ini</span>
+          </div>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
+            <div className={cn("flex flex-col gap-0.5", m.role === "user" ? "items-end" : "items-start")}>
+              <div
+                data-msg-index={i}
+                onContextMenu={(e) => handleContextMenu(e, i)}
+                onTouchStart={() => handleTouchStart(i)}
+                onTouchEnd={handleTouchEnd}
+                onTouchMove={handleTouchEnd}
+                className={cn(
+                  "max-w-[85%] cursor-pointer rounded-2xl text-sm shadow-sm transition select-none",
+                  m.role === "user"
+                    ? "rounded-br-sm bg-primary text-primary-foreground"
+                    : cn("rounded-bl-sm bg-white text-black font-medium"),
+                  selectedMsg === i && "ring-2 ring-blue-400 ring-offset-1",
+                  m.image ? "overflow-hidden p-0" : "px-3 py-2"
+                )}
+              >
+                {m.image && (
+                  <ChatBubbleImage src={m.image} onLightbox={(url) => setLightbox(url)} />
+                )}
+                {m.content && m.image && (
+                  <p className="whitespace-pre-wrap break-words px-2.5 pt-1.5">{m.content}</p>
+                )}
+                {m.content && !m.image && m.content}
+                {!m.content && !m.image && ""}
+                {m.time && (
+                  <span className={cn("inline-block text-[9px] opacity-60", m.image ? "block px-2.5 pb-1 pt-0.5 text-right" : "ml-2")}>{m.time}</span>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+        {sending && (
+          <div className="flex justify-end">
+            <div className="rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm">
+              <span className="size-2 animate-bounce rounded-full bg-white/70 [animation-delay:-0.3s] inline-block" />
+              <span className="size-2 animate-bounce rounded-full bg-white/70 [animation-delay:-0.15s] inline-block ml-0.5" />
+              <span className="size-2 animate-bounce rounded-full bg-white/70 inline-block ml-0.5" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ===== QUICK REPLIES ===== */}
+      {messages.length === 0 && loadedHistory && !blocked && (
+        <div className="flex flex-wrap gap-1.5 border-t border-border px-3 py-2">
+          {quick.map((q) => (
+            <button key={q} onClick={() => send(q)} className="rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs text-primary hover:bg-primary/10">{q}</button>
+          ))}
+        </div>
+      )}
+
+      {/* ===== INPUT ===== */}
+      <form
+        onSubmit={(e) => { e.preventDefault(); send(input); }}
+        className="flex shrink-0 items-center gap-1.5 border-t border-border bg-card p-2.5"
+      >
+        {/* Hidden image inputs */}
+        <input ref={imgFileRef} type="file" accept="image/*" className="hidden" onChange={handleChatImage} />
+        <input ref={imgCamRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleChatImage} />
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-9 shrink-0 text-muted-foreground hover:text-primary"
+          disabled={imgSending || blocked}
+          onClick={() => imgFileRef.current?.click()}
+        >
+          {imgSending ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
+        </Button>
+        <Input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder={blocked ? "Pengguna diblokir" : tr("chatPlaceholder")}
+          className="h-9 flex-1 rounded-full"
+          disabled={sending || blocked}
+        />
+        <Button type="submit" size="icon" className="size-9 shrink-0 rounded-full bg-primary" disabled={sending || !input.trim() || blocked}>
+          {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+        </Button>
+      </form>
+
+      {/* ===== CONTEXT MENU (desktop right-click + mobile long-press) ===== */}
+      {menu.visible && (
+        <div
+          className="fixed z-[100] min-w-[160px] overflow-hidden rounded-lg border border-border bg-card py-1 shadow-xl animate-fade-up"
+          style={{ left: Math.min(menu.x, window.innerWidth - 180), top: Math.min(menu.y, window.innerHeight - 200) }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {menuItems.map((item, idx) => (
+            <button
+              key={idx}
+              onClick={() => { item.action(); }}
+              className={cn("flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent transition", item.color)}
+            >
+              <item.icon className="size-4" />
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ===== IMAGE LIGHTBOX — click image to view full size ===== */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setLightbox(null)}
+        >
+          <button
+            aria-label="Tutup"
+            className="absolute right-4 top-4 grid size-10 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20"
+          >
+            <X className="size-6" />
+          </button>
+          <img
+            src={normalizeImageUrl(lightbox)}
+            alt="Gambar besar"
+            referrerPolicy="no-referrer"
+            className="max-h-[90vh] max-w-full rounded-lg object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * ChatWidget — Dialog/modal wrapper around ChatInner.
+ * Kept for backward compatibility (used by ChatButton + other places that
+ * want a modal chat). The DetailView "Chat Penjual" button now navigates to
+ * the full-page ChatView instead.
+ */
+export function ChatWidget({
+  listing,
+  open,
+  onOpenChange,
+}: {
+  listing: Listing;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md gap-0 overflow-hidden p-0 sm:max-w-md" showCloseButton={false}>
-        {/* ===== HEADER ===== */}
-        <DialogHeader className="border-b border-border bg-primary p-3 text-primary-foreground">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => onOpenChange(false)}
-              aria-label="Kembali"
-              className="grid size-8 shrink-0 place-items-center rounded-full text-primary-foreground transition hover:bg-white/15"
-            >
-              <ArrowLeft className="size-5" />
-            </button>
-            <Avatar className="size-10 border-2 border-white/30">
-              <AvatarFallback className="bg-white/20 text-sm font-bold text-primary-foreground">{initials}</AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1">
-              <DialogTitle className="flex items-center gap-1.5 text-sm text-primary-foreground">
-                <span className="truncate">{ownerName}</span>
-                {seller.verified && <BadgeCheck className="size-3.5 shrink-0" />}
-                {blocked && <span className="rounded bg-red-500 px-1 text-[9px] font-bold">DIBLOKIR</span>}
-              </DialogTitle>
-              <DialogDescription className="flex items-center gap-1 text-[11px] text-primary-foreground/80">
-                <span className={cn("size-1.5 rounded-full", blocked ? "bg-red-400" : "bg-orange-400")} /> {blocked ? "Diblokir" : tr("chatOnline")}
-              </DialogDescription>
-            </div>
-            <Popover open={bgOpen} onOpenChange={setBgOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  className="grid size-8 shrink-0 place-items-center rounded-full text-primary-foreground transition hover:bg-white/15"
-                  aria-label="Pengaturan chat"
-                >
-                  <Settings className="size-5" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-64 p-3" align="end">
-                <p className="mb-2 text-xs font-bold text-foreground">Warna Background Chat</p>
-                <div className="grid grid-cols-5 gap-2">
-                  {presets.map((p) => (
-                    <button
-                      key={p.key}
-                      onClick={() => { setBg(p.key); }}
-                      className={cn(
-                        "size-9 rounded-full border-2 transition",
-                        bgKey === p.key ? "border-primary ring-2 ring-primary/30" : "border-border hover:scale-110"
-                      )}
-                      style={{ backgroundColor: p.color }}
-                      title={p.label}
-                      aria-label={p.label}
-                    />
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
+      <DialogContent className="flex max-w-md flex-col gap-0 overflow-hidden p-0 sm:max-w-md" showCloseButton={false}>
+        <DialogHeader className="sr-only">
+          <DialogTitle>Chat Penjual</DialogTitle>
+          <DialogDescription>Chat dengan penjual</DialogDescription>
         </DialogHeader>
-
-        {/* ===== LISTING CARD ===== */}
-        <div className="border-b border-border bg-card p-2.5">
-          <div className="flex items-center gap-2.5">
-            <div className="relative size-[120px] shrink-0 overflow-hidden rounded-lg bg-muted">
-              {img ? <img src={img} alt="" className="size-full object-cover" /> : <div className="flex h-full items-center justify-center text-muted-foreground"><Tag className="size-6" /></div>}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="line-clamp-2 text-sm font-semibold text-foreground">{listing.title}</p>
-              <p className="mt-0.5 text-sm font-bold text-primary">{formatRupiahFull(listing.price)}</p>
-              <p className="flex items-center gap-0.5 text-[10px] text-muted-foreground"><MapPin className="size-2.5" /> {listing.city}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* ===== MESSAGES ===== */}
-        <div
-          ref={scrollRef}
-          className={cn("gomesin-scroll max-h-[40vh] min-h-[180px] space-y-1 overflow-y-auto p-3", bgIsDark && "text-white")}
-          style={bgStyle}
-        >
-          {messages.length === 0 && loadedHistory && (
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <MessageCircle className="size-8 text-muted-foreground/40" />
-              <p className="mt-2 text-xs text-muted-foreground">Belum ada pesan. Mulai chat dengan penjual.</p>
-            </div>
-          )}
-          {messages.length > 0 && (
-            <div className="flex justify-center py-1">
-              <span className="rounded-full bg-white/80 px-3 py-0.5 text-[10px] font-medium text-black/60 shadow-sm">Hari ini</span>
-            </div>
-          )}
-          {messages.map((m, i) => (
-            <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
-              <div className={cn("flex flex-col gap-0.5", m.role === "user" ? "items-end" : "items-start")}>
-                <div
-                  data-msg-index={i}
-                  onContextMenu={(e) => handleContextMenu(e, i)}
-                  onTouchStart={() => handleTouchStart(i)}
-                  onTouchEnd={handleTouchEnd}
-                  onTouchMove={handleTouchEnd}
-                  className={cn(
-                    "max-w-[85%] cursor-pointer rounded-2xl text-sm shadow-sm transition select-none",
-                    m.role === "user"
-                      ? "rounded-br-sm bg-primary text-primary-foreground"
-                      : cn("rounded-bl-sm bg-white text-black font-medium"),
-                    selectedMsg === i && "ring-2 ring-blue-400 ring-offset-1",
-                    m.image ? "overflow-hidden p-0" : "px-3 py-2"
-                  )}
-                >
-                  {m.image && (
-                    <ChatBubbleImage src={m.image} onLightbox={(url) => setLightbox(url)} />
-                  )}
-                  {m.content && m.image && (
-                    <p className="whitespace-pre-wrap break-words px-2.5 pt-1.5">{m.content}</p>
-                  )}
-                  {m.content && !m.image && m.content}
-                  {!m.content && !m.image && ""}
-                  {m.time && (
-                    <span className={cn("inline-block text-[9px] opacity-60", m.image ? "block px-2.5 pb-1 pt-0.5 text-right" : "ml-2")}>{m.time}</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-          {sending && (
-            <div className="flex justify-end">
-              <div className="rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm">
-                <span className="size-2 animate-bounce rounded-full bg-white/70 [animation-delay:-0.3s] inline-block" />
-                <span className="size-2 animate-bounce rounded-full bg-white/70 [animation-delay:-0.15s] inline-block ml-0.5" />
-                <span className="size-2 animate-bounce rounded-full bg-white/70 inline-block ml-0.5" />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ===== QUICK REPLIES ===== */}
-        {messages.length === 0 && loadedHistory && !blocked && (
-          <div className="flex flex-wrap gap-1.5 border-t border-border px-3 py-2">
-            {quick.map((q) => (
-              <button key={q} onClick={() => send(q)} className="rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs text-primary hover:bg-primary/10">{q}</button>
-            ))}
-          </div>
-        )}
-
-        {/* ===== INPUT ===== */}
-        <form
-          onSubmit={(e) => { e.preventDefault(); send(input); }}
-          className="flex items-center gap-1.5 border-t border-border bg-card p-2.5"
-        >
-          {/* Hidden image inputs */}
-          <input ref={imgFileRef} type="file" accept="image/*" className="hidden" onChange={handleChatImage} />
-          <input ref={imgCamRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleChatImage} />
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="size-9 shrink-0 text-muted-foreground hover:text-primary"
-            disabled={imgSending || blocked}
-            onClick={() => imgFileRef.current?.click()}
-          >
-            {imgSending ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
-          </Button>
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={blocked ? "Pengguna diblokir" : tr("chatPlaceholder")}
-            className="h-9 flex-1 rounded-full"
-            disabled={sending || blocked}
-          />
-          <Button type="submit" size="icon" className="size-9 shrink-0 rounded-full bg-primary" disabled={sending || !input.trim() || blocked}>
-            {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-          </Button>
-        </form>
-
-        {/* ===== CONTEXT MENU (desktop right-click + mobile long-press) ===== */}
-        {menu.visible && (
-          <div
-            className="fixed z-[100] min-w-[160px] overflow-hidden rounded-lg border border-border bg-card py-1 shadow-xl animate-fade-up"
-            style={{ left: Math.min(menu.x, window.innerWidth - 180), top: Math.min(menu.y, window.innerHeight - 200) }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {menuItems.map((item, idx) => (
-              <button
-                key={idx}
-                onClick={() => { item.action(); }}
-                className={cn("flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent transition", item.color)}
-              >
-                <item.icon className="size-4" />
-                {item.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* ===== IMAGE LIGHTBOX — click image to view full size ===== */}
-        {lightbox && (
-          <div
-            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 p-4"
-            onClick={() => setLightbox(null)}
-          >
-            <button
-              aria-label="Tutup"
-              className="absolute right-4 top-4 grid size-10 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20"
-            >
-              <X className="size-6" />
-            </button>
-            <img
-              src={normalizeImageUrl(lightbox)}
-              alt="Gambar besar"
-              referrerPolicy="no-referrer"
-              className="max-h-[90vh] max-w-full rounded-lg object-contain"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        )}
+        <ChatInner listing={listing} onBack={() => onOpenChange(false)} variant="modal" />
       </DialogContent>
     </Dialog>
   );

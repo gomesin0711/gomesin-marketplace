@@ -30,7 +30,6 @@ import {
   type Listing,
 } from "@/lib/types";
 import { ListingCard } from "../listing-card";
-import { ChatWidget } from "../chat-widget";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useLang, translations as i18nTranslations, formatT, categoryName, listingTitle, listingDesc, listingSpecs } from "@/lib/i18n";
@@ -48,12 +47,12 @@ export function DetailView() {
   const goBack = useStore((s) => s.goBack);
   const goToListings = useStore((s) => s.goToListings);
   const goToSeller = useStore((s) => s.goToSeller);
+  const goToChat = useStore((s) => s.goToChat);
   const toggleFavorite = useStore((s) => s.toggleFavorite);
   const isFav = useStore((s) => (slug ? false : false));
   const favIds = useStore((s) => s.favorites);
   const [activeImg, setActiveImg] = useState(0);
   const touchStartX = useRef<number | null>(null);
-  const [chatOpen, setChatOpen] = useState(false);
   const { t, lang } = useLang();
   const mounted = useMounted();
   const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
@@ -327,7 +326,7 @@ export function DetailView() {
           {/* action buttons (moved from seller sidebar) */}
           <div className="mt-4 space-y-2">
             <Button
-              onClick={() => setChatOpen(true)}
+              onClick={() => goToChat(l.slug)}
               className="w-full gap-2 rounded-full bg-primary font-semibold"
               size="lg"
             >
@@ -504,7 +503,6 @@ export function DetailView() {
         </section>
       )}
 
-      <ChatWidget listing={l} open={chatOpen} onOpenChange={setChatOpen} />
     </div>
   );
 }

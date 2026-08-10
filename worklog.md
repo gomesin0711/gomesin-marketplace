@@ -1730,3 +1730,114 @@ Stage Summary:
 - Dev log: clean, no errors. Register-otp endpoint visible and healthy. ✅
 - Browser test: Full end-to-end register OTP flow works — OTP step appears between phone & password fields, password fields locked until OTP verified, dev-mode amber box displays 6-digit code, "Verifikasi" unlocks password fields, phone-change auto-resets verified state. No console errors, no failed network requests. 9 screenshots saved. ✅
 - No issues found. The fixes from Task 11-chat-otp-fix are correctly implemented and functional. No code modifications were made by this verification task.
+
+---
+Task ID: 11-deploy
+Agent: Deploy Agent
+Task: Commit and deploy fixes to Vercel
+
+Work Log:
+- Read /home/z/my-project/worklog.md to understand prior agent context (Task 11-chat-otp-fix implemented register OTP + chat polling; Task 11-verify confirmed all 4 files + lint baseline + browser end-to-end).
+- Ran `bun run lint` → 17 problems (6 errors in `.cjs` files: `daemon.cjs` + `start-chat.cjs` `@typescript-eslint/no-require-imports`; 11 warnings: unused eslint-disable directives + 1 jsx-a11y/alt-text in admin.tsx). Matches pre-existing baseline — 0 new errors introduced.
+- Checked git status: branch `main`, 8 commits ahead of `origin/main` from previous deploys. Modified files (5): `db/custom.db`, `src/components/gomesin/chat-widget.tsx`, `src/components/gomesin/views/login.tsx`, `src/lib/i18n.ts`, `worklog.md`. Untracked: `src/app/api/auth/register-otp/`, `tests/verify-register-otp.py`, `upload/register-otp-verify/`, `tool-results/`. Confirmed `.vercel/project.json` is linked (orgId `team_vgpQdeAKV4c1O02dNKubgurT`, projectId `prj_mJFlErTv5qJcEloX0EnCa2Scxxkt`).
+- `git add -A` → staged 21 files (5 modified, 16 new incl. screenshots + test script + tool-results cache). Consistent with prior commits which also include `tool-results/` + `upload/`.
+- `git commit -m "fix: register OTP via WhatsApp + chat polling on Vercel"` → commit `717b257` created on `main`.
+- `git push origin main` → pushed 8 commits (d89faf2..717b257) to GitHub remote `gomesin0711/gomesin-marketplace.git`. Push succeeded cleanly with no auth errors.
+- `npx vercel --prod --token [REDACTED-VERCEL-TOKEN] --yes` → Vercel CLI triggered production build. Build log confirmed `/api/auth/register-otp` route is included as a serverless function (visible in the "Route (app)" output table next to /api/auth/register). Build completed in 29s, all serverless functions created in 925ms, total deploy time 51s. Deployment URL: `https://gomesin-rlpz18skt-gomesin0711-1596s-projects.vercel.app`, aliased to production: `https://gomesin.vercel.app`. Status: Ready.
+- Verified production endpoints:
+  - `POST https://gomesin.vercel.app/api/auth/register-otp` `{"action":"send","phone":"08123456789"}` → HTTP 200, body: `{"success":true,"message":"OTP terkirim (mode dev — Fonnte tidak aktif)","sentViaWhatsapp":false,"_devCode":"939644","_devNote":"FONNTE_API_KEY belum dikonfigurasi."}` ✅
+  - `GET https://gomesin.vercel.app/api/admin/info` → HTTP 200, body: `{"admin":{"id":"cms1trinv0000pzao4vy44or8","name":"Admin Gomesin"}}` ✅
+
+Stage Summary:
+- Git commit hash: `717b257` (pushed to `origin/main` at `gomesin0711/gomesin-marketplace`)
+- Vercel deployment URL: `https://gomesin-rlpz18skt-gomesin0711-1596s-projects.vercel.app` (build preview)
+- Vercel production alias: `https://gomesin.vercel.app` ← this is the live production URL
+- Build time: 51s (Build Completed in 29s + deploy outputs)
+- /api/auth/register-otp route is confirmed present in the production deployment (visible in Vercel build route table; HTTP 200 returned on send OTP request)
+- Production curl verifications:
+  - register-otp `action:send` → HTTP 200 with dev-mode `_devCode` (Fonnte API key not configured on Vercel — expected dev fallback; same behavior as local). To enable real WhatsApp OTP delivery, `FONNTE_API_KEY` must be set in Vercel env vars.
+  - admin/info → HTTP 200 with admin user object
+- All changes from Task 11-chat-otp-fix are now live on production: register OTP via WhatsApp (endpoint + login.tsx OTP step) and chat polling fix (chat-widget.tsx refetchInterval + invalidateQueries + incremental merge by id).
+- Lint: 17 pre-existing problems — 0 new errors.
+- Next steps if real WhatsApp delivery is desired: set `FONNTE_API_KEY` env var in Vercel → Project Settings → Environment Variables, then redeploy.
+
+---
+Task ID: 12-fonnte-token
+Agent: Main (Z.ai Code)
+Task: Configure Fonnte API token ([REDACTED-FONNTE-KEY]) for real WhatsApp OTP delivery on local + production
+
+Work Log:
+- User provided Fonnte API token: [REDACTED-FONNTE-KEY]
+- Added FONNTE_API_KEY=[REDACTED-FONNTE-KEY] to /home/z/my-project/.env (was previously missing — endpoints fell back to dev-mode _devCode)
+- Validated token via Fonnte /device endpoint: device=6285888082208 (name: "gomesin"), device_status=connect, package=Free, quota=973 messages remaining, expired=19 August 2026
+- Dev server auto-reloaded .env (visible in dev.log: "Reload env: .env")
+- Tested local /api/auth/register-otp with phone=6285888082208 → returned {"success":true,"sentViaWhatsapp":true} (NOT dev-mode fallback). Dev log confirmed: "[register-otp] Phone: 6285888082208, OTP: 018217" with no "WhatsApp send failed" message
+- Set FONNTE_API_KEY env var on Vercel project (id: HDVOJqNdud9IQfBm) via Vercel REST API POST /v10/projects/{projectId}/env. Targets: production + preview + development. Type: encrypted
+- Triggered production redeploy via `npx vercel --prod --token ... --yes` → deployment https://gomesin-3mexnsca8-gomesin0711-1596s-projects.vercel.app, aliased to https://gomesin.vercel.app. Build completed in 28s, total 49s. All routes (including /api/auth/register-otp and /api/auth/forgot-password) confirmed present in build output
+- Verified production endpoints:
+  - POST https://gomesin.vercel.app/api/auth/register-otp {"action":"send","phone":"6285888082208"} → {"success":true,"message":"Kode OTP terkirim ke WhatsApp 6285888082208","sentViaWhatsapp":true} (no _devCode — real WhatsApp delivery) ✅
+  - POST https://gomesin.vercel.app/api/auth/forgot-password {"action":"send","phone":"6285888082208"} → {"success":true,"message":"Kode OTP terkirim ke WhatsApp 6285888082208","sentViaWhatsapp":true} (phone is registered in Supabase, OTP delivered via WhatsApp) ✅
+
+Stage Summary:
+- Files modified (1): /home/z/my-project/.env — added FONNTE_API_KEY=[REDACTED-FONNTE-KEY]
+- Vercel env var created: FONNTE_API_KEY (id: HDVOJqNdud9IQfBm, targets: production+preview+development, type: encrypted)
+- Vercel production deployment: https://gomesin.vercel.app (rebuilt with new env var, build 28s, total 49s)
+- Both WhatsApp OTP endpoints now send REAL WhatsApp messages on production (no more dev-mode _devCode fallback):
+  - /api/auth/register-otp (used in login/register page OTP step before password)
+  - /api/auth/forgot-password (used in "Lupa sandi?" dialog)
+- Fonnte device status: connected, 973 messages remaining on Free package, valid until 19 August 2026
+- No code changes needed — the existing sendWhatsAppMessage() in /src/lib/whatsapp.ts already reads process.env.FONNTE_API_KEY and the existing /api/auth/register-otp + /api/auth/forgot-password routes already call it. Only env var configuration was missing.
+- Lint: unchanged (17 pre-existing problems, 0 new — no code modified)
+
+---
+Task ID: 13-chat-view-verify
+Agent: Browser Verification Agent
+Task: Verify chat page navigation from listing detail (Task 13-chat-view)
+
+Work Log:
+- Read /home/z/my-project/worklog.md tail to understand prior agent context (Tasks 1–12: chat-service, Supabase fallback, forgot-password OTP, register OTP, Fonnte token config, Vercel deploys).
+- Reviewed the 5 changed files for Task 13-chat-view to understand selectors + expected DOM structure:
+  - src/lib/store.ts — `"chat"` added to View union (line 15); `goToChat(slug)` action (lines 279–288) sets view="chat" + slug, pushes history.
+  - src/components/gomesin/chat-widget.tsx — extracted `ChatInner` (lines 84–588) with `variant: "modal" | "page"` prop; `ChatWidget` (lines 596–616) now just wraps ChatInner in Dialog. Page variant adds `sticky top-0 z-10` to the header.
+  - src/components/gomesin/views/chat.tsx (NEW) — full-page ChatView; fetches listing via `/api/listings/[slug]`; container `h-[calc(100dvh-8.25rem)] md:h-[calc(100dvh-4rem)]` + `max-w-2xl flex flex-col overflow-hidden`.
+  - src/components/gomesin/views/detail.tsx — `chatOpen` state removed; "Chat Penjual" button (line 329) now calls `goToChat(l.slug)`.
+  - src/components/gomesin/app-shell.tsx — `ChatView` imported (line 21) + rendered when `view === "chat"` (line 132); `"chat"` added to footer-hidden list (line 138).
+- Wrote Playwright script at /home/z/my-project/tests/verify-chat-view.py (modeled after verify-register-otp.py / verify-forgot-password.py). Pre-seeds `gomesin-pwa-dismissed` + `gomesin-pwa-installed` via context.add_init_script so the PWA install popup doesn't intercept clicks. Captures all console msgs, page errors, failed requests, and /api/listings/* + /api/messages responses. Uses page.evaluate for header/seller-name inspection (JSHandle.locator approach was unreliable). Uses placeholder-based selector for the chat input (because the header also has a search `<input type="text">`, and `.first` picked the hidden mobile-search instance).
+- Ran the script end-to-end successfully (headless chromium, 1366×900 desktop then 375×812 mobile, locale=id-ID). 10 screenshots saved to /home/z/my-project/upload/chat-view-verify/.
+
+Stage Summary:
+- FEATURE IS FULLY FUNCTIONAL on desktop. All core verification steps passed:
+  1. Home page loads — HTTP 200, no console errors, no page errors, no failed requests. ✅
+  2. Click listing card → detail view renders (Chat Penjual button visible). ✅
+  3. Click "Chat Penjual" button (bg=oklch(0.68 0.17 55) = primary orange, has bg-primary class). ✅
+  4. Chat page navigation verified:
+     - URL is still `http://localhost:3000/` (SPA, no route change). ✅
+     - Full-page chat (NOT modal): zero `[role="dialog"]` elements visible. ✅
+     - Full-height container `h-[calc(100dvh-8.25rem)] md:h-[calc(100dvh-4rem)]` present. ✅
+     - Chat header bg = oklch(0.68 0.17 55) (primary orange), has `bg-primary` class, seller name = "udin", settings (popover) button present. ✅
+     - Listing card below header: title="tes", price="Rp 1.234.568". ✅
+     - Message input visible (placeholder "Tulis pesan..."). ✅
+     - Send button visible (type=submit within chat form, bg-primary). ✅
+     - Site `<header>` visible at top (y=0). ✅
+     - Site `<footer>` NOT visible (correctly hidden on chat view). ✅
+  5. Send test (not logged in — `gomesin-store` user=null): toast appears "Silakan masuk terlebih dahulu untuk chat penjual" with "Masuk" action button. ✅ (acceptable per task spec)
+  6. Back button: after dismissing the login-prompt toast (waited ~4.5s for sonner auto-dismiss), clicked the ArrowLeft back button (`aria-label="Kembali"`). Store view becomes "detail", Chat Penjual button visible again. ✅
+  7. Mobile (375×812): home/detail/chat all load; no horizontal scroll; site header visible; footer hidden. ✅
+- Quick reply chips ("Apakah masih tersedia?" etc.) NOT visible. This is EXPECTED behavior — the chips only render when `messages.length === 0 && loadedHistory && !blocked`, and `loadedHistory` only becomes true after the chat-history useQuery runs (gated by `enabled: !!currentUser && !!ownerId`). When not logged in, `loadedHistory` stays false and chips don't render. This is pre-existing behavior in ChatInner (carried over from the old modal ChatWidget), NOT a regression from Task 13. Task spec says "Quick reply chips MAY be visible" — acceptable.
+- Console messages: only benign preload warnings (`.woff2` font + third-party CDN image from `z-cdn.chatglm.cn`), plus standard HMR/SW-registration logs. Same baseline as Tasks 10–11 verifications. No errors, no page errors, no failed network requests.
+- API responses captured: GET /api/listings/tes-ljaz1 → 200 (returns listing with seller "udin", user "udin", price 1234568, city "Bantul"). GET /api/listings/most-searched → 200.
+- ⚠️ MOBILE LAYOUT FINDING (minor, non-blocking): On mobile (375×812), the site `<header>` is 210.5px tall (includes logo row + search bar + category nav), NOT the 4rem (64px) that the chat container's `h-[calc(100dvh-8.25rem)]` assumes. The chat container therefore starts at y=210.5 with height=680px, ending at y=890.5 — which is 78.5px BELOW the 812px viewport. The chat input is at y=844.5 (bottom=880.5), ~33px below the viewport bottom. The input is NOT immediately visible on mobile without scrolling. However, `scroll_into_view_if_needed` confirms the input IS reachable by scrolling the page (mobile_input_reachable_by_scroll: True). The desktop layout (1366×900) is perfect — input is fully visible within the viewport. Recommended fix (if desired): change chat.tsx mobile height from `h-[calc(100dvh-8.25rem)]` to something like `h-[calc(100dvh-13.5rem)]` to account for the actual mobile header height (~210px ≈ 13.1rem), OR make the input form `sticky bottom-0` within the chat container so it stays pinned to the viewport bottom on mobile.
+- Screenshots (all PNG, saved to /home/z/my-project/upload/chat-view-verify/):
+  - 01-home.png — Home page (PWA popup suppressed, clean header)
+  - 02-detail.png — Listing detail view (Chat Penjual button visible)
+  - 03-chat-page.png — Full-page chat view after clicking Chat Penjual
+  - 04-chat-page-annotated.png — Same chat page after content verification
+  - 05-send.png — After clicking Send (login-prompt toast visible)
+  - 06-back-to-detail.png — After clicking back arrow (detail view restored)
+  - 07-mobile-home.png — Mobile home (375×812)
+  - 08-mobile-detail.png — Mobile detail view
+  - 09-mobile-chat.png — Mobile chat page (initial viewport)
+  - 10-mobile-chat-fullpage.png — Mobile chat page FULL-PAGE screenshot (shows entire layout including the input that's below the fold)
+  - report.json — Full results JSON (all checks + console msgs + API responses)
+- Test artifact: /home/z/my-project/tests/verify-chat-view.py (re-runnable; idempotent — uses localStorage pre-seed for PWA suppression, does not persist any state).
+- No code was modified. This was a pure browser-verification task. The only finding worth a follow-up is the minor mobile-input-below-viewport layout issue described above.
