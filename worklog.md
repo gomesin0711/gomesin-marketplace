@@ -1956,3 +1956,46 @@ Stage Summary:
 - Vercel production: https://gomesin.vercel.app (build 29s, total 51s)
 - Browser-verified end-to-end: Chat Penjual → existing profile chat panel → conversation opens → message sent. No console errors.
 - Key design: the existing chat page (profile "pesan" panel) is now the target of "Chat Penjual". For new partners (no prior conversation), a draft conversation is created locally so the user can type their first message. When sent, the POST creates the real conversation in the DB, the 5s poll replaces the draft with the real conversation, and subsequent messages flow through the normal chat path.
+
+---
+Task ID: 15-chat-image-layout
+Agent: Main (Z.ai Code)
+Task: gambar iklannya tidak ada. tambahkan gambar iklannya masuk ke chat. buat masuk chat tanpa scroll (listing image missing in chat — add it; make entering chat not require scrolling)
+
+Work Log:
+- Investigated root cause of missing listing image:
+  - The /api/messages GET endpoint groups conversations by partnerId. The conversation-level listingId/listingTitle/listingImage/listingPrice come from the FIRST message in the conversation.
+  - Messages sent via profile.tsx sendChat() include listingTitle but NOT listingId. So the API's listing lookup (db.listing.findMany by listingId) finds nothing → listingImage=null.
+  - Even if listingId were saved, when the user clicks "Chat Penjual" on a DIFFERENT listing by the same seller, the conversation's old listing info would show, not the current listing.
+- Fix 1 — listingOverride mechanism (src/components/gomesin/views/profile.tsx):
+  - Added listingOverride state: Record<partnerId, {listingTitle, listingImage, listingPrice}>
+  - In the pendingChatPartner useEffect: set listingOverride[partnerId] with the CURRENT listing's info (from pendingChatPartner) BEFORE opening/creating the conversation. This ensures the chat bubble shows the listing the user just clicked, regardless of what listing the conversation originally referenced.
+  - In the right-pane chat view: compute bubbleListingTitle/Image/Price from listingOverride (fallback to conv.listingTitle/Image/Price if no override).
+  - Updated the listing bubble card JSX to use bubbleListingTitle/Image/Price instead of conv.listingTitle/Image/Price.
+  - Added proxyUrl() to the listing image src (handles external URLs via /api/img-proxy). Added proxyUrl to imports from @/lib/image.
+- Fix 2 — layout: chat visible without scrolling (src/components/gomesin/views/profile.tsx):
+  - Changed pesan container height from h-[calc(100dvh-11rem)] to h-[calc(100dvh-8.5rem)] on mobile. Measured actual chrome: site header=57px + bottom nav=69px + profile pt-2=8px = 134px = 8.4rem. The old 11rem (176px) subtracted too much, leaving a gap; the new 8.5rem (136px) is accurate.
+  - Added min-h-0 to the chat right-pane container so flex children can shrink properly (prevents the messages area from pushing the input below the viewport).
+  - Added a useEffect that scrolls the page to top (window.scrollTo) when the pesan panel opens or activeChatId changes — so the chat container is immediately at the top of the viewport without manual scrolling.
+- Lint: 17 pre-existing problems (6 errors + 11 warnings) — 0 new errors.
+- Browser verification (mobile 375×812 + desktop 1366×900, logged in as admin):
+  - Mobile: listing image visible at 257x129px (src=/listing-images/90e29484-42f.jpg, natural=800x400, complete=true). Chat input at bottom=733, viewport=812 → visible without scrolling. ScrollY=0.
+  - Desktop: listing image visible at 352x176px. Chat input at bottom=874, viewport=900 → visible without scrolling.
+  - No failed image requests, no console errors.
+  - Screenshots saved to /home/z/my-project/upload/chat-image-verify/
+- Git: commit 141d634 pushed to origin/main.
+- Vercel: build 29s, total 51s → https://gomesin.vercel.app (production live, HTTP 200).
+
+Stage Summary:
+- Files modified (1): src/components/gomesin/views/profile.tsx
+  - Added listingOverride state + set in pendingChatPartner useEffect
+  - Added proxyUrl import from @/lib/image
+  - Chat bubble card uses bubbleListingTitle/Image/Price (override > conv) + proxyUrl for image
+  - Pesan container: h-[calc(100dvh-8.5rem)] on mobile (was 11rem)
+  - Chat right-pane: added min-h-0 for proper flex shrinking
+  - Added scroll-to-top useEffect on panel/activeChatId change
+- Lint: 17 pre-existing problems — 0 new errors
+- Git commit: 141d634 (pushed to origin/main)
+- Vercel production: https://gomesin.vercel.app (build 29s, total 51s)
+- Browser-verified: listing image visible in chat bubble on both mobile + desktop, chat input visible without scrolling, no console errors.
+- Root cause of missing image: messages didn't store listingId, so API couldn't look up listing image. Fixed by passing listing info via listingOverride (from the current listing the user clicked) rather than relying on the API's conversation-level listing data.
