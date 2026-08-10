@@ -86,7 +86,7 @@ import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { useChatSocket, type ChatMessage } from "@/lib/use-chat-socket";
 import { playNotificationSound, isChatSoundEnabled, setChatSoundEnabled, setChatOpen } from "@/lib/notification-sound";
-import { normalizeImageUrl } from "@/lib/image";
+import { normalizeImageUrl, proxyUrl } from "@/lib/image";
 import { DashboardView } from "./dashboard";
 import { FavoritesView } from "./favorites";
 import EmojiPicker, { EmojiStyle, Theme } from "emoji-picker-react";
@@ -276,6 +276,11 @@ export function ProfileView() {
   // real conversation row, and the next poll replaces the draft with the
   // real one (matched by partnerId).
   const [draftConv, setDraftConv] = useState<any | null>(null);
+  // When the user clicks "Chat Penjual" on a listing, we override the
+  // conversation's listing info (title/image/price) with the CURRENT listing
+  // — so the chat bubble shows the listing the user just clicked, not an old
+  // one from a prior message in the same conversation. Keyed by partnerId.
+  const [listingOverride, setListingOverride] = useState<Record<string, { listingTitle?: string | null; listingImage?: string | null; listingPrice?: number | null }> | null>(null);
   // Merge draft into the displayed list (draft first, then real convs — but
   // skip any real conv that has the same partnerId, since the draft is the
   // "active" entry until the real one arrives).
@@ -427,10 +432,23 @@ export function ProfileView() {
   // Process pendingChatPartner — when the user clicks "Chat Penjual" on a
   // listing, the store sets pendingChatPartner. Here we either open the
   // existing conversation or create a draft for a brand-new partner.
+  // In BOTH cases, we set a listingOverride so the chat bubble shows the
+  // CURRENT listing (not an old one from a prior message).
   useEffect(() => {
     if (!pendingChatPartner || !user) return;
     // Only act when conversations have been loaded (or we know there are none).
     if (!messagesData) return;
+    // Set the listing override for this partner so the chat bubble shows the
+    // listing the user just clicked — regardless of whether a conversation
+    // already exists.
+    setListingOverride((prev) => ({
+      ...prev,
+      [pendingChatPartner.partnerId]: {
+        listingTitle: pendingChatPartner.listingTitle || null,
+        listingImage: pendingChatPartner.listingImage || null,
+        listingPrice: pendingChatPartner.listingPrice ?? null,
+      },
+    }));
     const existing = conversations.find((c: any) => c.partnerId === pendingChatPartner.partnerId);
     if (existing) {
       // Real conversation exists — open it.
@@ -609,6 +627,15 @@ export function ProfileView() {
       }, 100);
     }
   }, [chatMessages, activeChatId, panel]);
+
+  // When the pesan panel opens or a chat is selected, scroll the page to the
+  // top so the chat container is immediately visible without manual scrolling.
+  // This is especially important on mobile where the site header takes up space.
+  useEffect(() => {
+    if (panel === "pesan") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [panel, activeChatId]);
 
   // Track whether a chat conversation is currently open & visible.
   // The global Header reads this (via isChatOpen()) to decide which sound to
@@ -1290,7 +1317,7 @@ export function ProfileView() {
               {/* Panel content — WhatsApp split view (pesan) / normal flow (other panels) */}
               <div className={cn(
                 panel === "pesan"
-                  ? "flex overflow-hidden h-[calc(100vh-12rem)] max-md:h-[calc(100dvh-11rem)]"
+                  ? "flex overflow-hidden h-[calc(100vh-12rem)] max-md:h-[calc(100dvh-8.5rem)]"
                   : "block"
               )}>
 
@@ -1408,7 +1435,7 @@ export function ProfileView() {
                 {/* ===== RIGHT: Chat view or placeholder (full pane on mobile when chat open) ===== */}
                 {panel === "pesan" && (
                   <div className={cn(
-                    "flex-col bg-card w-full",
+                    "flex-col bg-card w-full min-h-0",
                     // Mobile: full width when a chat is open; hidden when no chat (list is shown)
                     // Desktop: flex-1 pane always visible
                     activeChatId !== null
@@ -1419,6 +1446,13 @@ export function ProfileView() {
                       const conv = allConversations.find((c: any) => c.id === activeChatId);
                       if (!conv) return null;
                       const convo = chatMessages[activeChatId as any] || [];
+                      // Listing override: when the user clicked "Chat Penjual" on a
+                      // specific listing, show THAT listing's info in the chat bubble
+                      // (not an old listing from a prior message in the same conversation).
+                      const override = listingOverride?.[conv.partnerId];
+                      const bubbleListingTitle = override?.listingTitle ?? conv.listingTitle ?? null;
+                      const bubbleListingImage = override?.listingImage ?? conv.listingImage ?? null;
+                      const bubbleListingPrice = override?.listingPrice ?? conv.listingPrice ?? null;
                       return (
                         <>
                           {/* Chat header — clean white, back arrow + settings */}
@@ -1487,20 +1521,20 @@ export function ProfileView() {
                               <span className="rounded-full bg-white/80 px-3 py-0.5 text-[10px] font-medium text-black/60 shadow-sm">Hari ini</span>
                             </div>
                             {/* Listing as a chat bubble (left-aligned, from partner) */}
-                            {conv.listingTitle && (
+                            {bubbleListingTitle && (
                               <div className="flex justify-start">
                                 <div className="max-w-[75%] overflow-hidden rounded-lg rounded-tl-sm bg-white shadow-sm">
-                                  {conv.listingImage ? (
-                                    <img src={conv.listingImage} alt={conv.listingTitle} className="max-h-44 w-full object-cover" />
+                                  {bubbleListingImage ? (
+                                    <img src={proxyUrl(bubbleListingImage)} alt={bubbleListingTitle} className="max-h-44 w-full object-cover" />
                                   ) : (
                                     <div className="flex h-20 items-center justify-center bg-muted text-muted-foreground">
                                       <Tag className="size-6" />
                                     </div>
                                   )}
                                   <div className="p-2">
-                                    <p className="truncate text-xs font-semibold text-black">{conv.listingTitle}</p>
-                                    {conv.listingPrice != null && (
-                                      <p className="text-xs font-bold text-[#075E54]">Rp {conv.listingPrice.toLocaleString("id-ID")}</p>
+                                    <p className="truncate text-xs font-semibold text-black">{bubbleListingTitle}</p>
+                                    {bubbleListingPrice != null && (
+                                      <p className="text-xs font-bold text-[#075E54]">Rp {bubbleListingPrice.toLocaleString("id-ID")}</p>
                                     )}
                                     <span className="mt-0.5 block text-right text-[9px] text-black/50">
                                       {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
