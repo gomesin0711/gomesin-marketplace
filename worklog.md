@@ -1841,3 +1841,42 @@ Stage Summary:
   - report.json — Full results JSON (all checks + console msgs + API responses)
 - Test artifact: /home/z/my-project/tests/verify-chat-view.py (re-runnable; idempotent — uses localStorage pre-seed for PWA suppression, does not persist any state).
 - No code was modified. This was a pure browser-verification task. The only finding worth a follow-up is the minor mobile-input-below-viewport layout issue described above.
+
+---
+Task ID: 13-chat-view
+Agent: Main (Z.ai Code)
+Task: dihalaman iklan apabila di klik chat penjual maka masuk ke halaman chat (Chat Penjual on listing page should navigate to a chat page, not open a modal)
+
+Work Log:
+- Investigated the existing "Chat Penjual" button flow on detail.tsx (line 329-335): button onClick was `setChatOpen(true)` which only opened a local Dialog modal (ChatWidget). There was no "chat" view in the Zustand store — chat was exclusively a Dialog modal mounted on DetailView.
+- Read key files to plan the refactor: store.ts (View union + navigation actions), chat-widget.tsx (ChatWidget Dialog component with all chat logic), detail.tsx (Chat Penjual button + ChatWidget mount), app-shell.tsx (view router).
+- Added "chat" to the View union type in src/lib/store.ts (between "seller" and "login"). Added `goToChat(slug: string)` action that sets `view: "chat"`, `slug: listingSlug`, pushes browser history entry (same pattern as goToDetail, goToSeller, etc.).
+- Refactored src/components/gomesin/chat-widget.tsx: extracted ALL chat UI logic (state, effects, handlers, JSX) from ChatWidget into a new reusable `ChatInner` component. ChatInner takes `listing: Listing`, `onBack: () => void`, `variant?: "modal" | "page"`. Key changes:
+  - Removed the `open` prop — ChatInner is always "active" when mounted. This works because Radix Dialog only mounts DialogContent children when the Dialog is open, and ChatView only renders when `view === "chat"`.
+  - Removed all `open`-dependent logic: the `useEffect` that reset state on `!open` (no longer needed — component unmounts when closed), the `open` checks in useQuery/history-merge/socket-subscribe effects, the `refetchInterval: open ? 5000 : false` (now always 5000).
+  - Changed `setChatOpen(open)` effect to mount/unmount pattern: `setChatOpen(true)` on mount, `setChatOpen(false)` on unmount.
+  - ChatInner renders: chat header (with back button, seller avatar/name, settings popover), listing card, messages container (flex-1 min-h-0 for page variant, max-h-[40vh] for modal variant), quick replies, input form, context menu, image lightbox.
+  - ChatWidget now wraps ChatInner in a Dialog (thin wrapper): `<Dialog><DialogContent className="flex flex-col"><ChatInner variant="modal" onBack={() => onOpenChange(false)} /></DialogContent></Dialog>`. Moved DialogTitle/DialogDescription to sr-only header for accessibility.
+  - ChatButton (convenience wrapper) unchanged — still uses ChatWidget for modal mode.
+- Created src/components/gomesin/views/chat.tsx (NEW): full-page ChatView that reads `slug` from store, fetches the listing via `/api/listings/[slug]`, renders `<ChatInner listing={data.listing} onBack={goBack} variant="page" />` inside a full-page container (`mx-auto flex w-full max-w-2xl min-h-0 flex-1 flex-col overflow-hidden border-x border-border bg-background`). Loading and error states use `flex-1` to fill the viewport.
+- Updated src/components/gomesin/views/detail.tsx: removed `chatOpen` state (line 56), removed `ChatWidget` import + mount (line 507). Changed "Chat Penjual" button onClick from `setChatOpen(true)` to `goToChat(l.slug)` (line 329). Added `goToChat` from store.
+- Updated src/components/gomesin/app-shell.tsx: imported ChatView, added `{view === "chat" && <ChatView />}` to the view router (line 132). Added `"chat"` to the footer-hidden list (line 138). Changed `<main className="flex-1">` to `<main className="flex flex-1 flex-col">` so ChatView can use `flex-1 min-h-0` to fill the available height (fixes mobile layout where the site header is taller than 4rem).
+- Lint: 17 pre-existing problems (6 errors in .cjs + 11 warnings) — 0 new errors introduced.
+- Browser verification (subagent Task 13-chat-view-verify, desktop 1366×900): ALL steps passed. Click "Chat Penjual" → navigates to full-page chat view (NOT a modal — zero [role="dialog"] elements). Chat header (orange/primary bar with seller name), listing card, message input all visible. Site header visible, footer hidden. Send test (not logged in) → toast "Silakan masuk terlebih dahulu". Back arrow → returns to listing detail. 10 screenshots saved.
+- Mobile layout fix: initial mobile test (375×812) found chat input was slightly below the fold because the site header is ~210px on mobile (not 4rem). Fixed by changing ChatView from calculated height (`h-[calc(100dvh-8.25rem)]`) to flex-based layout (`flex-1 min-h-0`) + making main `flex flex-col`. Verified: chat input now at y=698, bottom=734 (viewport=812) — visible without scrolling. Dialog count: 0. No console errors.
+- Git push: initial push rejected by GitHub secret scanning (Vercel deploy token in worklog.md from Task 11-deploy entry, and Fonnte API key from Task 12 entry). Redacted both tokens from worklog.md using sed. Also removed tool-results/ cache directory (contained cached worklog content with tokens). Squashed all 3 commits into one clean commit `deceab3` and pushed successfully.
+- Deployed to Vercel production: `npx vercel --prod --token [REDACTED] --yes` → build completed in 26s, total 47s. Production URL: https://gomesin.vercel.app. Verified: homepage HTTP 200, /api/listings HTTP 200.
+
+Stage Summary:
+- Files created (1):
+  - src/components/gomesin/views/chat.tsx — full-page ChatView component (reads slug from store, fetches listing, renders ChatInner with variant="page" in a flex-1 container)
+- Files modified (4):
+  - src/lib/store.ts — added "chat" to View union + goToChat(slug) action
+  - src/components/gomesin/chat-widget.tsx — extracted ChatInner (reusable) from ChatWidget (Dialog wrapper). ChatInner takes variant="modal"|"page". All open-dependent logic removed (ChatInner is always active when mounted).
+  - src/components/gomesin/views/detail.tsx — Chat Penjual button calls goToChat(l.slug) instead of setChatOpen(true). Removed chatOpen state + ChatWidget mount.
+  - src/components/gomesin/app-shell.tsx — added ChatView render + "chat" to footer-hidden list + main is now flex flex-col (for ChatView flex-1 to work)
+- Lint: 17 pre-existing problems — 0 new errors
+- Git commit: deceab3 (pushed to origin/main)
+- Vercel production: https://gomesin.vercel.app (build 26s, total 47s)
+- Browser-verified: desktop + mobile. Chat Penjual → full-page chat (not modal). Back button works. Chat input visible in mobile viewport. No console errors.
+- Note: ChatWidget (Dialog modal) is preserved for backward compatibility (ChatButton still uses it). The DetailView now uses the full-page ChatView instead.
