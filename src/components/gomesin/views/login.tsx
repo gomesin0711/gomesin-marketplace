@@ -1,10 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "@/components/ui/input-otp";
 import {
   Tabs,
   TabsContent,
@@ -24,6 +29,7 @@ import {
   Loader2,
   ShieldCheck,
   CheckCircle2,
+  KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -53,6 +59,20 @@ export function LoginView() {
   const [agree, setAgree] = useState(false);
   const [tab, setTab] = useState<"login" | "register">("login");
   const [forgotOpen, setForgotOpen] = useState(false);
+
+  // --- Register OTP state ---
+  const [rOtp, setROtp] = useState("");
+  const [rOtpSending, setROtpSending] = useState(false);
+  const [rOtpVerifying, setROtpVerifying] = useState(false);
+  const [rOtpVerified, setROtpVerified] = useState(false);
+  const [rOtpDevCode, setROtpDevCode] = useState<string | null>(null);
+  const [rOtpCooldown, setROtpCooldown] = useState(0);
+
+  useEffect(() => {
+    if (rOtpCooldown <= 0) return;
+    const id = setTimeout(() => setROtpCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [rOtpCooldown]);
 
   const doLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,10 +107,79 @@ export function LoginView() {
     }
   };
 
+  const sendRegOtp = async () => {
+    if (!rPhone.trim()) {
+      toast.error(tr("regOtpPhoneFirst"));
+      return;
+    }
+    setROtpSending(true);
+    setROtpDevCode(null);
+    try {
+      const res = await fetch("/api/auth/register-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "send", phone: rPhone }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || tr("errConnection"));
+        return;
+      }
+      toast.success(data.message || tr("regOtpSent"));
+      if (data._devCode) {
+        setROtpDevCode(data._devCode);
+      }
+      setROtpCooldown(60);
+    } catch {
+      toast.error(tr("errConnection"));
+    } finally {
+      setROtpSending(false);
+    }
+  };
+
+  const verifyRegOtp = async () => {
+    if (rOtp.length < 6) {
+      toast.error(tr("regOtpRequired"));
+      return;
+    }
+    setROtpVerifying(true);
+    try {
+      const res = await fetch("/api/auth/register-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify", phone: rPhone, code: rOtp }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || tr("regOtpInvalid"));
+        return;
+      }
+      toast.success(tr("otpVerified"));
+      setROtpVerified(true);
+    } catch {
+      toast.error(tr("errConnection"));
+    } finally {
+      setROtpVerifying(false);
+    }
+  };
+
+  // When phone changes after verification, reset verified state so user must re-verify.
+  const prevPhoneRef = useRef<string>("");
+  useEffect(() => {
+    if (prevPhoneRef.current !== rPhone) {
+      prevPhoneRef.current = rPhone;
+      if (rOtpVerified) setROtpVerified(false);
+    }
+  }, [rPhone, rOtpVerified]);
+
   const doRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!rName.trim() || !rEmail.trim() || !rPass) {
       toast.error(tr("errRequired"));
+      return;
+    }
+    if (!rOtpVerified) {
+      toast.error(tr("errPhoneNotVerified"));
       return;
     }
     if (rPass.length < 6) {
@@ -183,6 +272,14 @@ export function LoginView() {
             rPass={rPass} setRPass={setRPass}
             rPass2={rPass2} setRPass2={setRPass2}
             agree={agree} setAgree={setAgree}
+            rOtp={rOtp} setROtp={setROtp}
+            rOtpSending={rOtpSending}
+            rOtpVerifying={rOtpVerifying}
+            rOtpVerified={rOtpVerified}
+            rOtpDevCode={rOtpDevCode}
+            rOtpCooldown={rOtpCooldown}
+            sendRegOtp={sendRegOtp}
+            verifyRegOtp={verifyRegOtp}
             doLogin={doLogin} doRegister={doRegister}
             onForgotPassword={() => setForgotOpen(true)}
             tr={tr}
@@ -263,6 +360,14 @@ export function LoginView() {
               rPass={rPass} setRPass={setRPass}
               rPass2={rPass2} setRPass2={setRPass2}
               agree={agree} setAgree={setAgree}
+              rOtp={rOtp} setROtp={setROtp}
+              rOtpSending={rOtpSending}
+              rOtpVerifying={rOtpVerifying}
+              rOtpVerified={rOtpVerified}
+              rOtpDevCode={rOtpDevCode}
+              rOtpCooldown={rOtpCooldown}
+              sendRegOtp={sendRegOtp}
+              verifyRegOtp={verifyRegOtp}
               doLogin={doLogin} doRegister={doRegister}
               onForgotPassword={() => setForgotOpen(true)}
               tr={tr}
@@ -286,6 +391,8 @@ function FormSection({
   lEmail, setLEmail, lPass, setLPass,
   rName, setRName, rEmail, setREmail, rPhone, setRPhone,
   rPass, setRPass, rPass2, setRPass2, agree, setAgree,
+  rOtp, setROtp, rOtpSending, rOtpVerifying, rOtpVerified, rOtpDevCode, rOtpCooldown,
+  sendRegOtp, verifyRegOtp,
   doLogin, doRegister, onForgotPassword, tr,
 }: {
   tab: string; setTab: (v: "login" | "register") => void;
@@ -299,6 +406,14 @@ function FormSection({
   rPass: string; setRPass: (v: string) => void;
   rPass2: string; setRPass2: (v: string) => void;
   agree: boolean; setAgree: (v: boolean) => void;
+  rOtp: string; setROtp: (v: string) => void;
+  rOtpSending: boolean;
+  rOtpVerifying: boolean;
+  rOtpVerified: boolean;
+  rOtpDevCode: string | null;
+  rOtpCooldown: number;
+  sendRegOtp: () => void;
+  verifyRegOtp: () => void;
   doLogin: (e: React.FormEvent) => void;
   doRegister: (e: React.FormEvent) => void;
   onForgotPassword: () => void;
@@ -374,12 +489,98 @@ function FormSection({
               <Input id="r-phone" value={rPhone} onChange={(e) => setRPhone(e.target.value)} placeholder={tr("whatsappPlaceholder")} className="pl-9" />
             </div>
           </div>
+
+          {/* ===== Register OTP step ===== */}
+          <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="r-otp" className="text-xs font-medium">
+                {tr("regOtpLabel")}
+              </Label>
+              {rOtpVerified && (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-600 dark:text-green-400">
+                  <CheckCircle2 className="size-3.5" /> {tr("regOtpVerified")}
+                </span>
+              )}
+            </div>
+
+            {/* OTP input + verify button */}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <InputOTP
+                maxLength={6}
+                value={rOtp}
+                onChange={(v) => setROtp(v)}
+                disabled={rOtpVerified}
+              >
+                <InputOTPGroup>
+                  <InputOTPSlot index={0} className="size-9 text-sm" />
+                  <InputOTPSlot index={1} className="size-9 text-sm" />
+                  <InputOTPSlot index={2} className="size-9 text-sm" />
+                  <InputOTPSlot index={3} className="size-9 text-sm" />
+                  <InputOTPSlot index={4} className="size-9 text-sm" />
+                  <InputOTPSlot index={5} className="size-9 text-sm" />
+                </InputOTPGroup>
+              </InputOTP>
+
+              {!rOtpVerified && (
+                <Button
+                  type="button"
+                  onClick={verifyRegOtp}
+                  disabled={rOtpVerifying || rOtp.length < 6}
+                  size="sm"
+                  className="gap-1.5 bg-primary font-semibold sm:ml-auto"
+                >
+                  {rOtpVerifying ? <Loader2 className="size-3.5 animate-spin" /> : <ShieldCheck className="size-3.5" />}
+                  {rOtpVerifying ? tr("regOtpVerifying") : tr("regOtpVerify")}
+                </Button>
+              )}
+            </div>
+
+            {/* Dev-mode code box */}
+            {rOtpDevCode && !rOtpVerified && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 text-center dark:border-amber-700 dark:bg-amber-950/40">
+                <p className="text-[10px] text-amber-700 dark:text-amber-300">
+                  {tr("regOtpDevCode")}
+                </p>
+                <p className="mt-0.5 text-xl font-black tracking-widest text-amber-900 dark:text-amber-100">
+                  {rOtpDevCode}
+                </p>
+              </div>
+            )}
+
+            {/* Send / resend button + cooldown */}
+            {!rOtpVerified && (
+              <div className="flex items-center justify-between text-xs">
+                {rOtpCooldown > 0 ? (
+                  <span className="text-muted-foreground">
+                    {formatT(tr("regOtpResendIn"), { sec: String(rOtpCooldown) })}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={sendRegOtp}
+                    disabled={rOtpSending}
+                    className="inline-flex items-center gap-1 font-medium text-primary hover:underline disabled:opacity-50"
+                  >
+                    {rOtpSending ? <Loader2 className="size-3 animate-spin" /> : <KeyRound className="size-3" />}
+                    {rOtpSending ? tr("regOtpSending") : tr("regOtpSend")}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {!rOtpVerified && (
+              <p className="text-[10px] text-muted-foreground">
+                {tr("regOtpSendFirst")}
+              </p>
+            )}
+          </div>
+
           <div className="space-y-1.5">
             <Label htmlFor="r-pass">{`${tr("password")} *`}</Label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="r-pass" type={showPass ? "text" : "password"} autoComplete="new-password" value={rPass} onChange={(e) => setRPass(e.target.value)} placeholder={tr("passwordPlaceholder")} className="px-9" />
-              <button type="button" onClick={() => setShowPass((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label={showPass ? tr("hidePass") : tr("showPass")}>
+              <Input id="r-pass" type={showPass ? "text" : "password"} autoComplete="new-password" value={rPass} onChange={(e) => setRPass(e.target.value)} placeholder={rOtpVerified ? tr("passwordPlaceholder") : tr("regOtpLocked")} className="px-9" disabled={!rOtpVerified} />
+              <button type="button" onClick={() => setShowPass((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label={showPass ? tr("hidePass") : tr("showPass")} disabled={!rOtpVerified}>
                 {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               </button>
             </div>
@@ -388,7 +589,7 @@ function FormSection({
             <Label htmlFor="r-pass2">{`${tr("passwordConfirm")} *`}</Label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="r-pass2" type={showPass ? "text" : "password"} autoComplete="new-password" value={rPass2} onChange={(e) => setRPass2(e.target.value)} placeholder={tr("passwordConfirmPlaceholder")} className="pl-9" />
+              <Input id="r-pass2" type={showPass ? "text" : "password"} autoComplete="new-password" value={rPass2} onChange={(e) => setRPass2(e.target.value)} placeholder={tr("passwordConfirmPlaceholder")} className="pl-9" disabled={!rOtpVerified} />
             </div>
             {rPass2 && rPass !== rPass2 && (
               <p className="text-xs text-destructive">{tr("passwordMismatch")}</p>
@@ -398,7 +599,7 @@ function FormSection({
             <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 accent-primary" />
             <span>{tr("agreeTerms")}</span>
           </label>
-          <Button type="submit" disabled={loading} className="w-full gap-2 bg-primary font-semibold" size="lg">
+          <Button type="submit" disabled={loading || !rOtpVerified} className="w-full gap-2 bg-primary font-semibold" size="lg">
             {loading ? <Loader2 className="size-4 animate-spin" /> : null}
             {loading ? tr("processing") : tr("registerBtn")}
           </Button>

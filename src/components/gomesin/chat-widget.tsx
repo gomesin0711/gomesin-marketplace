@@ -109,7 +109,9 @@ export function ChatWidget({
   const queryClient = useQueryClient();
   const { sendMessage, markRead, subscribe } = useChatSocket();
 
-  // Fetch conversation history ONCE on open.
+  // Fetch conversation history. Poll every 5s when open so that messages
+  // sent via HTTP fallback (e.g. on Vercel where socket.io isn't running)
+  // still appear in the UI. Mirrors the polling used on profile.tsx.
   const { data: historyData } = useQuery({
     queryKey: ["chat-history", currentUser?.id, ownerId, listing.id],
     queryFn: async () => {
@@ -119,30 +121,51 @@ export function ChatWidget({
       return res.json();
     },
     enabled: !!currentUser && !!ownerId && open,
-    staleTime: Infinity,
+    refetchInterval: open ? 5000 : false,
+    refetchIntervalInBackground: false,
   });
 
+  // Merge history data into local messages state. On the FIRST load we
+  // replace the entire list; on subsequent polls (e.g. new messages from
+  // the other party saved via HTTP fallback) we MERGE by id so that we
+  // don't lose optimistic local messages and don't cause duplicate renders.
   useEffect(() => {
-    if (open && historyData?.conversations && !loadedHistory) {
-      const conv = historyData.conversations.find(
-        (c: any) => c.partnerId === ownerId && c.listingTitle === listing.title
-      );
-      if (conv?.messages?.length) {
-        const dbMsgs: Msg[] = [...conv.messages].reverse().map((m: any) => ({
+    if (!open || !historyData?.conversations) return;
+    const conv = historyData.conversations.find(
+      (c: any) => c.partnerId === ownerId && c.listingTitle === listing.title
+    );
+    const dbMsgs: Msg[] = conv?.messages?.length
+      ? [...conv.messages].reverse().map((m: any) => ({
           id: m.id,
           role: m.sent ? "user" : "assistant",
           content: m.content,
           image: m.image || null,
           time: new Date(m.createdAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
-        }));
-        setMessages(dbMsgs);
-        if (currentUser) markRead(currentUser.id, ownerId!);
-      } else {
-        setMessages([]);
-      }
+        }))
+      : [];
+
+    if (!loadedHistory) {
+      // First load — set messages directly.
+      setMessages(dbMsgs);
       setLoadedHistory(true);
+      if (currentUser && ownerId && conv?.messages?.length) {
+        markRead(currentUser.id, ownerId);
+      }
+    } else {
+      // Subsequent poll — merge new messages by id.
+      setMessages((prev) => {
+        const existingIds = new Set(prev.filter((m) => m.id).map((m) => m.id));
+        const newOnes = dbMsgs.filter((m) => m.id && !existingIds.has(m.id));
+        if (newOnes.length === 0) return prev;
+        // Re-mark read if there are new incoming messages.
+        const hasIncoming = newOnes.some((m) => m.role === "assistant");
+        if (hasIncoming && currentUser && ownerId) {
+          markRead(currentUser.id, ownerId);
+        }
+        return [...prev, ...newOnes];
+      });
     }
-  }, [open, historyData, ownerId, listing.title, loadedHistory]);
+  }, [open, historyData, ownerId, listing.title, loadedHistory, currentUser, markRead]);
 
   useEffect(() => {
     if (!open || !currentUser || !ownerId) return;
@@ -229,6 +252,7 @@ export function ChatWidget({
         });
       }
       queryClient.invalidateQueries({ queryKey: ["messages"] });
+      queryClient.invalidateQueries({ queryKey: ["chat-history"] });
     } catch { toast.error(tr("chatSendFailed")); }
     finally { setSending(false); }
   };
@@ -324,6 +348,7 @@ export function ChatWidget({
             });
           }
           queryClient.invalidateQueries({ queryKey: ["messages"] });
+          queryClient.invalidateQueries({ queryKey: ["chat-history"] });
         } catch { toast.error("Gagal mengirim foto"); }
       }
     } catch (err: any) {
