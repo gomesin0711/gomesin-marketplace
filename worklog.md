@@ -1880,3 +1880,79 @@ Stage Summary:
 - Vercel production: https://gomesin.vercel.app (build 26s, total 47s)
 - Browser-verified: desktop + mobile. Chat Penjual → full-page chat (not modal). Back button works. Chat input visible in mobile viewport. No console errors.
 - Note: ChatWidget (Dialog modal) is preserved for backward compatibility (ChatButton still uses it). The DetailView now uses the full-page ChatView instead.
+
+---
+Task ID: 14-chat-existing-panel
+Agent: Main (Z.ai Code)
+Task: kehalaman chat yang sudah tersedia bukan buat baru (use the existing chat page, not create a new one)
+
+Work Log:
+- User clarified that "Chat Penjual" should navigate to the EXISTING chat page (profile "pesan" panel), not the new ChatView created in Task 13.
+- Investigated the existing chat UI in profile.tsx via Explore subagent (Task 14-explore):
+  - The "pesan" panel is a WhatsApp-style split view (conversation list left, message thread right) at profile.tsx:1226-1704.
+  - Conversations are keyed by partnerId (one per partner, regardless of listing). API returns {conversations: [{id, partnerId, name, partnerImage, lastMessage, lastTime, unread, listingTitle, listingImage, listingPrice, messages: [...]}]}.
+  - openChat(convId) sets activeChatId + syncs messages + PATCHes mark-read. Only works for existing conversations.
+  - sendChat() reads conv.partnerId + conv.listingTitle from the active conversation. Cannot start a new conversation.
+  - No mechanism existed to open the pesan panel with a specific partner pre-selected. Store only had profilePanel: "pesan" (a string), no partner context.
+- REVERTED Task 13's new ChatView:
+  - Deleted src/components/gomesin/views/chat.tsx
+  - Removed "chat" from View union in store.ts
+  - Removed goToChat action from store.ts
+  - Removed ChatView import + render from app-shell.tsx
+  - Removed "chat" from footer-hidden list in app-shell.tsx
+  - Reverted main from "flex flex-col" back to "flex-1"
+  - chat-widget.tsx: kept ChatInner extracted (ChatWidget wraps it in Dialog for backward compat — ChatButton still works if used elsewhere). No code changes needed here.
+- ADDED pendingChatPartner mechanism to Zustand store (src/lib/store.ts):
+  - New type PendingChatPartner = {partnerId, partnerName?, partnerImage?, listingId?, listingTitle?, listingImage?, listingPrice?}
+  - New state: pendingChatPartner?: PendingChatPartner | null (initialized null, cleared on logout)
+  - New action: goToProfileChat(partner) — sets view="profile", profilePanel="pesan", pendingChatPartner=partner, pushes history
+  - New action: clearPendingChatPartner() — sets pendingChatPartner=null
+- WIRED detail.tsx "Chat Penjual" button (src/components/gomesin/views/detail.tsx):
+  - Changed onClick from goToChat(l.slug) to a handler that:
+    1. Login guard: if !currentUser → toast "Silakan masuk terlebih dahulu" with login action
+    2. Owner check: if !ownerId → toast "Penjual belum terdaftar sebagai user"
+    3. Self-chat guard: if currentUser.id === ownerId → toast "Tidak bisa chat iklan sendiri"
+    4. Otherwise → goToProfileChat({partnerId: ownerId, partnerName, partnerImage, listingId, listingTitle, listingImage, listingPrice})
+  - Added currentUser + goToLogin from store
+- ADDED draft conversation mechanism in profile.tsx:
+  - Read pendingChatPartner + clearPendingChatPartner from store
+  - New state: draftConv (a synthetic conversation object for new partners with _draft: true flag)
+  - New derived: allConversations = draftConv ? [draftConv, ...conversations.filter(c => c.partnerId !== draftConv.partnerId)] : conversations
+  - New useEffect: watches pendingChatPartner + messagesData + conversations + user. When pendingChatPartner is set:
+    - If existing conversation found by partnerId → openChat(conv.id), clearPendingChatPartner
+    - If not found → create draft conv {id: partnerId, partnerId, name, partnerImage, lastMessage:"", lastTime: now, unread:0, listingTitle, listingImage, listingPrice, messages:[], _draft:true}, setDraftConv(draft), setActiveChatId(draft.id), setChatMessages([]), clearPendingChatPartner
+  - Updated openChat: uses allConversations (not conversations), skips PATCH mark-read for draft convs (conv._draft)
+  - Updated sendChat: uses allConversations, includes listingId in POST payload for draft convs (conv._draft ? conv.listingId : undefined), clears draftConv after sending from a draft (next 5s poll fetches the real conversation from DB)
+  - Updated sendGif: same draft handling as sendChat
+  - Updated syncChatMessages: uses allConversations
+  - Updated handleBlockUser, handleClearChat, handleDeleteChat: use allConversations, skip delete/clear for draft convs (conv._draft)
+  - Updated conversation list rendering: uses allConversations (draft appears first in the list)
+  - Updated right-pane conv lookup: uses allConversations
+  - Updated realtime socket subscription: uses allConversations for partner lookup
+- Lint: 17 pre-existing problems (6 errors + 11 warnings) — 0 new errors. Initially introduced 1 unused eslint-disable warning which was fixed by removing the directive.
+- Browser verification (logged in as admin user):
+  - Navigated to listing detail (listing "tes" owned by "udin")
+  - Clicked "Chat Penjual" button
+  - ✅ Store changed: view="profile", profilePanel="pesan", pendingChatPartner processed (cleared after conversation opened)
+  - ✅ Navigated to profile → pesan panel (existing chat page, NOT a new page)
+  - ✅ Chat conversation opened (Online indicator visible, back buttons present)
+  - ✅ Chat input found (placeholder="Tulis pesan...")
+  - ✅ Typed "Halo, saya tertarik dengan iklan ini" and clicked send
+  - ✅ Message sent successfully (no console errors)
+  - 6 screenshots saved to /home/z/my-project/upload/chat-existing-verify/
+- Also verified login guard (not logged in): clicking "Chat Penjual" shows toast prompting to login, stays on detail page.
+- Git: commit e08420b pushed to origin/main
+- Vercel: build 29s, total 51s → https://gomesin.vercel.app (production live, HTTP 200)
+
+Stage Summary:
+- Files deleted (1): src/components/gomesin/views/chat.tsx (the new ChatView from Task 13)
+- Files modified (4):
+  - src/lib/store.ts — removed "chat" view + goToChat; added PendingChatPartner type, pendingChatPartner state, goToProfileChat action, clearPendingChatPartner action
+  - src/components/gomesin/app-shell.tsx — removed ChatView import + render, removed "chat" from footer-hidden, reverted main to flex-1
+  - src/components/gomesin/views/detail.tsx — Chat Penjual button calls goToProfileChat with partner info; login/owner/self-chat guards
+  - src/components/gomesin/views/profile.tsx — draft conversation mechanism: pendingChatPartner useEffect, draftConv state, allConversations derived, openChat/sendChat/sendGif/syncChatMessages/handleBlockUser/handleClearChat/handleDeleteChat all use allConversations, sendChat/sendGif include listingId for drafts + clear draft after send, conversation list + right pane + socket subscription use allConversations
+- Lint: 17 pre-existing problems — 0 new errors
+- Git commit: e08420b (pushed to origin/main)
+- Vercel production: https://gomesin.vercel.app (build 29s, total 51s)
+- Browser-verified end-to-end: Chat Penjual → existing profile chat panel → conversation opens → message sent. No console errors.
+- Key design: the existing chat page (profile "pesan" panel) is now the target of "Chat Penjual". For new partners (no prior conversation), a draft conversation is created locally so the user can type their first message. When sent, the POST creates the real conversation in the DB, the 5s poll replaces the draft with the real conversation, and subsequent messages flow through the normal chat path.
