@@ -12,7 +12,6 @@ export type View =
   | "favorites"
   | "profile"
   | "seller"
-  | "chat"
   | "login"
   | "dashboard"
   | "upgrade"
@@ -58,12 +57,26 @@ export type AppUser = {
   createdAt?: string;
 };
 
+type PendingChatPartner = {
+  partnerId: string;
+  partnerName?: string;
+  partnerImage?: string | null;
+  listingId?: string;
+  listingTitle?: string;
+  listingImage?: string | null;
+  listingPrice?: number | null;
+};
+
 type NavState = {
   view: View;
   slug?: string; // for detail view
   sellerId?: string;
   filters: ListingFilters;
   profilePanel?: "pesan" | "pesanan" | "saldo" | "notifikasi" | "keamanan" | "pengaturan" | "bantuan" | "iklan-saya" | "favorit-saya" | null;
+  // When set, the profile "pesan" panel will auto-open a conversation (or
+  // create a draft) with this partner. Cleared after the conversation is
+  // opened or the user navigates away.
+  pendingChatPartner?: PendingChatPartner | null;
   // navigation history for back button
   history: { view: View; slug?: string; filters: ListingFilters }[];
 
@@ -97,7 +110,8 @@ type NavState = {
   goToDashboard: () => void;
   goToUpgrade: (slug: string) => void;
   goToSeller: (userId: string) => void;
-  goToChat: (slug: string) => void;
+  goToProfileChat: (partner: PendingChatPartner) => void;
+  clearPendingChatPartner: () => void;
   goToAdmin: () => void;
   goToAdminSub: (sub: "admin-sellers" | "admin-categories" | "admin-listings" | "admin-new-listings" | "admin-expired-listings" | "admin-rejected-listings" | "admin-transactions" | "admin-reports" | "admin-users" | "admin-paket" | "admin-merek" | "admin-lokasi" | "admin-banner" | "admin-audit" | "admin-monthly-report" | "admin-chat") => void;
   goBack: () => void;
@@ -120,6 +134,7 @@ export const useStore = create<NavState>()(
       slug: undefined,
       sellerId: undefined,
       filters: {},
+      pendingChatPartner: null,
       history: [],
       favorites: [],
       favoritesSeenCount: 0,
@@ -276,16 +291,20 @@ export const useStore = create<NavState>()(
           return state;
         }),
 
-      goToChat: (slug) =>
+      goToProfileChat: (partner) =>
         set((s) => {
           const state = {
-            view: "chat" as View,
-            slug,
+            view: "profile" as View,
+            slug: undefined,
+            profilePanel: "pesan" as const,
+            pendingChatPartner: partner,
             history: [...s.history, { view: s.view, slug: s.slug, filters: s.filters }].slice(-20),
           };
           if (typeof window !== "undefined") window.history.pushState({ gomesin: true }, "");
           return state;
         }),
+
+      clearPendingChatPartner: () => set({ pendingChatPartner: null }),
 
       goToAdmin: () =>
         set((s) => {
@@ -376,7 +395,7 @@ export const useStore = create<NavState>()(
         }
       },
 
-      logout: () => set({ user: null, favorites: [], favoritesSeenCount: 0, recents: [], profilePanel: null, view: "home", slug: undefined, filters: {} }),
+      logout: () => set({ user: null, favorites: [], favoritesSeenCount: 0, recents: [], profilePanel: null, pendingChatPartner: null, view: "home", slug: undefined, filters: {} }),
     }),
     {
       name: "gomesin-store",

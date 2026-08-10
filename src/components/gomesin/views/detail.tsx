@@ -47,7 +47,9 @@ export function DetailView() {
   const goBack = useStore((s) => s.goBack);
   const goToListings = useStore((s) => s.goToListings);
   const goToSeller = useStore((s) => s.goToSeller);
-  const goToChat = useStore((s) => s.goToChat);
+  const goToProfileChat = useStore((s) => s.goToProfileChat);
+  const currentUser = useStore((s) => s.user);
+  const goToLogin = useStore((s) => s.goToLogin);
   const toggleFavorite = useStore((s) => s.toggleFavorite);
   const isFav = useStore((s) => (slug ? false : false));
   const favIds = useStore((s) => s.favorites);
@@ -326,7 +328,30 @@ export function DetailView() {
           {/* action buttons (moved from seller sidebar) */}
           <div className="mt-4 space-y-2">
             <Button
-              onClick={() => goToChat(l.slug)}
+              onClick={() => {
+                if (!currentUser) {
+                  toast.info(tr("chatLoginRequired"), { action: { label: tr("chatLoginAction"), onClick: goToLogin } });
+                  return;
+                }
+                const ownerId = (l as any).user?.id;
+                if (!ownerId) {
+                  toast.info(tr("chatSellerNotRegistered"));
+                  return;
+                }
+                if (currentUser.id === ownerId) {
+                  toast.info(tr("chatOwnListing"));
+                  return;
+                }
+                goToProfileChat({
+                  partnerId: ownerId,
+                  partnerName: (l as any).user?.name || l.seller.name,
+                  partnerImage: (l as any).user?.logoImage || null,
+                  listingId: l.id,
+                  listingTitle: l.title,
+                  listingImage: l.images?.[0] || null,
+                  listingPrice: l.price,
+                });
+              }}
               className="w-full gap-2 rounded-full bg-primary font-semibold"
               size="lg"
             >

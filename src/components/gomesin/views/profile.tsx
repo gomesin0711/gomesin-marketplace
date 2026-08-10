@@ -167,6 +167,8 @@ export function ProfileView() {
   const storeProfilePanel = useStore((s) => s.profilePanel);
   const clearProfilePanel = useStore((s) => s.clearProfilePanel);
   const setProfilePanel = useStore((s) => s.setProfilePanel);
+  const pendingChatPartner = useStore((s) => s.pendingChatPartner);
+  const clearPendingChatPartner = useStore((s) => s.clearPendingChatPartner);
 
   // Fetch user's listing count
   const { data: myListingsData } = useQuery({
@@ -268,7 +270,19 @@ export function ProfileView() {
     refetchIntervalInBackground: false,
   });
   const conversations: any[] = messagesData?.conversations ?? [];
-  const unreadCount = conversations.reduce((a: number, c: any) => a + (c.unread || 0), 0);
+  // Draft conversation for a partner the user has never messaged before.
+  // Created when the user clicks "Chat Penjual" on a listing and no prior
+  // conversation exists. When the first message is sent, the POST creates a
+  // real conversation row, and the next poll replaces the draft with the
+  // real one (matched by partnerId).
+  const [draftConv, setDraftConv] = useState<any | null>(null);
+  // Merge draft into the displayed list (draft first, then real convs — but
+  // skip any real conv that has the same partnerId, since the draft is the
+  // "active" entry until the real one arrives).
+  const allConversations: any[] = draftConv
+    ? [draftConv, ...conversations.filter((c) => c.partnerId !== draftConv.partnerId)]
+    : conversations;
+  const unreadCount = allConversations.reduce((a: number, c: any) => a + (c.unread || 0), 0);
   const [activeChatId, setActiveChatId] = useState<number | null>(null);
   const [chatMessages, setChatMessages] = useState<{ [key: number]: { role: "user" | "assistant"; content: string; image?: string; animation?: string }[] }>({});
   const [chatInput, setChatInput] = useState("");
@@ -395,17 +409,57 @@ export function ProfileView() {
   };
 
   const openChat = (convId: string) => {
-    const conv = conversations.find((c: any) => c.id === convId);
+    const conv = allConversations.find((c: any) => c.id === convId);
     setActiveChatId(convId as any);
     syncChatMessages(convId);
     if (user && conv?.partnerId) {
-      fetch("/api/messages", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id, partnerId: conv.partnerId }),
-      }).then(() => refetchMessages());
+      // Only PATCH mark-read for real conversations (draft has no DB messages yet).
+      if (!conv._draft) {
+        fetch("/api/messages", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.id, partnerId: conv.partnerId }),
+        }).then(() => refetchMessages());
+      }
     }
   };
+
+  // Process pendingChatPartner — when the user clicks "Chat Penjual" on a
+  // listing, the store sets pendingChatPartner. Here we either open the
+  // existing conversation or create a draft for a brand-new partner.
+  useEffect(() => {
+    if (!pendingChatPartner || !user) return;
+    // Only act when conversations have been loaded (or we know there are none).
+    if (!messagesData) return;
+    const existing = conversations.find((c: any) => c.partnerId === pendingChatPartner.partnerId);
+    if (existing) {
+      // Real conversation exists — open it.
+      openChat(existing.id);
+      clearPendingChatPartner();
+    } else {
+      // No prior conversation — create a draft so the user can type their
+      // first message. The draft is replaced by the real conversation once
+      // the first message is sent (POST creates the row, next poll fetches it).
+      const draft = {
+        id: pendingChatPartner.partnerId, // conv id == partnerId (matches API grouping)
+        partnerId: pendingChatPartner.partnerId,
+        name: pendingChatPartner.partnerName || "Penjual",
+        partnerImage: pendingChatPartner.partnerImage || null,
+        lastMessage: "",
+        lastTime: new Date().toISOString(),
+        unread: 0,
+        listingTitle: pendingChatPartner.listingTitle || null,
+        listingImage: pendingChatPartner.listingImage || null,
+        listingPrice: pendingChatPartner.listingPrice ?? null,
+        messages: [],
+        _draft: true,
+      };
+      setDraftConv(draft);
+      setActiveChatId(draft.id as any);
+      setChatMessages((prev) => ({ ...prev, [draft.id as any]: [] }));
+      clearPendingChatPartner();
+    }
+  }, [pendingChatPartner, messagesData, conversations, user]);
 
   // ===== Conversation context menu actions =====
   const handleConvContextMenu = (e: React.MouseEvent, convId: string) => {
@@ -415,14 +469,14 @@ export function ProfileView() {
   };
 
   const handleBlockUser = useCallback(() => {
-    const conv = conversations.find((c: any) => c.id === convMenu.convId);
+    const conv = allConversations.find((c: any) => c.id === convMenu.convId);
     if (conv) toast.success(`${conv.name} diblokir`);
     setConvMenu({ visible: false, x: 0, y: 0, convId: null });
-  }, [convMenu.convId, conversations]);
+  }, [convMenu.convId, allConversations]);
 
   const handleClearChat = useCallback(async () => {
-    const conv = conversations.find((c: any) => c.id === convMenu.convId);
-    if (!conv || !user) { setConvMenu({ visible: false, x: 0, y: 0, convId: null }); return; }
+    const conv = allConversations.find((c: any) => c.id === convMenu.convId);
+    if (!conv || !user || conv._draft) { setConvMenu({ visible: false, x: 0, y: 0, convId: null }); return; }
     try {
       await fetch("/api/messages", {
         method: "DELETE",
@@ -434,11 +488,11 @@ export function ProfileView() {
       toast.success("Chat dibersihkan");
     } catch { toast.error("Gagal membersihkan chat"); }
     setConvMenu({ visible: false, x: 0, y: 0, convId: null });
-  }, [convMenu.convId, conversations, user, queryClient]);
+  }, [convMenu.convId, allConversations, user, queryClient]);
 
   const handleDeleteChat = useCallback(async () => {
-    const conv = conversations.find((c: any) => c.id === convMenu.convId);
-    if (!conv || !user) { setConvMenu({ visible: false, x: 0, y: 0, convId: null }); return; }
+    const conv = allConversations.find((c: any) => c.id === convMenu.convId);
+    if (!conv || !user || conv._draft) { setConvMenu({ visible: false, x: 0, y: 0, convId: null }); return; }
     try {
       await fetch("/api/messages", {
         method: "DELETE",
@@ -451,7 +505,7 @@ export function ProfileView() {
       toast.success("Chat dihapus");
     } catch { toast.error("Gagal menghapus chat"); }
     setConvMenu({ visible: false, x: 0, y: 0, convId: null });
-  }, [convMenu.convId, conversations, user, queryClient, activeChatId]);
+  }, [convMenu.convId, allConversations, user, queryClient, activeChatId]);
 
   // Close menu on outside click
   useEffect(() => {
@@ -464,7 +518,7 @@ export function ProfileView() {
 
   // Sync chat messages from conversations data — populate local state from DB snapshot.
   const syncChatMessages = (convId: string) => {
-    const conv = conversations.find((c: any) => c.id === convId);
+    const conv = allConversations.find((c: any) => c.id === convId);
     if (!conv) return;
     const dbCount = conv.messages?.length || 0;
     const localCount = chatMessages[convId as any]?.length || 0;
@@ -488,7 +542,7 @@ export function ProfileView() {
       // Find the conversation this message belongs to (by partnerId + listingTitle).
       const isMine = msg.senderId === user.id;
       const partnerId = isMine ? msg.receiverId : msg.senderId;
-      const conv = conversations.find(
+      const conv = allConversations.find(
         (c: any) => c.partnerId === partnerId && (c.listingTitle || null) === (msg.listingTitle || null)
       );
       // Refresh conversation list so last message preview + unread count update.
@@ -574,7 +628,7 @@ export function ProfileView() {
     const content = chatInput.trim();
     const image = pendingImage;
     if ((!content && !image) || chatSending || activeChatId === null || !user) return;
-    const conv = conversations.find((c: any) => c.id === activeChatId);
+    const conv = allConversations.find((c: any) => c.id === activeChatId);
     if (!conv) return;
 
     setChatInput("");
@@ -594,6 +648,7 @@ export function ProfileView() {
         content: content || (image ? "📷 Gambar" : ""),
         image: image || null,
         listingTitle: conv.listingTitle,
+        listingId: conv._draft ? conv.listingId : undefined,
       });
       if (!ack?.ok) {
         // Fallback to REST.
@@ -606,8 +661,14 @@ export function ProfileView() {
             content: content || (image ? "📷 Gambar" : ""),
             image: image || null,
             listingTitle: conv.listingTitle,
+            listingId: conv._draft ? conv.listingId : undefined,
           }),
         });
+      }
+      // If this was a draft conversation, clear the draft — the next poll
+      // (5s) will fetch the real conversation from the DB and replace it.
+      if (conv._draft) {
+        setDraftConv(null);
       }
       queryClient.invalidateQueries({ queryKey: ["messages"] });
     } catch {
@@ -789,7 +850,7 @@ export function ProfileView() {
   // Send a sticker (animated emoji) as a big animated message
   const sendGif = async (sticker: { emoji: string; animation: string }) => {
     if (chatSending || activeChatId === null || !user) return;
-    const conv = conversations.find((c: any) => c.id === activeChatId);
+    const conv = allConversations.find((c: any) => c.id === activeChatId);
     if (!conv) return;
     setShowGifs(false);
     const history = chatMessages[activeChatId as any] || [];
@@ -802,6 +863,7 @@ export function ProfileView() {
         receiverId: conv.partnerId,
         content: sticker.emoji,
         listingTitle: conv.listingTitle,
+        listingId: conv._draft ? conv.listingId : undefined,
       });
       if (!ack?.ok) {
         await fetch("/api/messages", {
@@ -812,9 +874,11 @@ export function ProfileView() {
             receiverId: conv.partnerId,
             content: sticker.emoji,
             listingTitle: conv.listingTitle,
+            listingId: conv._draft ? conv.listingId : undefined,
           }),
         });
       }
+      if (conv._draft) setDraftConv(null);
       queryClient.invalidateQueries({ queryKey: ["messages"] });
     } catch {
       toast.error(tr("chatSendFailed"));
@@ -1263,7 +1327,7 @@ export function ProfileView() {
                     </div>
                     {/* Conversation list */}
                     <div className="flex-1 overflow-y-auto gomesin-scroll">
-                      {conversations.length === 0 ? (
+                      {allConversations.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16 text-center">
                           <MessageSquare className="size-12 text-muted-foreground/30" />
                           <p className="mt-3 text-sm font-semibold">Belum ada pesan</p>
@@ -1273,7 +1337,7 @@ export function ProfileView() {
                           </Button>
                         </div>
                       ) : (
-                        conversations.map((c: any) => (
+                        allConversations.map((c: any) => (
                           <button
                             key={c.id}
                             onClick={() => openChat(c.id)}
@@ -1352,7 +1416,7 @@ export function ProfileView() {
                       : "hidden md:flex md:flex-1"
                   )}>
                     {activeChatId !== null ? (() => {
-                      const conv = conversations.find((c: any) => c.id === activeChatId);
+                      const conv = allConversations.find((c: any) => c.id === activeChatId);
                       if (!conv) return null;
                       const convo = chatMessages[activeChatId as any] || [];
                       return (

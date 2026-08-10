@@ -18,7 +18,6 @@ import { ProfileView } from "./views/profile";
 import { LoginView } from "./views/login";
 import { UpgradeView } from "./views/upgrade";
 import { SellerView } from "./views/seller";
-import { ChatView } from "./views/chat";
 import { AdminView } from "./views/admin";
 
 const ADMIN_VIEWS = ["admin", "admin-sellers", "admin-categories", "admin-listings", "admin-new-listings", "admin-expired-listings", "admin-rejected-listings", "admin-transactions", "admin-reports", "admin-monthly-report", "admin-users", "admin-paket", "admin-merek", "admin-lokasi", "admin-banner", "admin-audit", "admin-chat"];
@@ -119,7 +118,7 @@ export function AppShell() {
           </main>
         </div>
       ) : (
-        <main className="flex flex-1 flex-col">
+        <main className="flex-1">
           {view === "home" && <HomeView />}
           {view === "listings" && <ListingsView />}
           {view === "detail" && <DetailView />}
@@ -129,13 +128,12 @@ export function AppShell() {
           {view === "login" && <LoginView />}
           {view === "upgrade" && <UpgradeView />}
           {view === "seller" && <SellerView />}
-          {view === "chat" && <ChatView />}
           {/* fallback: if non-admin somehow reaches admin view */}
           {isAdminView && !isAdmin && <AdminView key={view} />}
         </main>
       )}
-      {/* Hide footer on account/dashboard/chat/admin views for cleaner UX */}
-      {!["profile", "dashboard", "favorites", "login", "post", "chat", ...ADMIN_VIEWS].includes(view) && <Footer />}
+      {/* Hide footer on account/dashboard/admin views for cleaner UX */}
+      {!["profile", "dashboard", "favorites", "login", "post", ...ADMIN_VIEWS].includes(view) && <Footer />}
       {/* Spacer so the fixed bottom nav (mobile) doesn't cover footer content */}
       <div className="h-[4.25rem] shrink-0 md:hidden" aria-hidden="true" />
       <BottomNav />
