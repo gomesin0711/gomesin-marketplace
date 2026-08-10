@@ -29,6 +29,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useLang, translations as i18nTranslations, formatT } from "@/lib/i18n";
 import { useMounted } from "@/lib/use-mounted";
+import { ForgotPasswordDialog } from "@/components/gomesin/forgot-password-dialog";
 
 export function LoginView() {
   const goBack = useStore((s) => s.goBack);
@@ -51,6 +52,7 @@ export function LoginView() {
   const [rPass2, setRPass2] = useState("");
   const [agree, setAgree] = useState(false);
   const [tab, setTab] = useState<"login" | "register">("login");
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   const doLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -182,6 +184,7 @@ export function LoginView() {
             rPass2={rPass2} setRPass2={setRPass2}
             agree={agree} setAgree={setAgree}
             doLogin={doLogin} doRegister={doRegister}
+            onForgotPassword={() => setForgotOpen(true)}
             tr={tr}
           />
         </div>
@@ -261,6 +264,7 @@ export function LoginView() {
               rPass2={rPass2} setRPass2={setRPass2}
               agree={agree} setAgree={setAgree}
               doLogin={doLogin} doRegister={doRegister}
+              onForgotPassword={() => setForgotOpen(true)}
               tr={tr}
             />
             <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
@@ -270,6 +274,8 @@ export function LoginView() {
           </div>
         </div>
       </div>
+
+      <ForgotPasswordDialog open={forgotOpen} onOpenChange={setForgotOpen} />
     </div>
   );
 }
@@ -280,7 +286,7 @@ function FormSection({
   lEmail, setLEmail, lPass, setLPass,
   rName, setRName, rEmail, setREmail, rPhone, setRPhone,
   rPass, setRPass, rPass2, setRPass2, agree, setAgree,
-  doLogin, doRegister, tr,
+  doLogin, doRegister, onForgotPassword, tr,
 }: {
   tab: string; setTab: (v: "login" | "register") => void;
   showPass: boolean; setShowPass: (v: boolean | ((p: boolean) => boolean)) => void;
@@ -295,6 +301,7 @@ function FormSection({
   agree: boolean; setAgree: (v: boolean) => void;
   doLogin: (e: React.FormEvent) => void;
   doRegister: (e: React.FormEvent) => void;
+  onForgotPassword: () => void;
   tr: (key: any) => any;
 }) {
   return (
@@ -327,7 +334,7 @@ function FormSection({
             <label className="flex items-center gap-1.5 text-muted-foreground">
               <input type="checkbox" className="accent-primary" /> {tr("rememberMe")}
             </label>
-            <button type="button" onClick={() => toast.info(tr("forgotPasswordSoon"))} className="font-medium text-primary hover:underline">
+            <button type="button" onClick={onForgotPassword} className="font-medium text-primary hover:underline">
               {tr("forgotPassword")}
             </button>
           </div>

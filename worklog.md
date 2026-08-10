@@ -1579,3 +1579,80 @@ Stage Summary:
   - Delete: 24→23 listings instantly, stable at 23 across 5s of polling (no flicker) ✅
   - Profile PATCH (Simpan Banner/Logo): returns updated user with bannerImage/logoImage set ✅
   - Profile GET: returns correct user data ✅
+
+---
+Task ID: 10-forgot-password-verify
+Agent: Browser Verification Agent
+Task: Verify forgot-password UI via browser
+
+Work Log:
+- Read worklog.md to understand context (no prior forgot-password entries; previous tasks were about realtime delete + Supabase profile PATCH on production).
+- Confirmed dev server is running at http://localhost:3000/ (Next.js v16.1.3, PID 2310, HTTP 200).
+- Located Playwright Python (v1.57.0) at /home/z/.venv/bin/playwright with chromium-1200/1228 browsers installed.
+- Reviewed the relevant source so I knew which selectors / labels to target:
+  - src/components/gomesin/forgot-password-dialog.tsx — 4-step dialog ("phone" → "otp" → "reset" → "done"), dev-mode OTP box rendered as `<div class="border-amber-300 bg-amber-50">…<p class="text-2xl font-black tracking-widest">{devCode}</p></div>`.
+  - src/components/gomesin/views/login.tsx — "Lupa sandi?" link calls `onForgotPassword={() => setForgotOpen(true)}`; renders TWO instances (mobile `md:hidden` + desktop `hidden md:grid`).
+  - src/components/gomesin/header.tsx — login entry point is `<button aria-label="Masuk atau Daftar" onClick={goToLogin}>`.
+  - src/app/api/auth/forgot-password/route.ts — 3 actions (send/verify/reset), in-memory OTP store, dev fallback returns `_devCode` + `_devNote` when FONNTE_API_KEY is missing.
+  - src/lib/i18n.ts — default lang = "id", so button labels are "Kirim Kode OTP", "Verifikasi", "Reset Sandi", "Kembali ke Masuk".
+- Wrote a Playwright script at /home/z/my-project/tests/verify-forgot-password.py that:
+  - Pre-seeds localStorage `gomesin-pwa-dismissed` + `gomesin-pwa-installed` via context.add_init_script so the PWA install popup does NOT intercept clicks on the home page (first run failed because the popup's `bg-black/50 backdrop-blur-sm` overlay was blocking the login button).
+  - Captures all console messages, page errors, failed requests, and /api/auth/forgot-password responses.
+  - Selects the VISIBLE "Lupa sandi?" button (handles the dual mobile/desktop instances).
+  - Reads the 6-digit OTP out of the amber dev-mode box and fills it into the input-otp hidden input via `fill()` (the library uses a transparent overlay input — `fill()` works, `press_sequentially` is the fallback).
+  - Asserts the CheckCircle2 success icon is visible and the step indicator is hidden in the done step.
+- Ran the script end-to-end successfully (headless chromium, 1366×900 viewport, locale=id-ID). 10 screenshots saved to /home/z/my-project/upload/forgot-password-verify/.
+
+Stage Summary:
+- FEATURE IS FULLY FUNCTIONAL. All 4 step transitions work:
+  1. Click "Lupa sandi?" on login form → dialog opens at STEP 1 (phone). Step indicator shows "1 — 2 — 3". ✅
+  2. Enter phone `0818666711` + click "Kirim Kode OTP" → STEP 2 (OTP). Yellow dev-mode box appears with 6-digit code. ✅
+  3. Enter OTP + click "Verifikasi" → STEP 3 (Sandi Baru). ✅
+  4. Enter new password `testpass123` in both fields + click "Reset Sandi" → STEP 4 (done). CheckCircle2 success icon visible, step indicator hidden, description reads "Kata sandi berhasil diubah! Silakan masuk." ✅
+  5. Click "Kembali ke Masuk" → dialog closes cleanly, returns to login view. ✅
+- Dev-mode OTP code IS displayed correctly: yellow box (`border-amber-300 bg-amber-50`) with "Mode dev — kode OTP ditampilkan di bawah" label and the 6-digit code in large bold tracking-widest text. Codes captured: 289611 (first run), 392020 (second run).
+- API responses (all HTTP 200):
+  - POST /api/auth/forgot-password {action:"send"} → `{success:true, message:"OTP terkirim (mode dev — Fonnte tidak aktif)", sentViaWhatsapp:false, _devCode:"392020", _devNote:"FONNTE_API_KEY belum dikonfigurasi."}`
+  - POST /api/auth/forgot-password {action:"verify"} → `{success:true, message:"OTP terverifikasi"}`
+  - POST /api/auth/forgot-password {action:"reset"} → `{success:true, message:"Kata sandi berhasil diubah. Silakan masuk dengan sandi baru."}`
+- Console errors: NONE. Page errors (JS exceptions): NONE. Failed network requests: NONE.
+  - Two benign preload warnings appeared on the very first run only (a `.woff2` font preload and a third-party CDN image preload from `z-cdn.chatglm.cn`); these are unrelated to the forgot-password feature and did not appear on the second run.
+- Screenshots (all 1366×900 PNG, saved to /home/z/my-project/upload/forgot-password-verify/):
+  - 01-home.png — Home page (PWA popup suppressed, clean header visible)
+  - 02-login-view.png — Login form (desktop 2-column layout with orange block + form)
+  - 03-forgot-dialog-step1-phone.png — Forgot-password dialog, STEP 1: phone input + "Kirim Kode OTP" button, step indicator "1" highlighted
+  - 04-forgot-dialog-step2-otp.png — STEP 2: 6-slot OTP input + amber dev box showing the code
+  - 05-forgot-dialog-step2-otp-filled.png — STEP 2: all 6 OTP slots filled
+  - 06-forgot-dialog-step3-reset.png — STEP 3: "Sandi Baru" two password fields + "Reset Sandi" button, step indicator "3" highlighted
+  - 07-forgot-dialog-step3-passwords-filled.png — STEP 3: both password fields filled
+  - 08-forgot-dialog-step4-done.png — STEP 4: success state with CheckCircle2 icon + "Kembali ke Masuk" button (step indicator hidden)
+  - 09-dialog-closed.png — Back to login view after closing
+  - 10-final-state.png — Final login view state
+- Test artifact: /home/z/my-project/tests/verify-forgot-password.py (re-runnable; idempotent — just sets the same password again).
+- No code was modified. This was a pure browser-verification task.
+
+---
+Task ID: 10-forgot-password-feature
+Agent: Main (Z.ai Code)
+Task: Aktifkan fitur lupa sandi dengan mengirim OTP di WhatsApp
+
+Work Log:
+- Investigated existing auth infrastructure: found /api/auth/otp (email-only OTP, no Supabase fallback), /lib/whatsapp.ts (Fonnte API helper with sendWhatsAppMessage), /api/auth/password (change-only, no reset), login.tsx "Lupa sandi?" button showing "coming soon" toast.
+- Built self-contained backend: /api/auth/forgot-password/route.ts with 3 actions (send/verify/reset). Uses Prisma → Supabase fallback for both user lookup (by phone variants) and password update. OTP sent via sendWhatsAppMessage (Fonnte); falls back to dev-mode (_devCode in response) when FONNTE_API_KEY not configured. 5-min OTP TTL, 60s resend cooldown, 6-digit code.
+- Built frontend: /components/gomesin/forgot-password-dialog.tsx — 3-step Dialog (phone → OTP via InputOTP → new password) with step indicator, resend countdown, dev-mode OTP display box, password visibility toggle, success state.
+- Wired into login.tsx: added forgotOpen state + ForgotPasswordDialog render; passed onForgotPassword callback to FormSection subcomponent; replaced toast.info("coming soon") with dialog open.
+- Added 26 i18n keys × 3 languages (id/en/zh) for the entire forgot-password flow.
+- Lint: 17 pre-existing problems (6 errors in .cjs + 11 warnings) — 0 new errors introduced.
+- Backend verified via curl end-to-end: send OTP (200, returns _devCode) → verify (200) → reset (200) → login old password (401 rejected) → login new password (200 accepted). Then restored test user's password.
+- Browser verified via subagent (Task 10-forgot-password-verify): all 4 step transitions work (phone → OTP → reset → done), dev-mode OTP box displays correctly, dialog opens/closes cleanly, no console errors, no failed network requests. 10 screenshots saved to /home/z/my-project/upload/forgot-password-verify/.
+
+Stage Summary:
+- Files created (2):
+  - src/app/api/auth/forgot-password/route.ts — self-contained OTP-via-WhatsApp forgot password backend (send/verify/reset). Prisma → Supabase fallback for user lookup + password update. Fonnte WhatsApp send with dev-mode fallback.
+  - src/components/gomesin/forgot-password-dialog.tsx — 3-step dialog UI (phone → OTP → new password) with InputOTP, step indicator, resend countdown, dev-mode code display.
+- Files modified (2):
+  - src/components/gomesin/views/login.tsx — added ForgotPasswordDialog + forgotOpen state; passed onForgotPassword to FormSection; replaced "coming soon" toast with dialog trigger.
+  - src/lib/i18n.ts — added 26 forgot-password keys × 3 languages (id/en/zh).
+- Lint: 17 pre-existing problems — 0 new errors
+- Production note: On Vercel, FONNTE_API_KEY must be set in env vars for real WhatsApp messages. If not set, the API falls back to dev-mode (returns _devCode in response, frontend shows code in amber box). The feature works in both modes.
+- Not yet deployed to Vercel (user did not explicitly request deploy this round).
