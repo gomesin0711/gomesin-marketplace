@@ -79,7 +79,6 @@ import {
   Bookmark,
   CircleDot,
   CameraOff,
-  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -186,6 +185,7 @@ export function ProfileView() {
   const setProfilePanel = useStore((s) => s.setProfilePanel);
   const pendingChatPartner = useStore((s) => s.pendingChatPartner);
   const clearPendingChatPartner = useStore((s) => s.clearPendingChatPartner);
+  const setPendingCall = useStore((s) => s.setPendingCall);
   const goToDetail = useStore((s) => s.goToDetail);
 
   // Fetch user's listing count
@@ -310,10 +310,9 @@ export function ProfileView() {
   const [chatMessages, setChatMessages] = useState<{ [key: number]: { role: "user" | "assistant"; content: string; image?: string; animation?: string; listingId?: string | null; listingTitle?: string | null; listingImage?: string | null; listingPrice?: number | null; listingSlug?: string | null }[] }>({});
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
-  // Call dialog state — activates the Voice / Video call buttons in the chat header.
-  // type: "voice" | "video"; partner: { name, image, phone } | null
-  const [callDialog, setCallDialog] = useState<{ type: "voice" | "video"; name: string; image: string | null; phone: string | null } | null>(null);
-  const [callCopied, setCallCopied] = useState(false);
+  // Call buttons are wired to setPendingCall() in the zustand store. The
+  // app-shell (always mounted) watches pendingCall and triggers the global
+  // useCall hook → CallOverlay. No call dialog state needed here.
   // GoMesin chat UI state — internal tabs (Chat / Status / Panggilan), search, new-chat sheet, left menu.
   const [chatTab, setChatTab] = useState<"chat" | "status" | "panggilan">("chat");
   const [chatSearch, setChatSearch] = useState("");
@@ -1963,11 +1962,11 @@ export function ProfileView() {
                             </div>
                             <button
                               onClick={() => {
-                                setCallDialog({
+                                setPendingCall({
+                                  partnerId: conv.partnerId,
+                                  partnerName: conv.name,
+                                  partnerImage: conv.partnerImage || null,
                                   type: "video",
-                                  name: conv.name,
-                                  image: conv.partnerImage || null,
-                                  phone: conv.partnerPhone || null,
                                 });
                               }}
                               aria-label="Video call"
@@ -1977,11 +1976,11 @@ export function ProfileView() {
                             </button>
                             <button
                               onClick={() => {
-                                setCallDialog({
+                                setPendingCall({
+                                  partnerId: conv.partnerId,
+                                  partnerName: conv.name,
+                                  partnerImage: conv.partnerImage || null,
                                   type: "voice",
-                                  name: conv.name,
-                                  image: conv.partnerImage || null,
-                                  phone: conv.partnerPhone || null,
                                 });
                               }}
                               aria-label="Voice call"
@@ -2437,130 +2436,10 @@ export function ProfileView() {
                               />
                             </div>
                           )}
-                          {/* Call dialog — activated by the Voice / Video call buttons in the chat header.
-                              Shows a ringing-style overlay with the partner's phone number and
-                              multiple ways to connect: direct tel: link (mobile), WhatsApp bridge
-                              (works everywhere), and copy-to-clipboard fallback (universal). */}
-                          {callDialog && (
-                            <div
-                              className="fixed inset-0 z-[90] flex flex-col items-center justify-between bg-gradient-to-b from-[#0f3d23] via-[#16A34A] to-[#0a2d18] p-6 text-white"
-                              onClick={() => { setCallDialog(null); setCallCopied(false); }}
-                            >
-                              <div className="flex w-full items-center justify-between">
-                                <span className="text-sm font-medium text-white/70">
-                                  {callDialog.type === "video" ? "Video Call" : "Panggilan Suara"}
-                                </span>
-                                <button
-                                  aria-label="Tutup"
-                                  className="grid size-10 place-items-center rounded-full bg-white/10 hover:bg-white/20"
-                                  onClick={(e) => { e.stopPropagation(); setCallDialog(null); setCallCopied(false); }}
-                                >
-                                  <X className="size-5" />
-                                </button>
-                              </div>
-                              <div className="flex flex-col items-center gap-4" onClick={(e) => e.stopPropagation()}>
-                                <div className="relative">
-                                  {/* Pulsing ring animation */}
-                                  <span className="absolute inset-0 animate-ping rounded-full bg-white/30" aria-hidden />
-                                  <span className="absolute inset-0 animate-pulse rounded-full bg-white/20" aria-hidden />
-                                  <Avatar className="relative size-32 rounded-full ring-4 ring-white/40">
-                                    {callDialog.image ? (
-                                      <img src={callDialog.image} alt={callDialog.name} className="size-full rounded-full object-cover" />
-                                    ) : (
-                                      <AvatarFallback className="bg-white/20 text-4xl font-bold text-white">
-                                        {callDialog.name.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase()}
-                                      </AvatarFallback>
-                                    )}
-                                  </Avatar>
-                                </div>
-                                <div className="text-center">
-                                  <p className="text-2xl font-semibold">{callDialog.name}</p>
-                                  {callDialog.phone ? (
-                                    <p className="mt-1 text-lg font-medium tracking-wide text-white/90">
-                                      {callDialog.phone}
-                                    </p>
-                                  ) : (
-                                    <p className="mt-1 text-sm text-white/70">Nomor telepon tidak tersedia</p>
-                                  )}
-                                </div>
-                              </div>
-                              {/* Action buttons — multiple pathways so the call works on
-                                  mobile, desktop, AND inside iframe sandboxes (where tel:
-                                  links are blocked by the browser). */}
-                              <div className="flex w-full max-w-sm flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
-                                {callDialog.phone ? (
-                                  <>
-                                    <div className="flex items-center justify-center gap-4">
-                                      {/* Direct phone call — tel: link works on mobile devices
-                                          with a telephony handler. On desktop/iframe it may be
-                                          silently ignored, which is why we also offer WhatsApp
-                                          and copy below. */}
-                                      <a
-                                        href={`tel:${callDialog.phone.replace(/[^0-9+]/g, "")}`}
-                                        onClick={() => { setCallDialog(null); setCallCopied(false); }}
-                                        className="grid size-16 place-items-center rounded-full bg-[#22C55E] shadow-lg transition hover:bg-[#16A34A] active:scale-95"
-                                        aria-label="Telepon"
-                                      >
-                                        {callDialog.type === "video" ? <Video className="size-7" /> : <Phone className="size-7" />}
-                                      </a>
-                                      {/* WhatsApp bridge — works everywhere (opens wa.me in a new
-                                          tab). From the WhatsApp chat the user can place a voice or
-                                          video call. This is the most reliable cross-platform option. */}
-                                      <a
-                                        href={`https://wa.me/${callDialog.phone.replace(/^0/, "62").replace(/[^0-9]/g, "")}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={() => { setCallDialog(null); setCallCopied(false); }}
-                                        className="grid size-16 place-items-center rounded-full bg-[#25D366] shadow-lg transition hover:bg-[#1ebe5d] active:scale-95"
-                                        aria-label="Hubungi via WhatsApp"
-                                      >
-                                        <MessageCircle className="size-7" />
-                                      </a>
-                                      {/* Copy number — universal fallback that works in ALL
-                                          environments (mobile, desktop, iframe). User can paste
-                                          the number into any phone dialer. */}
-                                      <button
-                                        onClick={() => {
-                                          const num = callDialog.phone!;
-                                          try {
-                                            navigator.clipboard?.writeText(num);
-                                          } catch { /* clipboard may be blocked in some iframes */ }
-                                          setCallCopied(true);
-                                          toast.success("Nomor disalin", { description: num, duration: 3000 });
-                                          setTimeout(() => setCallCopied(false), 2500);
-                                        }}
-                                        className="grid size-16 place-items-center rounded-full bg-white/15 shadow-lg transition hover:bg-white/25 active:scale-95"
-                                        aria-label="Salin nomor"
-                                      >
-                                        {callCopied ? <Check className="size-7" /> : <Copy className="size-7" />}
-                                      </button>
-                                    </div>
-                                    {/* Labels under each button */}
-                                    <div className="flex items-center justify-center gap-4 text-xs text-white/70">
-                                      <span className="w-16 text-center">{callDialog.type === "video" ? "Video" : "Telepon"}</span>
-                                      <span className="w-16 text-center">WhatsApp</span>
-                                      <span className="w-16 text-center">{callCopied ? "Disalin" : "Salin"}</span>
-                                    </div>
-                                  </>
-                                ) : (
-                                  <button
-                                    onClick={() => { setCallDialog(null); setCallCopied(false); }}
-                                    className="grid size-16 place-items-center rounded-full bg-red-500 shadow-lg transition hover:bg-red-600 active:scale-95"
-                                    aria-label="Tutup"
-                                  >
-                                    <X className="size-7" />
-                                  </button>
-                                )}
-                                {/* Close button — always available */}
-                                <button
-                                  onClick={() => { setCallDialog(null); setCallCopied(false); }}
-                                  className="mt-2 rounded-full bg-white/10 px-6 py-2 text-sm font-medium text-white/80 transition hover:bg-white/20"
-                                >
-                                  Tutup
-                                </button>
-                              </div>
-                            </div>
-                          )}
+                          {/* Call overlay is now mounted globally in app-shell.tsx
+                              (CallOverlay component) — no inline dialog needed here.
+                              The call buttons above set pendingCall in the store,
+                              which the app-shell watches and passes to useCall(). */}
                         </>
                       );
                     })() : (

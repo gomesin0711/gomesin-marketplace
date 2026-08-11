@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useStore } from "@/lib/store";
 import { useLang } from "@/lib/i18n";
 import { translations as i18nTranslations } from "@/lib/i18n";
 import { useMounted } from "@/lib/use-mounted";
+import { useCall } from "@/lib/use-call";
 import { Header } from "./header";
 import { Footer } from "./footer";
 import { BottomNav } from "./bottom-nav";
 import { AdminSidebar } from "./admin-sidebar";
+import { CallOverlay } from "./call-overlay";
 import { HomeView } from "./views/home";
 import { ListingsView } from "./views/listings";
 import { DetailView } from "./views/detail";
@@ -25,7 +27,33 @@ const ADMIN_VIEWS = ["admin", "admin-sellers", "admin-categories", "admin-listin
 export function AppShell() {
   const view = useStore((s) => s.view);
   const user = useStore((s) => s.user);
+  const pendingCall = useStore((s) => s.pendingCall);
+  const setPendingCall = useStore((s) => s.setPendingCall);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // In-app call hook — mounted globally so incoming calls are detected
+  // regardless of which view the user is on. The CallOverlay renders on top
+  // of everything (z-[100]) when a call is active.
+  const call = useCall();
+  // Use refs to avoid re-running the pendingCall effect on every render
+  // (the `call` object changes every render, which would cause the effect
+  // to fire too often).
+  const callRef = useRef(call);
+  callRef.current = call;
+
+  // When profile.tsx sets pendingCall (user clicked voice/video call button),
+  // trigger startCall() here and clear the pending request.
+  useEffect(() => {
+    if (pendingCall && callRef.current.callState === "idle") {
+      callRef.current.startCall(
+        pendingCall.partnerId,
+        pendingCall.partnerName,
+        pendingCall.partnerImage,
+        pendingCall.type
+      );
+      setPendingCall(null);
+    }
+  }, [pendingCall, setPendingCall]);
 
   const { t } = useLang();
   const mounted = useMounted();
@@ -137,6 +165,22 @@ export function AppShell() {
       {/* Spacer so the fixed bottom nav (mobile) doesn't cover footer content */}
       <div className="h-[4.25rem] shrink-0 md:hidden" aria-hidden="true" />
       <BottomNav />
+      {/* In-app voice/video call overlay — renders on top of everything */}
+      <CallOverlay
+        callState={call.callState}
+        callInfo={call.callInfo}
+        localStream={call.localStream}
+        remoteStream={call.remoteStream}
+        isMuted={call.isMuted}
+        isVideoOff={call.isVideoOff}
+        error={call.error}
+        onAccept={call.acceptCall}
+        onReject={call.rejectCall}
+        onEnd={call.endCall}
+        onCancel={call.cancelCall}
+        onToggleMute={call.toggleMute}
+        onToggleVideo={call.toggleVideo}
+      />
     </div>
   );
 }

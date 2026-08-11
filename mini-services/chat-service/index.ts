@@ -163,6 +163,59 @@ io.on('connection', (socket) => {
     io.to(`user:${receiverId}`).emit('typing:update', { typerId: senderId, isTyping: false })
   })
 
+  // ── In-app call signaling ──────────────────────────────────────────────
+  // Voice/video calls between GoMesin users — NO phone numbers, purely
+  // in-app. WebRTC handles the peer-to-peer media; socket.io only relays
+  // the signaling (request, accept, reject, end, SDP/ICE).
+  socket.on(
+    'call:request',
+    (data: {
+      from: string
+      fromName: string
+      fromImage: string | null
+      to: string
+      type: 'voice' | 'video'
+      callId: string
+    }) => {
+      const { from, fromName, fromImage, to, type, callId } = data
+      if (!from || !to || !callId) return
+      io.to(`user:${to}`).emit('call:incoming', { from, fromName, fromImage, to, type, callId })
+      console.log(`[chat-service] call:request ${from} -> ${to} type=${type} callId=${callId}`)
+    }
+  )
+
+  socket.on('call:accept', (data: { from: string; to: string; callId: string }) => {
+    const { from, to, callId } = data
+    if (!from || !to || !callId) return
+    io.to(`user:${to}`).emit('call:accepted', { from, callId })
+    console.log(`[chat-service] call:accept ${from} -> ${to} callId=${callId}`)
+  })
+
+  socket.on('call:reject', (data: { from: string; to: string; callId: string }) => {
+    const { from, to, callId } = data
+    if (!from || !to || !callId) return
+    io.to(`user:${to}`).emit('call:rejected', { from, callId })
+    console.log(`[chat-service] call:reject ${from} -> ${to} callId=${callId}`)
+  })
+
+  socket.on('call:end', (data: { from: string; to: string; callId: string }) => {
+    const { from, to, callId } = data
+    if (!from || !to || !callId) return
+    io.to(`user:${to}`).emit('call:ended', { from, callId })
+    console.log(`[chat-service] call:end ${from} -> ${to} callId=${callId}`)
+  })
+
+  // WebRTC signaling relay — SDP offer/answer + ICE candidates.
+  // The payload is opaque to the server; it just forwards it.
+  socket.on(
+    'call:signal',
+    (data: { from: string; to: string; callId: string; signal: any }) => {
+      const { from, to, callId, signal } = data
+      if (!from || !to || !callId) return
+      io.to(`user:${to}`).emit('call:signal', { from, callId, signal })
+    }
+  )
+
   // Listings broadcast — admin emits this when a listing is deleted/published/
   // updated. The chat-service fans it out to ALL connected clients so that any
   // open homepage (Beranda) refetches its listing queries in realtime.

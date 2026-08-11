@@ -114,6 +114,13 @@ type NavState = {
   goToSeller: (userId: string) => void;
   goToProfileChat: (partner: PendingChatPartner) => void;
   clearPendingChatPartner: () => void;
+  // In-app call request — set by profile.tsx when the user clicks the voice/
+  // video call button. The app-shell (always mounted) watches this and calls
+  // startCall() on the useCall hook. This bridges the profile component
+  // (where the call buttons live) to the app-shell (where the useCall hook
+  // + CallOverlay are mounted globally).
+  pendingCall: { partnerId: string; partnerName: string; partnerImage: string | null; type: "voice" | "video" } | null;
+  setPendingCall: (call: { partnerId: string; partnerName: string; partnerImage: string | null; type: "voice" | "video" } | null) => void;
   goToAdmin: () => void;
   goToAdminSub: (sub: "admin-sellers" | "admin-categories" | "admin-listings" | "admin-new-listings" | "admin-expired-listings" | "admin-rejected-listings" | "admin-transactions" | "admin-reports" | "admin-users" | "admin-paket" | "admin-merek" | "admin-lokasi" | "admin-banner" | "admin-audit" | "admin-monthly-report" | "admin-chat") => void;
   goBack: () => void;
@@ -137,6 +144,7 @@ export const useStore = create<NavState>()(
       sellerId: undefined,
       filters: {},
       pendingChatPartner: null,
+      pendingCall: null,
       history: [],
       favorites: [],
       favoritesSeenCount: 0,
@@ -308,6 +316,8 @@ export const useStore = create<NavState>()(
 
       clearPendingChatPartner: () => set({ pendingChatPartner: null }),
 
+      setPendingCall: (call) => set({ pendingCall: call }),
+
       goToAdmin: () =>
         set((s) => {
           const state = {
@@ -397,7 +407,7 @@ export const useStore = create<NavState>()(
         }
       },
 
-      logout: () => set({ user: null, favorites: [], favoritesSeenCount: 0, recents: [], profilePanel: null, pendingChatPartner: null, view: "home", slug: undefined, filters: {} }),
+      logout: () => set({ user: null, favorites: [], favoritesSeenCount: 0, recents: [], profilePanel: null, pendingChatPartner: null, pendingCall: null, view: "home", slug: undefined, filters: {} }),
     }),
     {
       name: "gomesin-store",

@@ -102,6 +102,12 @@ function getSocket(): Socket {
   socket.on("message:read-update", (p: ReadUpdate) => dispatch("message:read-update", p));
   socket.on("typing:update", (p: TypingUpdate) => dispatch("typing:update", p));
   socket.on("listings:invalidate", (p: any) => dispatch("listings:invalidate", p));
+  // In-app call signaling events (WebRTC relay).
+  socket.on("call:incoming", (p: any) => dispatch("call:incoming", p));
+  socket.on("call:accepted", (p: any) => dispatch("call:accepted", p));
+  socket.on("call:rejected", (p: any) => dispatch("call:rejected", p));
+  socket.on("call:ended", (p: any) => dispatch("call:ended", p));
+  socket.on("call:signal", (p: any) => dispatch("call:signal", p));
 
   socket.on("connect", () => {
     // Re-join after reconnect if we have a user.
@@ -208,7 +214,16 @@ export function useChatSocket() {
   // -----------------------------------------------------------------------
   const subscribe = useCallback(
     <T = any>(
-      event: "message:new" | "message:read-update" | "typing:update" | "listings:invalidate",
+      event:
+        | "message:new"
+        | "message:read-update"
+        | "typing:update"
+        | "listings:invalidate"
+        | "call:incoming"
+        | "call:accepted"
+        | "call:rejected"
+        | "call:ended"
+        | "call:signal",
       cb: (payload: T) => void
     ) => {
       if (!listeners[event]) listeners[event] = new Set();
@@ -220,6 +235,49 @@ export function useChatSocket() {
       return off;
     },
     []
+  );
+
+  // -----------------------------------------------------------------------
+  // in-app call emit helpers (WebRTC signaling)
+  // -----------------------------------------------------------------------
+  const callRequest = useCallback(
+    (payload: { from: string; fromName: string; fromImage: string | null; to: string; type: "voice" | "video"; callId: string }) => {
+      if (!socket || !socket.connected) return;
+      socket.emit("call:request", payload);
+    },
+    [socket]
+  );
+
+  const callAccept = useCallback(
+    (from: string, to: string, callId: string) => {
+      if (!socket || !socket.connected) return;
+      socket.emit("call:accept", { from, to, callId });
+    },
+    [socket]
+  );
+
+  const callReject = useCallback(
+    (from: string, to: string, callId: string) => {
+      if (!socket || !socket.connected) return;
+      socket.emit("call:reject", { from, to, callId });
+    },
+    [socket]
+  );
+
+  const callEnd = useCallback(
+    (from: string, to: string, callId: string) => {
+      if (!socket || !socket.connected) return;
+      socket.emit("call:end", { from, to, callId });
+    },
+    [socket]
+  );
+
+  const callSignal = useCallback(
+    (from: string, to: string, callId: string, signal: any) => {
+      if (!socket || !socket.connected) return;
+      socket.emit("call:signal", { from, to, callId, signal });
+    },
+    [socket]
   );
 
   // Broadcast a listings change to ALL connected clients (admin → everyone).
@@ -251,5 +309,10 @@ export function useChatSocket() {
     stopTyping,
     subscribe,
     broadcastListings,
+    callRequest,
+    callAccept,
+    callReject,
+    callEnd,
+    callSignal,
   };
 }
