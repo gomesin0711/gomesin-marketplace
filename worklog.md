@@ -2230,3 +2230,49 @@ Stage Summary:
 - Files changed: src/components/gomesin/views/profile.tsx (chat section ~lines 1356-2250, imports, state)
 - Backend (API, socket.io, DB) unchanged — pure UI refactor
 - Both servers running: Next.js 3000 (HTTP 200, no compile errors), chat-service 3003
+
+---
+Task ID: 24
+Agent: Main (Z.ai Code)
+Task: Fix chat listing bubble — receiver doesn't see ad image + link; add shortcut questions
+
+Work Log:
+- Investigated the "Chat Penjual" flow: detail.tsx calls goToProfileChat({partnerId, listingId, listingTitle, listingImage, listingPrice}) → store sets pendingChatPartner → profile.tsx effect creates a draft conversation + sets listingOverride.
+- Root cause #1 (listingId never persisted): In profile.tsx sendChat/sendGif, listingId was sent as `conv._draft ? conv.listingId : undefined`. The draft object did NOT copy listingId from pendingChatPartner, so conv.listingId was always undefined → listingId was NEVER sent to the API → never saved to DB. The receiver's GET couldn't look up the listing image/price from the Listing table.
+- Root cause #2 (stale listingTitle): The conversation-level listingTitle was derived from the message's listingTitle field, which could be stale/wrong (e.g., if the listing was renamed, or if an old message had a different title).
+- Root cause #3 (bubble not clickable): The listing bubble was a plain div, not a link/button — no way to navigate to the ad.
+
+Fixes applied:
+1. store.ts: Added `listingSlug?: string` to PendingChatPartner type.
+2. detail.tsx: Pass `listingSlug: l.slug` to goToProfileChat.
+3. src/app/api/messages/route.ts (GET handler, both Prisma + Supabase paths):
+   - Added `slug` + `title` to the Listing select query.
+   - Added `listingId` + `listingSlug` to the conversation response.
+   - listingTitle now prefers the Listing table's title (source of truth) over the stale message field.
+4. profile.tsx:
+   - listingOverride type extended with listingId + listingSlug.
+   - Draft conversation now includes listingId + listingSlug (copied from pendingChatPartner).
+   - sendChat/sendGif: Always send listingId + listingTitle. The OVERRIDE (current listing the user clicked) takes precedence over the conversation's stored listing — prevents sending a stale listing from an old message.
+   - Listing bubble converted from div → button; onClick calls goToDetail(bubbleListingSlug). Added "Lihat Iklan" green pill badge with ExternalLink icon.
+   - Added shortcut question chips (horizontally scrollable) above the input bar, shown only when the conversation has a listing context (buyer→seller chat). 7 quick-reply questions: "Apakah masih tersedia?", "Harga bisa nego?", "Bisa COD / survei?", "Kondisi masih bagus?", "Bisa dikirim ke luar kota?", "Mohon kirim detail lengkap", "Ada garansi?". Clicking a chip fills the input.
+5. Fixed duplicate ExternalLink import (already existed at line 47).
+
+Verification (Agent Browser, two parallel sessions — buyer=Admin, seller=udin):
+- Buyer logged in → navigated to udin's listing (tes-bcb0j) → clicked "Chat Penjual".
+- Buyer's chat: listing bubble confirmed with image + title "tes" + price "Rp 1.234" + green "Lihat Iklan" link. Shortcut chips visible. VLM confirmed all elements.
+- Buyer clicked shortcut chip "Apakah masih tersedia?" → input filled → sent message (green bubble, right side).
+- Seller (udin) reloaded → opened chat panel → conversation with Admin showed listing tag "tes" (correct, was "re" before fix).
+- Seller opened conversation: listing bubble confirmed with image + title "tes" + price "Rp 1.234" + "Lihat Iklan" link. Incoming white bubble "Apakah masih tersedia?". Shortcut chips visible. VLM confirmed all elements.
+- Seller clicked "Lihat Iklan" → navigated to ad detail page (heading "tes", "Chat Penjual" button, "Deskripsi" section confirmed).
+- API verification: GET /api/messages returns conversation with listingTitle="tes" (from Listing table), listingId=Y, listingSlug="tes-bcb0j", listingImage=Y, listingPrice=1234.
+- Lint: 0 new errors (6 pre-existing errors in .cjs files only).
+- Dev log: all API calls 200, no runtime errors.
+
+Stage Summary:
+- Files modified (4): src/lib/store.ts, src/components/gomesin/views/detail.tsx, src/app/api/messages/route.ts, src/components/gomesin/views/profile.tsx
+- Both sender AND receiver now see the ad listing bubble (image + title + price + clickable "Lihat Iklan" link) in the chat. The link navigates to the ad detail page.
+- listingId is now persisted on every message (was never saved before), enabling the receiver's GET to look up the full listing info from the Listing table.
+- listingTitle is derived from the Listing table (source of truth) in the GET handler, so renaming a listing updates the chat bubble title for both parties.
+- Shortcut question chips added above the input bar for buyer→seller chats — 7 common questions, click to fill the input.
+- Backend: no schema changes needed (listingId + listingTitle already in Message model; image/price/slug/title derived from Listing table via listingId lookup). Works on both local (Prisma+SQLite) and production (Supabase) without migrations.
+- Both servers running: Next.js 3000 (HTTP 200), chat-service 3003.

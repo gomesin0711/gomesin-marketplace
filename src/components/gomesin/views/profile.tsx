@@ -185,6 +185,7 @@ export function ProfileView() {
   const setProfilePanel = useStore((s) => s.setProfilePanel);
   const pendingChatPartner = useStore((s) => s.pendingChatPartner);
   const clearPendingChatPartner = useStore((s) => s.clearPendingChatPartner);
+  const goToDetail = useStore((s) => s.goToDetail);
 
   // Fetch user's listing count
   const { data: myListingsData } = useQuery({
@@ -296,7 +297,7 @@ export function ProfileView() {
   // conversation's listing info (title/image/price) with the CURRENT listing
   // — so the chat bubble shows the listing the user just clicked, not an old
   // one from a prior message in the same conversation. Keyed by partnerId.
-  const [listingOverride, setListingOverride] = useState<Record<string, { listingTitle?: string | null; listingImage?: string | null; listingPrice?: number | null }> | null>(null);
+  const [listingOverride, setListingOverride] = useState<Record<string, { listingId?: string | null; listingSlug?: string | null; listingTitle?: string | null; listingImage?: string | null; listingPrice?: number | null }> | null>(null);
   // Merge draft into the displayed list (draft first, then real convs — but
   // skip any real conv that has the same partnerId, since the draft is the
   // "active" entry until the real one arrives).
@@ -476,6 +477,8 @@ export function ProfileView() {
     setListingOverride((prev) => ({
       ...prev,
       [pendingChatPartner.partnerId]: {
+        listingId: pendingChatPartner.listingId || null,
+        listingSlug: pendingChatPartner.listingSlug || null,
         listingTitle: pendingChatPartner.listingTitle || null,
         listingImage: pendingChatPartner.listingImage || null,
         listingPrice: pendingChatPartner.listingPrice ?? null,
@@ -498,6 +501,8 @@ export function ProfileView() {
         lastMessage: "",
         lastTime: new Date().toISOString(),
         unread: 0,
+        listingId: pendingChatPartner.listingId || null,
+        listingSlug: pendingChatPartner.listingSlug || null,
         listingTitle: pendingChatPartner.listingTitle || null,
         listingImage: pendingChatPartner.listingImage || null,
         listingPrice: pendingChatPartner.listingPrice ?? null,
@@ -699,6 +704,15 @@ export function ProfileView() {
     setChatMessages((prev) => ({ ...prev, [activeChatId as any]: next }));
     setChatSending(true);
 
+    // Always send the listing context (id + title) so the RECEIVER can also
+    // see the ad image + link in their chat. The OVERRIDE (set when the user
+    // clicked "Chat Penjual" on a specific listing) takes precedence over the
+    // conversation's stored listing — this ensures the CURRENT listing is sent,
+    // not a stale one from a prior message in the same conversation.
+    const ov = listingOverride?.[conv.partnerId];
+    const sendListingId = ov?.listingId ?? conv.listingId ?? null;
+    const sendListingTitle = ov?.listingTitle ?? conv.listingTitle ?? null;
+
     try {
       // Send via socket — server saves to DB AND broadcasts to receiver instantly.
       const ack = await sendMessage({
@@ -706,8 +720,8 @@ export function ProfileView() {
         receiverId: conv.partnerId,
         content: content || (image ? "📷 Gambar" : ""),
         image: image || null,
-        listingTitle: conv.listingTitle,
-        listingId: conv._draft ? conv.listingId : undefined,
+        listingTitle: sendListingTitle,
+        listingId: sendListingId,
       });
       if (!ack?.ok) {
         // Fallback to REST.
@@ -719,8 +733,8 @@ export function ProfileView() {
             receiverId: conv.partnerId,
             content: content || (image ? "📷 Gambar" : ""),
             image: image || null,
-            listingTitle: conv.listingTitle,
-            listingId: conv._draft ? conv.listingId : undefined,
+            listingTitle: sendListingTitle,
+            listingId: sendListingId,
           }),
         });
       }
@@ -917,12 +931,15 @@ export function ProfileView() {
     setChatMessages((prev) => ({ ...prev, [activeChatId as any]: next }));
     setChatSending(true);
     try {
+      const ov = listingOverride?.[conv.partnerId];
+      const sendListingId = ov?.listingId ?? conv.listingId ?? null;
+      const sendListingTitle = ov?.listingTitle ?? conv.listingTitle ?? null;
       const ack = await sendMessage({
         senderId: user.id,
         receiverId: conv.partnerId,
         content: sticker.emoji,
-        listingTitle: conv.listingTitle,
-        listingId: conv._draft ? conv.listingId : undefined,
+        listingTitle: sendListingTitle,
+        listingId: sendListingId,
       });
       if (!ack?.ok) {
         await fetch("/api/messages", {
@@ -932,8 +949,8 @@ export function ProfileView() {
             senderId: user.id,
             receiverId: conv.partnerId,
             content: sticker.emoji,
-            listingTitle: conv.listingTitle,
-            listingId: conv._draft ? conv.listingId : undefined,
+            listingTitle: sendListingTitle,
+            listingId: sendListingId,
           }),
         });
       }
@@ -1804,6 +1821,7 @@ export function ProfileView() {
                       const bubbleListingTitle = override?.listingTitle ?? conv.listingTitle ?? null;
                       const bubbleListingImage = override?.listingImage ?? conv.listingImage ?? null;
                       const bubbleListingPrice = override?.listingPrice ?? conv.listingPrice ?? null;
+                      const bubbleListingSlug = override?.listingSlug ?? conv.listingSlug ?? null;
                       return (
                         <>
                           {/* Chat header — GoMesin green with call + kebab */}
@@ -1908,10 +1926,15 @@ export function ProfileView() {
                             <div className="flex justify-center py-1">
                               <span className="rounded-md bg-[#DCFCE7] px-3 py-1 text-[11px] font-medium text-[#16A34A] shadow-sm">Hari ini</span>
                             </div>
-                            {/* Listing as a chat bubble (left-aligned, from partner) */}
+                            {/* Listing as a chat bubble (left-aligned, from partner) — clickable to open the ad */}
                             {bubbleListingTitle && (
                               <div className="flex justify-start">
-                                <div className="relative max-w-[75%] overflow-hidden rounded-lg bg-white shadow-sm">
+                                <button
+                                  type="button"
+                                  onClick={() => { if (bubbleListingSlug) goToDetail(bubbleListingSlug); }}
+                                  className="relative max-w-[75%] overflow-hidden rounded-lg bg-white text-left shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40"
+                                  title={bubbleListingSlug ? "Buka iklan" : undefined}
+                                >
                                   {/* GoMesin bubble tail — top-left */}
                                   <span className="absolute -left-1.5 top-0 h-3 w-3 overflow-hidden" aria-hidden>
                                     <span className="absolute left-0 top-0 h-3 w-3 rounded-tr-sm bg-white" />
@@ -1928,11 +1951,16 @@ export function ProfileView() {
                                     {bubbleListingPrice != null && (
                                       <p className="text-[13px] font-semibold text-[#16A34A]">Rp {bubbleListingPrice.toLocaleString("id-ID")}</p>
                                     )}
-                                    <span className="mt-1 block text-right text-[10px] text-[#6B7280]">
+                                    <span className="mt-1 flex items-center justify-end gap-1 text-right text-[10px] text-[#6B7280]">
+                                      {bubbleListingSlug && (
+                                        <span className="inline-flex items-center gap-0.5 rounded-full bg-[#DCFCE7] px-1.5 py-0.5 text-[9px] font-semibold text-[#16A34A]">
+                                          <ExternalLink className="size-2.5" /> Lihat Iklan
+                                        </span>
+                                      )}
                                       {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
                                     </span>
                                   </div>
-                                </div>
+                                </button>
                               </div>
                             )}
                             {/* Chat messages */}
@@ -2106,6 +2134,33 @@ export function ProfileView() {
                             onChange={handleImageSelect}
                             className="hidden"
                           />
+                          {/* Shortcut questions — quick-tap chips for buyer→seller chats.
+                              Only shown when the conversation has a listing context. */}
+                          {bubbleListingTitle && (
+                            <div className="flex gap-1.5 overflow-x-auto border-t border-[#E5E7EB] bg-[#F5F7F6] px-2 py-2 no-scrollbar md:px-3">
+                              {[
+                                "Apakah masih tersedia?",
+                                "Harga bisa nego?",
+                                "Bisa COD / survei?",
+                                "Kondisi masih bagus?",
+                                "Bisa dikirim ke luar kota?",
+                                "Mohon kirim detail lengkap",
+                                "Ada garansi?",
+                              ].map((q) => (
+                                <button
+                                  key={q}
+                                  type="button"
+                                  onClick={() => {
+                                    setChatInput(q);
+                                    setShowEmoji(false);
+                                  }}
+                                  className="shrink-0 rounded-full border border-[#16A34A]/30 bg-white px-3 py-1.5 text-xs font-medium text-[#16A34A] shadow-sm transition hover:border-[#16A34A] hover:bg-[#DCFCE7] active:scale-95"
+                                >
+                                  {q}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                           {/* Input — GoMesin floating rounded bar with mic/send toggle */}
                           <form
                             onSubmit={(e) => { e.preventDefault(); sendChat(); }}

@@ -133,7 +133,7 @@ async function getMessagesPrisma(userId: string) {
   }
 
   const listings = listingIds.size > 0
-    ? await db.listing.findMany({ where: { id: { in: Array.from(listingIds) } }, select: { id: true, price: true, images: true } })
+    ? await db.listing.findMany({ where: { id: { in: Array.from(listingIds) } }, select: { id: true, slug: true, title: true, price: true, images: true } })
     : [];
   const listingMap = new Map(listings.map((l) => [l.id, l]));
 
@@ -168,12 +168,18 @@ async function getMessagesPrisma(userId: string) {
     const newest = visible[0];
     let listingImage: string | null = null;
     let listingPrice: number | null = null;
+    let listingSlug: string | null = null;
     const listingId = newest.listingId || null;
-    const listingTitle = newest.listingTitle || null;
+    let listingTitle = newest.listingTitle || null;
     if (listingId && listingMap.has(listingId)) {
       const l = listingMap.get(listingId);
       const lp = l?.price;
       listingPrice = typeof lp === "bigint" ? Number(lp) : lp ?? null;
+      listingSlug = l?.slug || null;
+      // Prefer the Listing table's title (source of truth) over the stale
+      // listingTitle stored on the message (which may be wrong if the listing
+      // was renamed after the message was sent).
+      listingTitle = l?.title || newest.listingTitle || null;
       try {
         const imgs = JSON.parse(l.images || "[]");
         if (Array.isArray(imgs) && imgs.length > 0) listingImage = imgs[0];
@@ -206,6 +212,8 @@ async function getMessagesPrisma(userId: string) {
       lastMessage: newest.content,
       lastTime: newest.createdAt,
       unread,
+      listingId,
+      listingSlug,
       listingTitle,
       listingImage,
       listingPrice,
@@ -274,7 +282,7 @@ async function getMessagesSupabase(userId: string) {
 
   let listingMap: Record<string, any> = {};
   if (listingIds.size > 0) {
-    const { data: listings } = await supabase.from("Listing").select("id,price,images").in("id", Array.from(listingIds));
+    const { data: listings } = await supabase.from("Listing").select("id,slug,title,price,images").in("id", Array.from(listingIds));
     for (const l of listings || []) listingMap[l.id] = l;
   }
 
@@ -299,11 +307,16 @@ async function getMessagesSupabase(userId: string) {
     const newest = visible[0];
     let listingImage: string | null = null;
     let listingPrice: number | null = null;
+    let listingSlug: string | null = null;
     const listingId = newest.listingId || null;
-    const listingTitle = newest.listingTitle || null;
+    let listingTitle = newest.listingTitle || null;
     if (listingId && listingMap[listingId]) {
       const l = listingMap[listingId];
       listingPrice = typeof l.price === "string" ? Number(l.price) : l.price ?? null;
+      listingSlug = l.slug || null;
+      // Prefer the Listing table's title (source of truth) over the stale
+      // listingTitle stored on the message.
+      listingTitle = l.title || newest.listingTitle || null;
       try {
         const imgs = typeof l.images === "string" ? JSON.parse(l.images || "[]") : (l.images || []);
         if (Array.isArray(imgs) && imgs.length > 0) listingImage = imgs[0];
@@ -335,6 +348,8 @@ async function getMessagesSupabase(userId: string) {
       lastMessage: newest.content,
       lastTime: newest.createdAt,
       unread,
+      listingId,
+      listingSlug,
       listingTitle,
       listingImage,
       listingPrice,

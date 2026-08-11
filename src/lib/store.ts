@@ -62,6 +62,7 @@ type PendingChatPartner = {
   partnerName?: string;
   partnerImage?: string | null;
   listingId?: string;
+  listingSlug?: string;
   listingTitle?: string;
   listingImage?: string | null;
   listingPrice?: number | null;
