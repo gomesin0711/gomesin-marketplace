@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
@@ -306,7 +306,7 @@ export function ProfileView() {
     : conversations;
   const unreadCount = allConversations.reduce((a: number, c: any) => a + (c.unread || 0), 0);
   const [activeChatId, setActiveChatId] = useState<number | null>(null);
-  const [chatMessages, setChatMessages] = useState<{ [key: number]: { role: "user" | "assistant"; content: string; image?: string; animation?: string }[] }>({});
+  const [chatMessages, setChatMessages] = useState<{ [key: number]: { role: "user" | "assistant"; content: string; image?: string; animation?: string; listingId?: string | null; listingTitle?: string | null; listingImage?: string | null; listingPrice?: number | null; listingSlug?: string | null }[] }>({});
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
   // GoMesin chat UI state — internal tabs (Chat / Status / Panggilan), search, new-chat sheet, left menu.
@@ -583,6 +583,11 @@ export function ProfileView() {
         role: m.sent ? ("user" as const) : ("assistant" as const),
         content: m.content,
         image: m.image || undefined,
+        listingId: m.listingId || null,
+        listingTitle: m.listingTitle || null,
+        listingImage: m.listingImage || null,
+        listingPrice: m.listingPrice ?? null,
+        listingSlug: m.listingSlug || null,
       }));
       setChatMessages((prev) => ({ ...prev, [convId as any]: history }));
     } else if (dbCount === 0 && localCount === 0) {
@@ -635,7 +640,16 @@ export function ProfileView() {
           }
           return {
             ...prev,
-            [conv.id as any]: [...existing, { role: isMine ? "user" : "assistant", content: msg.content, image: msg.image || undefined }],
+            [conv.id as any]: [...existing, {
+              role: isMine ? "user" : "assistant",
+              content: msg.content,
+              image: msg.image || undefined,
+              listingId: msg.listingId || null,
+              listingTitle: msg.listingTitle || null,
+              // Realtime payload doesn't include image/price/slug — these will
+              // be filled in when the next /api/messages poll refreshes the
+              // conversation from the DB.
+            }],
           };
         });
         // Auto-mark incoming as read since the chat is open.
@@ -698,12 +712,6 @@ export function ProfileView() {
     setChatInput("");
     setPendingImage(null);
     setShowEmoji(false);
-    // Optimistic: show immediately.
-    const history = chatMessages[activeChatId as any] || [];
-    const next = [...history, { role: "user" as const, content: content || (image ? "📷 Gambar" : ""), image: image || undefined }];
-    setChatMessages((prev) => ({ ...prev, [activeChatId as any]: next }));
-    setChatSending(true);
-
     // Always send the listing context (id + title) so the RECEIVER can also
     // see the ad image + link in their chat. The OVERRIDE (set when the user
     // clicked "Chat Penjual" on a specific listing) takes precedence over the
@@ -712,6 +720,37 @@ export function ProfileView() {
     const ov = listingOverride?.[conv.partnerId];
     const sendListingId = ov?.listingId ?? conv.listingId ?? null;
     const sendListingTitle = ov?.listingTitle ?? conv.listingTitle ?? null;
+    // Attach listing context to the optimistic message so the inline listing
+    // bubble renders immediately (and the override is cleared so the NEXT
+    // "Chat Penjual" click on a different ad starts a fresh listing context).
+    const sendListingImage = ov?.listingImage ?? conv.listingImage ?? null;
+    const sendListingPrice = ov?.listingPrice ?? conv.listingPrice ?? null;
+    const sendListingSlug = ov?.listingSlug ?? conv.listingSlug ?? null;
+    // Optimistic: show immediately.
+    const history = chatMessages[activeChatId as any] || [];
+    const next = [...history, {
+      role: "user" as const,
+      content: content || (image ? "📷 Gambar" : ""),
+      image: image || undefined,
+      listingId: sendListingId,
+      listingTitle: sendListingTitle,
+      listingImage: sendListingImage,
+      listingPrice: sendListingPrice,
+      listingSlug: sendListingSlug,
+    }];
+    setChatMessages((prev) => ({ ...prev, [activeChatId as any]: next }));
+    setChatSending(true);
+    // Clear the override after sending so that if the buyer later clicks
+    // "Chat Penjual" on a DIFFERENT ad from the same seller, a new listing
+    // context is established (instead of reusing the old one).
+    if (ov) {
+      setListingOverride((prev) => {
+        if (!prev) return prev;
+        const n = { ...prev };
+        delete n[conv.partnerId];
+        return n;
+      });
+    }
 
     try {
       // Send via socket — server saves to DB AND broadcasts to receiver instantly.
@@ -926,14 +965,35 @@ export function ProfileView() {
     const conv = allConversations.find((c: any) => c.id === activeChatId);
     if (!conv) return;
     setShowGifs(false);
+    const ov = listingOverride?.[conv.partnerId];
+    const sendListingId = ov?.listingId ?? conv.listingId ?? null;
+    const sendListingTitle = ov?.listingTitle ?? conv.listingTitle ?? null;
+    const sendListingImage = ov?.listingImage ?? conv.listingImage ?? null;
+    const sendListingPrice = ov?.listingPrice ?? conv.listingPrice ?? null;
+    const sendListingSlug = ov?.listingSlug ?? conv.listingSlug ?? null;
     const history = chatMessages[activeChatId as any] || [];
-    const next = [...history, { role: "user" as const, content: sticker.emoji, animation: sticker.animation }];
+    const next = [...history, {
+      role: "user" as const,
+      content: sticker.emoji,
+      animation: sticker.animation,
+      listingId: sendListingId,
+      listingTitle: sendListingTitle,
+      listingImage: sendListingImage,
+      listingPrice: sendListingPrice,
+      listingSlug: sendListingSlug,
+    }];
     setChatMessages((prev) => ({ ...prev, [activeChatId as any]: next }));
     setChatSending(true);
+    // Clear override so the next "Chat Penjual" on a different ad starts fresh.
+    if (ov) {
+      setListingOverride((prev) => {
+        if (!prev) return prev;
+        const n = { ...prev };
+        delete n[conv.partnerId];
+        return n;
+      });
+    }
     try {
-      const ov = listingOverride?.[conv.partnerId];
-      const sendListingId = ov?.listingId ?? conv.listingId ?? null;
-      const sendListingTitle = ov?.listingTitle ?? conv.listingTitle ?? null;
       const ack = await sendMessage({
         senderId: user.id,
         receiverId: conv.partnerId,
@@ -1926,8 +1986,10 @@ export function ProfileView() {
                             <div className="flex justify-center py-1">
                               <span className="rounded-md bg-[#DCFCE7] px-3 py-1 text-[11px] font-medium text-[#16A34A] shadow-sm">Hari ini</span>
                             </div>
-                            {/* Listing as a chat bubble (left-aligned, from partner) — clickable to open the ad */}
-                            {bubbleListingTitle && (
+                            {/* Fresh chat (no messages yet) — show the listing bubble
+                                from the override so the buyer sees which ad they're
+                                chatting about before sending the first message. */}
+                            {convo.length === 0 && bubbleListingTitle && (
                               <div className="flex justify-start">
                                 <button
                                   type="button"
@@ -1935,7 +1997,6 @@ export function ProfileView() {
                                   className="relative max-w-[75%] overflow-hidden rounded-lg bg-white text-left shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40"
                                   title={bubbleListingSlug ? "Buka iklan" : undefined}
                                 >
-                                  {/* GoMesin bubble tail — top-left */}
                                   <span className="absolute -left-1.5 top-0 h-3 w-3 overflow-hidden" aria-hidden>
                                     <span className="absolute left-0 top-0 h-3 w-3 rounded-tr-sm bg-white" />
                                   </span>
@@ -1963,13 +2024,59 @@ export function ProfileView() {
                                 </button>
                               </div>
                             )}
-                            {/* Chat messages */}
+                            {/* Chat messages — with INLINE listing bubbles.
+                                A listing bubble is rendered before a message whenever
+                                its listingId differs from the previous message's
+                                listingId. This supports MULTIPLE listings in one chat:
+                                if buyer asks about Ad X then later Ad Y, both bubbles
+                                appear at their correct positions. */}
                             {convo.map((c, i) => {
                               // Detect emoji-only messages (render big, GoMesin-style)
                               const isEmojiOnly = !!c.content && c.content.trim().length > 0 && /^[\s\p{Extended_Pictographic}\u200d\ufe0f]+$/u.test(c.content.trim()) && c.content.trim().length <= 12;
                               const isMe = c.role === "user";
+                              // Inline listing bubble: show when this message carries a
+                              // listing context that differs from the previous message.
+                              const prevListingId = i > 0 ? (convo[i - 1].listingId || null) : null;
+                              const curListingId = c.listingId || null;
+                              const showListingBubble = !!curListingId && curListingId !== prevListingId && !!c.listingTitle;
                               return (
-                              <div key={i} className={cn("flex", isMe ? "justify-end" : "justify-start")}>
+                              <Fragment key={i}>
+                                {showListingBubble && (
+                                  <div className="flex justify-start">
+                                    <button
+                                      type="button"
+                                      onClick={() => { if (c.listingSlug) goToDetail(c.listingSlug); }}
+                                      className="relative max-w-[75%] overflow-hidden rounded-lg bg-white text-left shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40"
+                                      title={c.listingSlug ? "Buka iklan" : undefined}
+                                    >
+                                      <span className="absolute -left-1.5 top-0 h-3 w-3 overflow-hidden" aria-hidden>
+                                        <span className="absolute left-0 top-0 h-3 w-3 rounded-tr-sm bg-white" />
+                                      </span>
+                                      {c.listingImage ? (
+                                        <img src={proxyUrl(c.listingImage)} alt={c.listingTitle!} className="max-h-44 w-full object-cover" />
+                                      ) : (
+                                        <div className="flex h-20 items-center justify-center bg-muted text-muted-foreground">
+                                          <Tag className="size-6" />
+                                        </div>
+                                      )}
+                                      <div className="p-2.5">
+                                        <p className="truncate text-[13px] font-medium text-[#17202A]">{c.listingTitle}</p>
+                                        {c.listingPrice != null && (
+                                          <p className="text-[13px] font-semibold text-[#16A34A]">Rp {c.listingPrice.toLocaleString("id-ID")}</p>
+                                        )}
+                                        <span className="mt-1 flex items-center justify-end gap-1 text-right text-[10px] text-[#6B7280]">
+                                          {c.listingSlug && (
+                                            <span className="inline-flex items-center gap-0.5 rounded-full bg-[#DCFCE7] px-1.5 py-0.5 text-[9px] font-semibold text-[#16A34A]">
+                                              <ExternalLink className="size-2.5" /> Lihat Iklan
+                                            </span>
+                                          )}
+                                          {new Date(c.createdAt ? Date.parse(c.createdAt) : Date.now()).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                                        </span>
+                                      </div>
+                                    </button>
+                                  </div>
+                                )}
+                              <div className={cn("flex", isMe ? "justify-end" : "justify-start")}>
                                 <div
                                   onContextMenu={(e) => { e.preventDefault(); setMsgMenu({ visible: true, x: e.clientX, y: e.clientY, msgIndex: i }); }}
                                   onTouchStart={(e) => handleMsgLongPressStart(e, i)}
@@ -2031,6 +2138,7 @@ export function ProfileView() {
                                   )}
                                 </div>
                               </div>
+                              </Fragment>
                               );
                             })}
                             {chatSending && (

@@ -192,6 +192,24 @@ async function getMessagesPrisma(userId: string) {
       if (!m.sent && !m.read) unread += 1;
       const senderU = getUser(m._senderId) as any;
       const receiverU = getUser(m._receiverId) as any;
+      // Resolve per-message listing info so the frontend can render a
+      // listing bubble inline whenever the listing context changes.
+      // (Supports multiple listings discussed in the same conversation.)
+      let msgListingTitle: string | null = m.listingTitle || null;
+      let msgListingImage: string | null = null;
+      let msgListingPrice: number | null = null;
+      let msgListingSlug: string | null = null;
+      if (m.listingId && listingMap.has(m.listingId)) {
+        const l = listingMap.get(m.listingId);
+        const lp = l?.price;
+        msgListingPrice = typeof lp === "bigint" ? Number(lp) : lp ?? null;
+        msgListingSlug = l?.slug || null;
+        msgListingTitle = l?.title || m.listingTitle || null;
+        try {
+          const imgs = JSON.parse(l.images || "[]");
+          if (Array.isArray(imgs) && imgs.length > 0) msgListingImage = imgs[0];
+        } catch {}
+      }
       return {
         id: m.id,
         content: m.content,
@@ -201,6 +219,11 @@ async function getMessagesPrisma(userId: string) {
         createdAt: m.createdAt,
         senderName: m.sent ? senderU?.name : receiverU?.name,
         senderImage: m.sent ? senderU?.logoImage : receiverU?.logoImage,
+        listingId: m.listingId || null,
+        listingTitle: msgListingTitle,
+        listingImage: msgListingImage,
+        listingPrice: msgListingPrice,
+        listingSlug: msgListingSlug,
       };
     });
 
@@ -328,6 +351,21 @@ async function getMessagesSupabase(userId: string) {
       if (!m.sent && !m.read) unread += 1;
       const senderU = getUser(m._senderId);
       const receiverU = getUser(m._receiverId);
+      // Resolve per-message listing info (supports multiple listings in one chat).
+      let msgListingTitle: string | null = m.listingTitle || null;
+      let msgListingImage: string | null = null;
+      let msgListingPrice: number | null = null;
+      let msgListingSlug: string | null = null;
+      if (m.listingId && listingMap[m.listingId]) {
+        const l = listingMap[m.listingId];
+        msgListingPrice = typeof l.price === "string" ? Number(l.price) : l.price ?? null;
+        msgListingSlug = l.slug || null;
+        msgListingTitle = l.title || m.listingTitle || null;
+        try {
+          const imgs = typeof l.images === "string" ? JSON.parse(l.images || "[]") : (l.images || []);
+          if (Array.isArray(imgs) && imgs.length > 0) msgListingImage = imgs[0];
+        } catch {}
+      }
       return {
         id: m.id,
         content: m.content,
@@ -337,6 +375,11 @@ async function getMessagesSupabase(userId: string) {
         createdAt: m.createdAt,
         senderName: m.sent ? senderU?.name : receiverU?.name,
         senderImage: m.sent ? senderU?.logoImage : receiverU?.logoImage,
+        listingId: m.listingId || null,
+        listingTitle: msgListingTitle,
+        listingImage: msgListingImage,
+        listingPrice: msgListingPrice,
+        listingSlug: msgListingSlug,
       };
     });
 

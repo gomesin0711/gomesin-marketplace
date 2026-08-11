@@ -2354,3 +2354,45 @@ Stage Summary:
 - Alternative: full source code also on GitHub (https://github.com/gomesin0711/gomesin-marketplace.git)
 - Platform "Download Workspace" button may still fail due to 64k+ files in node_modules — use the clean archive or GitHub as alternative
 - Dev server running: HTTP 200, chat-service 3003
+
+---
+Task ID: 28
+Agent: Main (Z.ai Code)
+Task: Multiple listings in same chat — each ad discussed should show its own image + link, old ones stay
+
+Work Log:
+- Root cause: The chat rendered only ONE listing bubble at the top of the conversation (using conversation-level listingTitle/listingImage). When buyer asked about Ad X then later Ad Y, only the newest (Ad Y) showed — Ad X was lost.
+- Fix approach: Attach listing info to EACH message, and render listing bubbles INLINE within the message stream — a new bubble appears whenever the listingId changes between consecutive messages.
+
+Changes:
+1. src/app/api/messages/route.ts (both Prisma + Supabase paths):
+   - `formattedMessages` now includes per-message: listingId, listingTitle, listingImage, listingPrice, listingSlug
+   - Each message's listing info is resolved from the listingMap (full image/price/slug/title from the Listing table)
+2. src/components/gomesin/views/profile.tsx:
+   - Imported `Fragment` from React
+   - Extended `chatMessages` state type to include per-message listing fields (listingId, listingTitle, listingImage, listingPrice, listingSlug)
+   - openChat(): preserve listing fields when mapping DB messages to local state
+   - sendChat(): attach current listing context (from override or conv) to the optimistic message; clear the override after sending so the next "Chat Penjual" click on a different ad starts a fresh listing context
+   - sendGif(): same listing attachment + override clearing
+   - Realtime socket handler: preserve listingId + listingTitle from incoming messages
+   - Render: replaced the single top-of-chat listing bubble with INLINE listing bubbles:
+     * Fresh chat (convo.length === 0) with override → show override bubble at top (for buyer to see which ad before first message)
+     * In convo.map(): before each message, if its listingId differs from the previous message's listingId, render a listing bubble using THAT message's listing info (image, title, price, slug, "Lihat Iklan" link)
+     * This supports MULTIPLE listings: if buyer asks about Ad X (listingId A) then Ad Y (listingId B), both bubbles appear at their correct chronological positions
+
+Verification (Agent Browser + VLM):
+- Buyer (Admin) opened chat with udin → DOM confirmed 2 listing bubbles rendered: "tes" (Rp 1.234) and "re" (Rp 23.456.789), both with "Lihat Iklan" links
+- VLM confirmed listing bubble positioned inline within the message stream (not pinned to top)
+- Seller (udin) opened chat with Admin → DOM confirmed 2 listing bubbles: "tes" (Rp 1.234) and "re" (Rp 23.456.789) — receiver also sees both listings
+- API verified: GET /api/messages returns per-message listingId, listingTitle, listingImage (Y), listingPrice, listingSlug for each message that has a listingId
+- No console errors, all API calls 200
+- Lint: 0 new errors (6 pre-existing in .cjs files only)
+
+Stage Summary:
+- Files modified (2): src/app/api/messages/route.ts, src/components/gomesin/views/profile.tsx
+- Multiple listings now supported in a single chat: each ad discussed gets its own inline listing bubble (image + title + price + "Lihat Iklan" link) at the correct position in the message stream
+- Old listing bubbles stay (not replaced) — when buyer asks about a new ad, a NEW bubble is added below the old ones
+- Both sender AND receiver see all listing bubbles (per-message listing info is fetched from the Listing table via listingId)
+- Override is cleared after sending so the next "Chat Penjual" click on a different ad establishes a fresh listing context
+- Shortcut chips still only appear once (before first message) — unchanged from Task 25
+- Both servers running: Next.js 3000 (HTTP 200), chat-service 3003
