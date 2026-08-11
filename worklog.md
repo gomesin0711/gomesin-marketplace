@@ -2688,3 +2688,57 @@ Stage Summary:
 - Files modified (1): src/components/gomesin/views/profile.tsx
 - ALL listing image bubbles in the chat now appear on the RIGHT side when the current user (admin) is the one discussing the listing. This covers all three cases: fresh-chat top bubble, existing-conversation bottom bubble, and inline bubbles within the message stream.
 - Production live at https://gomesin.vercel.app.
+
+---
+Task ID: 35
+Agent: Main (Z.ai Code)
+Task: Fix chat ringtone not playing (ringtone chat tidak bunyi)
+
+Work Log:
+- User reported: "ringtone chat tidak bunyi" — the chat notification sound doesn't play.
+- Investigated the notification sound system:
+  * src/lib/notification-sound.ts: plays "/sounds/go-mesin.wav" ringtone + Web Audio API "ding"
+  * src/components/gomesin/header.tsx: subscribes to socket "message:new" event to trigger sound
+  * Sound file exists: public/sounds/go-mesin.wav (59KB)
+- Found the ROOT CAUSE: the sound was ONLY triggered by the socket.io "message:new" event. But:
+  * In production (Vercel), there is NO socket.io server (serverless) — messages arrive only via 3s polling
+  * Even in the sandbox, the realtime chat now relies on polling (Task 30 fix), not socket.io
+  * So the socket event never fires → the ringtone never plays
+- The header's messages query also had `staleTime: Infinity` (no polling) — it only refetched when the socket invalidated it. With no socket, it never refetched, so the unread badge and sound were both broken.
+
+Fix (src/components/gomesin/header.tsx):
+1. Changed the messages query from `staleTime: Infinity` to `refetchInterval: 3000` (3s polling) — so new messages are detected even without socket.io.
+2. Added polling-based notification sound detection:
+   - `seenMsgIdsRef` (Set<string>): tracks IDs of all incoming (sent=false) messages seen so far
+   - `initialLoadDoneRef`: flag to skip the first load (seed seen set with existing messages, no sound on mount)
+   - On each poll: collect all incoming message IDs, find any NOT in the seen set, play the sound for them, add to seen set
+   - Respects `isChatOpen()`: soft ding when chat is open, full ringtone when chat is closed
+3. Updated the socket "message:new" handler to mark the message ID as seen immediately (via seenMsgIdsRef.current.add(msg.id)) — prevents double-play when both socket AND polling detect the same message. The socket handler still plays the sound instantly (low latency) when socket is available.
+
+Verification (Agent Browser + console logs):
+- Logged in as Admin (persisted session) on dev server.
+- Dismissed PWA modal, clicked "Home" button (genuine user gesture to unlock audio per browser autoplay policy).
+- Sent a message as udin (via POST /api/messages API): "Ringtone test" → message created in DB.
+- Within 3 seconds, the polling detected the new incoming message and played the ringtone.
+- Console confirmed: "[notif-sound] polling detected 1 new incoming message(s), playing sound. chatOpen= false" → "[notif-sound] playNotificationSound() called, playing ringtone" → "[notif-sound] ringtone playing OK"
+- Removed all debug console.logs before committing.
+- Lint: 0 new errors (6 pre-existing in start-chat.cjs only).
+- Dev server: HTTP 200, all API calls 200, no runtime errors.
+
+Note on browser autoplay policy:
+- Browsers block audio.play() until the user has interacted with the page (click/touch/keydown).
+- The existing `setupNotificationSoundUnlock()` in notification-sound.ts handles this: it attaches once-only listeners that unlock the audio on the first genuine user gesture.
+- In a real browser, the user's login button clicks and navigation unlock the audio automatically. The ringtone then plays for subsequent incoming messages.
+- In the headless test browser, synthetic eval clicks don't count as gestures, but `agent-browser click` (simulated real click) does — confirmed "ringtone playing OK".
+
+Deployment:
+- Committed: "fix: chat ringtone now plays via polling (not just socket.io)" (1 file, 53 insertions, 1 deletion).
+- Pushed to GitHub (main branch).
+- Deployed to Vercel production via `vercel --prod --yes --token [REDACTED]` — build 34s, deploy 57s.
+- Aliased to https://gomesin.vercel.app (HTTP 200, age: 0, x-vercel-cache: PRERENDER — fresh deployment confirmed).
+
+Stage Summary:
+- Files modified (1): src/components/gomesin/header.tsx
+- The "Go mesin!" chat ringtone now plays when a new incoming message arrives, in ALL environments (sandbox + production). It no longer depends on socket.io — the 3s polling detects new messages and triggers the sound.
+- The socket handler still provides instant delivery (low latency) when available, and marks messages as seen to prevent double-play.
+- Production live at https://gomesin.vercel.app.
