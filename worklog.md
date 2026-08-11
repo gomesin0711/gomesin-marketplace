@@ -2742,3 +2742,30 @@ Stage Summary:
 - The "Go mesin!" chat ringtone now plays when a new incoming message arrives, in ALL environments (sandbox + production). It no longer depends on socket.io — the 3s polling detects new messages and triggers the sound.
 - The socket handler still provides instant delivery (low latency) when available, and marks messages as seen to prevent double-play.
 - Production live at https://gomesin.vercel.app.
+
+---
+Task ID: 35
+Agent: main
+Task: Remove "Status Saya" from chat page, and remove "Status", "Grup Baru", and "Bantuan" from the chat hamburger menu.
+
+Work Log:
+- Searched profile.tsx for hamburger menu items and Status tab references
+- Found hamburger menu (PopoverContent) with: Status, Panggilan, Grup Baru, Pengaturan, Bantuan
+- Found internal chatTab type: "chat" | "status" | "panggilan" with 3-tab bar (Chat/Status/Panggilan)
+- Found Status tab content section (mock stories/status ring UI with "Status Saya")
+- Removed from hamburger menu: Status button, Grup Baru button, Bantuan button (kept Panggilan + Pengaturan)
+- Removed "status" from chatTab union type → now "chat" | "panggilan" only
+- Removed Status entry from internal tabs array (2 tabs now: Chat, Panggilan)
+- Removed entire Status tab content section (Status Saya + Pembaruan Terbaru)
+- Removed now-unused `Bookmark` import from lucide-react
+- Ran lint: 6 errors + 11 warnings, all pre-existing (start-chat.cjs + other files), no new issues
+- Verified with Agent Browser: logged in as admin → Chat page → hamburger menu shows only "Panggilan" and "Pengaturan"; tab bar shows only "Chat" and "Panggilan"; no Status/Status Saya visible
+- VLM screenshot analysis confirmed all 3 removals
+- Deployed to production: https://gomesin.vercel.app (Ready in 52s)
+
+Stage Summary:
+- Chat hamburger menu now has only 2 items: Panggilan, Pengaturan
+- Chat internal tabs now has only 2 tabs: Chat, Panggilan
+- Status tab and all its content (Status Saya, Pembaruan Terbaru) completely removed
+- Bookmark import cleaned up
+- Production deployed successfully

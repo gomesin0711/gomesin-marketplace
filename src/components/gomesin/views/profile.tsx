@@ -76,7 +76,6 @@ import {
   PhoneMissed,
   PhoneOutgoing,
   PhoneIncoming,
-  Bookmark,
   CircleDot,
   CameraOff,
 } from "lucide-react";
@@ -313,8 +312,8 @@ export function ProfileView() {
   // Call buttons are wired to setPendingCall() in the zustand store. The
   // app-shell (always mounted) watches pendingCall and triggers the global
   // useCall hook → CallOverlay. No call dialog state needed here.
-  // GoMesin chat UI state — internal tabs (Chat / Status / Panggilan), search, new-chat sheet, left menu.
-  const [chatTab, setChatTab] = useState<"chat" | "status" | "panggilan">("chat");
+  // GoMesin chat UI state — internal tabs (Chat / Panggilan), search, new-chat sheet, left menu.
+  const [chatTab, setChatTab] = useState<"chat" | "panggilan">("chat");
   const [chatSearch, setChatSearch] = useState("");
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [leftMenuOpen, setLeftMenuOpen] = useState(false);
@@ -1522,22 +1521,10 @@ export function ProfileView() {
                           </PopoverTrigger>
                           <PopoverContent className="w-56 p-2" align="end">
                             <button
-                              onClick={() => { setLeftMenuOpen(false); setChatTab("status"); }}
-                              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
-                            >
-                              <Bookmark className="size-4 text-[#16A34A]" /> Status
-                            </button>
-                            <button
                               onClick={() => { setLeftMenuOpen(false); setChatTab("panggilan"); }}
                               className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
                             >
                               <Phone className="size-4 text-[#16A34A]" /> Panggilan
-                            </button>
-                            <button
-                              onClick={() => { setLeftMenuOpen(false); setNewChatOpen(true); }}
-                              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
-                            >
-                              <Users className="size-4 text-[#16A34A]" /> Grup Baru
                             </button>
                             <div className="my-1 border-t border-[#E5E7EB]" />
                             <button
@@ -1546,20 +1533,13 @@ export function ProfileView() {
                             >
                               <Settings className="size-4 text-[#6B7280]" /> Pengaturan
                             </button>
-                            <button
-                              onClick={() => { setLeftMenuOpen(false); setPanel("bantuan"); }}
-                              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
-                            >
-                              <HelpCircle className="size-4 text-[#6B7280]" /> Bantuan
-                            </button>
                           </PopoverContent>
                         </Popover>
                       </div>
-                      {/* Internal tabs: Chat / Status / Panggilan — underline-style with badge counts */}
+                      {/* Internal tabs: Chat / Panggilan — underline-style with badge counts */}
                       <div className="flex items-stretch px-2">
                         {([
                           { key: "chat", label: "Chat", badge: unreadCount },
-                          { key: "status", label: "Status", badge: 0 },
                           { key: "panggilan", label: "Panggilan", badge: 0 },
                         ] as const).map((t) => (
                           <button
@@ -1755,62 +1735,6 @@ export function ProfileView() {
                           </div>
                         )}
                       </>
-                    )}
-
-                    {/* ===== Status tab — mock status/stories ring UI ===== */}
-                    {chatTab === "status" && (
-                      <div className="flex-1 overflow-y-auto bg-[#FFFFFF]">
-                        {/* My status */}
-                        <div className="px-4 py-3">
-                          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#6B7280]">Status Saya</p>
-                          <button className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left transition hover:bg-[#F5F7F6]">
-                            <div className="relative shrink-0">
-                              <Avatar className="size-12 rounded-full ring-2 ring-[#E5E7EB]">
-                                <AvatarFallback className="bg-[#16A34A] text-sm font-bold text-white">
-                                  {user?.name?.[0]?.toUpperCase() || "G"}
-                                </AvatarFallback>
-                              </Avatar>
-                              <span className="absolute -bottom-0.5 -right-0.5 grid size-5 place-items-center rounded-full border-2 border-white bg-[#16A34A] text-white">
-                                <Plus className="size-3" />
-                              </span>
-                            </div>
-                            <div>
-                              <p className="text-sm font-semibold text-[#17202A]">Status saya</p>
-                              <p className="text-xs text-[#6B7280]">Ketuk untuk menambahkan status</p>
-                            </div>
-                          </button>
-                        </div>
-                        <div className="border-t border-[#E5E7EB] px-4 py-3">
-                          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#6B7280]">Pembaruan Terbaru</p>
-                          <div className="space-y-1">
-                            {allConversations.slice(0, 4).map((c: any) => (
-                              <button key={c.id} className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left transition hover:bg-[#F5F7F6]">
-                                <div className="shrink-0 rounded-full bg-gradient-to-tr from-[#16A34A] to-[#DCFCE7] p-0.5">
-                                  <Avatar className="size-11 rounded-full ring-2 ring-white">
-                                    {c.partnerImage ? (
-                                      <img src={c.partnerImage} alt={c.name} className="size-full rounded-full object-cover" />
-                                    ) : (
-                                      <AvatarFallback className="bg-[#DCFCE7] text-xs font-bold text-[#16A34A]">
-                                        {(c.name || "?").split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
-                                      </AvatarFallback>
-                                    )}
-                                  </Avatar>
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-medium text-[#17202A]">{c.name}</p>
-                                  <p className="text-xs text-[#6B7280]">{timeAgo(c.lastTime, mounted ? lang : "id")} lalu</p>
-                                </div>
-                              </button>
-                            ))}
-                            {allConversations.length === 0 && (
-                              <div className="py-8 text-center">
-                                <Bookmark className="mx-auto size-8 text-[#E5E7EB]" />
-                                <p className="mt-2 text-xs text-[#6B7280]">Belum ada status. Status kontak akan muncul di sini.</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
                     )}
 
                     {/* ===== Panggilan tab — mock recent calls ===== */}
