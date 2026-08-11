@@ -2855,3 +2855,47 @@ Stage Summary:
 - "Iklan baru nih" TTS ringtone plays when new listings are detected (60s polling, separate audio element)
 - Notification bell now navigates to a full notification page showing REAL new listings (not a popup with mock data)
 - Production deployed successfully
+
+---
+Task ID: 38
+Agent: main
+Task: Add seller logo to mobile header top-right corner (ditampilan mobile, tambahkan logo penjual di sebelah pojok atas kanan)
+
+Work Log:
+- Investigated mobile header layout in src/components/gomesin/header.tsx
+- Found mobile Row 1 (line 378-425) had: Logo (left) + Language, Theme, NotificationBell (right) — but NO seller/user avatar
+- Desktop header (line 537-551) already had user avatar with logoImage — mobile was missing it
+- Confirmed Task 37 (chat freeze scroll, iklan-baru ringtone, notification page) was already completed in previous session and deployed
+
+Changes made (1 file: src/components/gomesin/header.tsx):
+- Added seller logo button to mobile Row 1 right-aligned group, AFTER NotificationBell (so it sits at the very top-right corner / pojok atas kanan)
+- When logged in: shows circular avatar (size-8, 32px) with:
+  * user.logoImage as <img> if seller has a logo uploaded
+  * Fallback: initials avatar (first 2 letters of name, uppercase) in bg-primary/10
+  * Ring border (ring-1 ring-border) with hover effect (hover:ring-primary/40)
+  * aria-label="Akun Saya", onClick=goToProfile (navigates to profile/account page)
+- When NOT logged in: shows User icon (lucide) in circular bg-primary/10, aria-label="Masuk atau Daftar", onClick=goToLogin
+- Matches desktop avatar behavior exactly (same data source: user.logoImage, same navigation: goToProfile/goToLogin)
+
+Verification:
+- Lint: 6 errors + 11 warnings (ALL pre-existing in start-chat.cjs + unused eslint-disable directives — NO new issues from this change)
+- Dev server: compiled successfully, no runtime errors, all API calls 200
+- Agent Browser (iPhone 14 mobile viewport):
+  * Before login: mobile header shows Logo, Bahasa, Theme, NotificationBell, and NEW "Masuk atau Daftar" button (User icon) at top-right corner
+  * Logged in as admin (gomesin0711@gmail.com): button changed to "Akun Saya" with circular seller photo avatar at top-right corner
+  * VLM screenshot analysis confirmed: "User/Seller Avatar: Located at the very top-right corner, there is a circular avatar. Appearance: It is a circular photograph (not initials or a generic icon)."
+  * Clicked the avatar → navigated to profile page ("Halo, Admin" heading visible) — navigation works correctly
+- Production verification: deployed to https://gomesin.vercel.app (Ready in 53s), confirmed seller logo button present in DOM with exact classes added
+
+Deployment:
+- Committed: "feat: add seller logo to mobile header top-right corner" (1 file, 29 insertions)
+- Pushed to GitHub main branch
+- Deployed to Vercel production via `vercel --prod --yes --token [REDACTED]` — Build 31s, Deploy 53s
+- Aliased to https://gomesin.vercel.app (HTTP 200)
+- Production DOM confirmed: button with classes "grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary ring-1 ring-border hover:ring-primary/40" present
+
+Stage Summary:
+- Mobile header (below md breakpoint) now shows the seller's logo/avatar at the top-right corner (pojok atas kanan), matching the desktop behavior
+- Shows seller's uploaded logoImage as circular photo, or initials fallback, or User icon when not logged in
+- Clicking the avatar navigates to the Akun Saya (profile) page
+- Production deployed successfully at https://gomesin.vercel.app
