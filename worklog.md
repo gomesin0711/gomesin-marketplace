@@ -2654,3 +2654,37 @@ Stage Summary:
 - Files modified (1): src/components/gomesin/views/profile.tsx
 - The listing image+link bubble now appears on the RIGHT side of the chat (sender side), matching the alignment of the current user's sent messages. This applies to both the fresh-chat case (bubble at top) and the existing-conversation case (bubble at bottom).
 - Production live at https://gomesin.vercel.app.
+
+---
+Task ID: 34
+Agent: Main (Z.ai Code)
+Task: Position inline listing bubble on the right side (same side as the sent message)
+
+Work Log:
+- User requested again: "posisi gambar iklan di chat harusnya ada disebelah kanan" — the listing image position in chat should be on the right.
+- In Task 33, I moved the fresh-chat bubble (top) and existing-conversation bubble (bottom) to the right. But I missed the THIRD case: the INLINE listing bubble that appears before messages within the conversation stream.
+- The inline bubble was hardcoded to `justify-start` (LEFT) regardless of whether the message was sent by the current user or the partner. So when admin sent a message about a listing, the bubble appeared on the LEFT (wrong side) instead of the RIGHT.
+- Fixed: the inline bubble now follows the same side as its associated message:
+  * `isMe` (admin sent the message) → bubble on RIGHT (justify-end), tail on right (-right-1.5, rounded-tl-sm), stronger ring (ring-[#16A34A]/40)
+  * `!isMe` (seller sent the message) → bubble on LEFT (justify-start), tail on left (-left-1.5, rounded-tr-sm), lighter ring (ring-[#16A34A]/20)
+
+Verification (Agent Browser + VLM):
+- Logged in as Admin → home → clicked udin's "tes" listing → detail page → clicked "Chat Penjual" → opened existing udin chat.
+- VLM analysis confirmed: "Listing Card 1: Position — RIGHT side of the chat window. Title: tes. Price: Rp 1.234.568. It is positioned before (above) a message bubble. The message bubble below it ('harga berapa?') is on the SAME side (RIGHT)."
+- All three listing bubble cases now correctly appear on the RIGHT when the current user is the one discussing the listing:
+  1. Fresh chat (empty) → bubble at TOP, RIGHT side
+  2. Existing chat + different listing → bubble at BOTTOM, RIGHT side
+  3. Inline bubble before a sent message → bubble on RIGHT side (before a received message, it stays on LEFT)
+- Lint: 0 new errors (6 pre-existing in start-chat.cjs only).
+- Dev server: HTTP 200, all API calls 200, no runtime errors.
+
+Deployment:
+- Committed: "fix: position inline listing bubble on same side as its message (right for sent, left for received)" (1 file, 7 insertions, 4 deletions).
+- Pushed to GitHub (main branch).
+- Deployed to Vercel production via `vercel --prod --yes --token [REDACTED]` — build 30s, deploy 53s.
+- Aliased to https://gomesin.vercel.app (HTTP 200, age: 0, x-vercel-cache: PRERENDER — fresh deployment confirmed).
+
+Stage Summary:
+- Files modified (1): src/components/gomesin/views/profile.tsx
+- ALL listing image bubbles in the chat now appear on the RIGHT side when the current user (admin) is the one discussing the listing. This covers all three cases: fresh-chat top bubble, existing-conversation bottom bubble, and inline bubbles within the message stream.
+- Production live at https://gomesin.vercel.app.
