@@ -2417,3 +2417,45 @@ Stage Summary:
 - Both sender and receiver see all listing bubbles.
 - Git history cleaned of leaked token.
 - Both servers running: Next.js 3000 (local dev, HTTP 200), Vercel production, chat-service 3003.
+
+---
+Task ID: 29
+Agent: Main (Z.ai Code)
+Task: Activate phone (voice call) and video call buttons in chat
+
+Work Log:
+- The Voice call and Video call buttons in the chat header were decorative (no onClick). Activated them with a full call dialog UI.
+
+Changes:
+1. src/lib/store.ts: Added `partnerPhone?: string | null` to PendingChatPartner type.
+2. src/components/gomesin/views/detail.tsx: Pass `partnerPhone: ownerPhone` (seller's registered phone from User table) to goToProfileChat.
+3. src/app/api/messages/route.ts:
+   - Supabase path: added `phone` to the User select query
+   - Both Prisma + Supabase paths: added `partnerPhone` to each conversation response (resolved from getUser(partnerId).phone)
+4. src/components/gomesin/views/profile.tsx:
+   - Added `callDialog` state: { type: "voice" | "video", name, image, phone } | null
+   - Draft conversation now includes `partnerPhone` (from pendingChatPartner)
+   - Video call button: onClick → setCallDialog({ type: "video", ... })
+   - Voice call button: onClick → setCallDialog({ type: "voice", ... })
+   - Call dialog overlay (z-[90], green gradient bg):
+     * Top: label ("Video Call" / "Panggilan Suara") + close button
+     * Center: large avatar with pulsing ring animation (animate-ping + animate-pulse), contact name, status text ("Menghubungkan…" if phone available, else "Nomor telepon tidak tersedia")
+     * Bottom: action buttons — green accept (Phone/Video icon) + red decline (X icon)
+     * Accept action: Voice → window.location.href = `tel:<phone>`; Video → window.open(`https://wa.me/<phone>`) (WhatsApp bridge for video calls, since GoMesin doesn't run its own WebRTC infra)
+     * If no phone: only red close button shown
+
+Verification (Agent Browser + VLM):
+- Buyer (Admin) opened chat with udin → clicked Voice call button → call dialog appeared with "udin" name, "Menghubungkan…" status, green accept + red decline buttons. VLM confirmed: "green-themed call screen with contact name 'udin', call action buttons (green accept / red decline)".
+- Clicked Video call button → call dialog appeared with "Video Call" label, "udin" name, "Menghubungkan…" status. Confirmed working.
+- API verified: GET /api/messages returns partnerPhone: "0818666711" for udin conversation.
+- No console errors, all API calls 200.
+- Lint: 0 new errors (6 pre-existing in .cjs files only).
+
+Stage Summary:
+- Files modified (4): src/lib/store.ts, src/components/gomesin/views/detail.tsx, src/app/api/messages/route.ts, src/components/gomesin/views/profile.tsx
+- Voice call button: opens call dialog → green button triggers `tel:<phone>` (direct phone call on mobile)
+- Video call button: opens call dialog → green button opens `https://wa.me/<phone>` (WhatsApp video call bridge)
+- If partner has no phone: dialog shows "Nomor telepon tidak tersedia" with only a close button
+- Call dialog has GoMesin green gradient theme, pulsing ring animation, avatar, contact name
+- Works for both draft conversations (phone from ad detail page) and existing conversations (phone from API)
+- Both servers running: Next.js 3000 (HTTP 200), chat-service 3003

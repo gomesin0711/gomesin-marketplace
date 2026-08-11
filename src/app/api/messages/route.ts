@@ -232,6 +232,7 @@ async function getMessagesPrisma(userId: string) {
       partnerId: c.partnerId,
       name: c.name,
       partnerImage: c.partnerImage,
+      partnerPhone: (getUser(c.partnerId) as any)?.phone || null,
       lastMessage: newest.content,
       lastTime: newest.createdAt,
       unread,
@@ -264,7 +265,7 @@ async function getMessagesSupabase(userId: string) {
   }
   let userMap: Record<string, any> = {};
   if (userIds.size > 0) {
-    const { data: users } = await supabase.from("User").select("id,name,logoImage").in("id", Array.from(userIds));
+    const { data: users } = await supabase.from("User").select("id,name,logoImage,phone").in("id", Array.from(userIds));
     for (const u of users || []) userMap[u.id] = u;
   }
   const getUser = (id: string) => userMap[id] || { name: "Unknown" };
@@ -388,6 +389,7 @@ async function getMessagesSupabase(userId: string) {
       partnerId: c.partnerId,
       name: c.name,
       partnerImage: c.partnerImage,
+      partnerPhone: getUser(c.partnerId)?.phone || null,
       lastMessage: newest.content,
       lastTime: newest.createdAt,
       unread,

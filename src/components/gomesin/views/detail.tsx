@@ -346,6 +346,7 @@ export function DetailView() {
                   partnerId: ownerId,
                   partnerName: (l as any).user?.name || l.seller.name,
                   partnerImage: (l as any).user?.logoImage || null,
+                  partnerPhone: ownerPhone || null,
                   listingId: l.id,
                   listingSlug: l.slug,
                   listingTitle: l.title,

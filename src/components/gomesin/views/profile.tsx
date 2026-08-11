@@ -309,6 +309,9 @@ export function ProfileView() {
   const [chatMessages, setChatMessages] = useState<{ [key: number]: { role: "user" | "assistant"; content: string; image?: string; animation?: string; listingId?: string | null; listingTitle?: string | null; listingImage?: string | null; listingPrice?: number | null; listingSlug?: string | null }[] }>({});
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  // Call dialog state — activates the Voice / Video call buttons in the chat header.
+  // type: "voice" | "video"; partner: { name, image, phone } | null
+  const [callDialog, setCallDialog] = useState<{ type: "voice" | "video"; name: string; image: string | null; phone: string | null } | null>(null);
   // GoMesin chat UI state — internal tabs (Chat / Status / Panggilan), search, new-chat sheet, left menu.
   const [chatTab, setChatTab] = useState<"chat" | "status" | "panggilan">("chat");
   const [chatSearch, setChatSearch] = useState("");
@@ -498,6 +501,7 @@ export function ProfileView() {
         partnerId: pendingChatPartner.partnerId,
         name: pendingChatPartner.partnerName || "Penjual",
         partnerImage: pendingChatPartner.partnerImage || null,
+        partnerPhone: pendingChatPartner.partnerPhone || null,
         lastMessage: "",
         lastTime: new Date().toISOString(),
         unread: 0,
@@ -1916,12 +1920,28 @@ export function ProfileView() {
                               </p>
                             </div>
                             <button
+                              onClick={() => {
+                                setCallDialog({
+                                  type: "video",
+                                  name: conv.name,
+                                  image: conv.partnerImage || null,
+                                  phone: conv.partnerPhone || null,
+                                });
+                              }}
                               aria-label="Video call"
                               className="grid size-9 shrink-0 place-items-center rounded-full text-white/90 transition hover:bg-white/10"
                             >
                               <Video className="size-5" />
                             </button>
                             <button
+                              onClick={() => {
+                                setCallDialog({
+                                  type: "voice",
+                                  name: conv.name,
+                                  image: conv.partnerImage || null,
+                                  phone: conv.partnerPhone || null,
+                                });
+                              }}
                               aria-label="Voice call"
                               className="grid size-9 shrink-0 place-items-center rounded-full text-white/90 transition hover:bg-white/10"
                             >
@@ -2373,6 +2393,88 @@ export function ProfileView() {
                                 className="max-h-[90vh] max-w-full rounded-lg object-contain"
                                 onClick={(e) => e.stopPropagation()}
                               />
+                            </div>
+                          )}
+                          {/* Call dialog — activated by the Voice / Video call buttons in the chat header.
+                              Shows a ringing-style overlay, then offers to continue via tel: (voice)
+                              or WhatsApp (video, since GoMesin doesn't run its own WebRTC infra). */}
+                          {callDialog && (
+                            <div
+                              className="fixed inset-0 z-[90] flex flex-col items-center justify-between bg-gradient-to-b from-[#0f3d23] via-[#16A34A] to-[#0a2d18] p-6 text-white"
+                              onClick={() => setCallDialog(null)}
+                            >
+                              <div className="flex w-full items-center justify-between">
+                                <span className="text-sm font-medium text-white/70">
+                                  {callDialog.type === "video" ? "Video Call" : "Panggilan Suara"}
+                                </span>
+                                <button
+                                  aria-label="Tutup"
+                                  className="grid size-10 place-items-center rounded-full bg-white/10 hover:bg-white/20"
+                                  onClick={(e) => { e.stopPropagation(); setCallDialog(null); }}
+                                >
+                                  <X className="size-5" />
+                                </button>
+                              </div>
+                              <div className="flex flex-col items-center gap-4" onClick={(e) => e.stopPropagation()}>
+                                <div className="relative">
+                                  {/* Pulsing ring animation */}
+                                  <span className="absolute inset-0 animate-ping rounded-full bg-white/30" aria-hidden />
+                                  <span className="absolute inset-0 animate-pulse rounded-full bg-white/20" aria-hidden />
+                                  <Avatar className="relative size-32 rounded-full ring-4 ring-white/40">
+                                    {callDialog.image ? (
+                                      <img src={callDialog.image} alt={callDialog.name} className="size-full rounded-full object-cover" />
+                                    ) : (
+                                      <AvatarFallback className="bg-white/20 text-4xl font-bold text-white">
+                                        {callDialog.name.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase()}
+                                      </AvatarFallback>
+                                    )}
+                                  </Avatar>
+                                </div>
+                                <div className="text-center">
+                                  <p className="text-2xl font-semibold">{callDialog.name}</p>
+                                  <p className="mt-1 text-sm text-white/70">
+                                    {callDialog.phone ? "Menghubungkan…" : "Nomor telepon tidak tersedia"}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex w-full max-w-xs items-center justify-center gap-6" onClick={(e) => e.stopPropagation()}>
+                                {callDialog.phone ? (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        const cleaned = callDialog.phone!.replace(/[^0-9+]/g, "");
+                                        if (callDialog.type === "video") {
+                                          // WhatsApp supports video calls — open the chat as a bridge.
+                                          const wa = cleaned.replace(/^0/, "62");
+                                          window.open(`https://wa.me/${wa}`, "_blank");
+                                        } else {
+                                          window.location.href = `tel:${cleaned}`;
+                                        }
+                                        setCallDialog(null);
+                                      }}
+                                      className="grid size-16 place-items-center rounded-full bg-[#22C55E] shadow-lg transition hover:bg-[#16A34A] active:scale-95"
+                                      aria-label={callDialog.type === "video" ? "Mulai video call" : "Angkat"}
+                                    >
+                                      {callDialog.type === "video" ? <Video className="size-7" /> : <Phone className="size-7" />}
+                                    </button>
+                                    <button
+                                      onClick={() => setCallDialog(null)}
+                                      className="grid size-16 place-items-center rounded-full bg-red-500 shadow-lg transition hover:bg-red-600 active:scale-95"
+                                      aria-label="Tutup"
+                                    >
+                                      <X className="size-7" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    onClick={() => setCallDialog(null)}
+                                    className="grid size-16 place-items-center rounded-full bg-red-500 shadow-lg transition hover:bg-red-600 active:scale-95"
+                                    aria-label="Tutup"
+                                  >
+                                    <X className="size-7" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           )}
                         </>
