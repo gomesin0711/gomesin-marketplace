@@ -112,6 +112,16 @@ const BANNERS: Banner[] = [
   },
 ];
 
+type AdminBanner = {
+  title: string;
+  desc: string;
+  cta: string;
+  imageUrl: string;
+  link: string;
+  gradient: string;
+  active: boolean;
+};
+
 export function AdBanner() {
   const { lang, t } = useLang();
   const mounted = useMounted();
@@ -123,15 +133,27 @@ export function AdBanner() {
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
 
+  // Fetch admin-configured promo banner (title + photo), replaces defaults when active
+  const [adminBanner, setAdminBanner] = useState<AdminBanner | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/banner")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (!cancelled && d?.banner) setAdminBanner(d.banner); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   const next = useCallback(() => setActive((p) => (p + 1) % BANNERS.length), []);
   const prev = useCallback(() => setActive((p) => (p - 1 + BANNERS.length) % BANNERS.length), []);
 
-  // auto-rotate every 5s, pause on hover
+  // auto-rotate every 5s, pause on hover — only for default rotating banners
   useEffect(() => {
     if (paused) return;
+    if (adminBanner?.active && adminBanner.imageUrl) return; // single banner, no rotation
     const id = setInterval(next, 5000);
     return () => clearInterval(id);
-  }, [next, paused]);
+  }, [next, paused, adminBanner]);
 
   const handleCta = (banner: Banner) => {
     if (banner.action === "post") goToPost();
@@ -142,6 +164,59 @@ export function AdBanner() {
     }
   };
 
+  const handleAdminCta = () => {
+    if (adminBanner?.link === "listings") goToListings({});
+    else goToPost();
+  };
+
+  // ===== ADMIN BANNER (single, with photo) =====
+  if (adminBanner?.active && adminBanner.imageUrl) {
+    return (
+      <section className="mx-auto max-w-7xl px-4 py-4">
+        <div className={cn(
+          "relative overflow-hidden rounded-2xl bg-gradient-to-r shadow-xl",
+          adminBanner.gradient || "from-amber-500 via-orange-500 to-rose-500"
+        )}>
+          {/* Background photo */}
+          <img
+            src={adminBanner.imageUrl}
+            alt={adminBanner.title || "Promo"}
+            className="absolute inset-0 size-full object-cover"
+          />
+          {/* Dark overlay for text readability */}
+          <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-black/10" />
+
+          <div className="relative flex flex-col items-start gap-4 p-6 text-white sm:flex-row sm:items-center sm:justify-between sm:p-8">
+            <div className="min-w-0 flex-1">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/25 px-3 py-1 text-[11px] font-bold uppercase tracking-wider backdrop-blur">
+                  <Sparkles className="size-3.5" />
+                  Promo
+                </span>
+              </div>
+              <h3 className="text-xl font-extrabold leading-tight drop-shadow-sm sm:text-2xl md:text-3xl">
+                {adminBanner.title}
+              </h3>
+              {adminBanner.desc && (
+                <p className="mt-2 max-w-xl text-sm text-white/90 sm:text-base">
+                  {adminBanner.desc}
+                </p>
+              )}
+              <button
+                onClick={handleAdminCta}
+                className="mt-4 inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-black shadow-lg transition hover:bg-white/90 hover:gap-3"
+              >
+                {adminBanner.cta || "Pasang Iklan"}
+                <ArrowRight className="size-4 text-black" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // ===== DEFAULT ROTATING BANNERS =====
   const current = BANNERS[active];
 
   return (
@@ -237,3 +312,4 @@ export function AdBanner() {
     </section>
   );
 }
+

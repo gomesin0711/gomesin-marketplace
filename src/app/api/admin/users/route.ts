@@ -73,18 +73,64 @@ export async function DELETE(req: NextRequest) {
   try {
     const { id } = await req.json();
     if (!id) return NextResponse.json({ error: "ID wajib" }, { status: 400 });
-    // prevent deleting admin accounts
-    const user = await db.user.findUnique({ where: { id } });
-    if (!user) return NextResponse.json({ error: "User tidak ditemukan" }, { status: 404 });
-    if (user.role === "admin" || user.role === "superadmin") {
+
+    // --- Path A: local dev (Prisma + SQLite) ---
+    if (isDbAvailable()) {
+      try {
+        // prevent deleting admin accounts
+        const user = await db.user.findUnique({ where: { id } });
+        if (!user) return NextResponse.json({ error: "User tidak ditemukan" }, { status: 404 });
+        if (user.role === "admin" || user.role === "superadmin") {
+          return NextResponse.json({ error: "Tidak dapat menghapus akun admin" }, { status: 403 });
+        }
+        // Delete user's messages first (sent + received) to avoid FK constraint
+        await db.message.deleteMany({ where: { OR: [{ senderId: id }, { receiverId: id }] } });
+        // Delete user's listings (seller records are left orphaned but harmless)
+        await db.listing.deleteMany({ where: { userId: id } });
+        // Now delete the user
+        await db.user.delete({ where: { id } });
+        return NextResponse.json({ success: true });
+      } catch (error) {
+        console.error("[admin/users] Prisma DELETE error, falling back to Supabase:", error);
+        // fall through to Supabase
+      }
+    }
+
+    // --- Path B: Vercel (raw Supabase) ---
+    const supabase = await getSupabase();
+
+    // Fetch user to check role (prevent deleting admin)
+    const { data: userRow, error: fetchErr } = await supabase
+      .from("User")
+      .select("id,role")
+      .eq("id", id)
+      .maybeSingle();
+    if (fetchErr) {
+      console.error("[admin/users] Supabase DELETE fetch error:", fetchErr);
+      return NextResponse.json({ error: "Gagal memeriksa user: " + fetchErr.message }, { status: 500 });
+    }
+    if (!userRow) return NextResponse.json({ error: "User tidak ditemukan" }, { status: 404 });
+    if (userRow.role === "admin" || userRow.role === "superadmin") {
       return NextResponse.json({ error: "Tidak dapat menghapus akun admin" }, { status: 403 });
     }
-    // Delete user's messages first (sent + received) to avoid FK constraint
-    await db.message.deleteMany({ where: { OR: [{ senderId: id }, { receiverId: id }] } });
-    // Delete user's listings (seller records are left orphaned but harmless)
-    await db.listing.deleteMany({ where: { userId: id } });
+
+    // Delete user's messages (sent + received) — avoid FK constraint violations
+    const { error: msgErr1 } = await supabase.from("Message").delete().eq("senderId", id);
+    if (msgErr1) console.error("[admin/users] Supabase delete messages (sent) warning:", msgErr1);
+    const { error: msgErr2 } = await supabase.from("Message").delete().eq("receiverId", id);
+    if (msgErr2) console.error("[admin/users] Supabase delete messages (received) warning:", msgErr2);
+
+    // Delete user's listings
+    const { error: listErr } = await supabase.from("Listing").delete().eq("userId", id);
+    if (listErr) console.error("[admin/users] Supabase delete listings warning:", listErr);
+
     // Now delete the user
-    await db.user.delete({ where: { id } });
+    const { error: userErr } = await supabase.from("User").delete().eq("id", id);
+    if (userErr) {
+      console.error("[admin/users] Supabase delete user error:", userErr);
+      return NextResponse.json({ error: "Gagal menghapus user: " + userErr.message }, { status: 500 });
+    }
+
     return NextResponse.json({ success: true });
   } catch (e: any) {
     console.error("[admin/users] DELETE error:", e);

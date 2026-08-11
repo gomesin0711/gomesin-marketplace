@@ -38,12 +38,17 @@ function parseFeatures(p: any) {
 }
 
 export async function GET() {
+  // Hide the special "__site_banner__" row (stores the promo banner config,
+  // not a real package) from all paket listings.
+  const isRealPaket = (p: any) => p && p.key !== "__site_banner__";
+
   // --- Path A: local dev (Prisma + SQLite) ---
   if (isDbAvailable()) {
     try {
       const pakets = await db.paket.findMany({ orderBy: { sortOrder: "asc" } });
-      if (pakets.length > 0) {
-        return NextResponse.json({ pakets: pakets.map(parseFeatures) });
+      const real = pakets.filter(isRealPaket);
+      if (real.length > 0) {
+        return NextResponse.json({ pakets: real.map(parseFeatures) });
       }
       // No rows in DB — fall through to Supabase / defaults below.
     } catch (error) {
@@ -60,7 +65,10 @@ export async function GET() {
       .select("*")
       .order("sortOrder", { ascending: true });
     if (!error && rows && rows.length > 0) {
-      return NextResponse.json({ pakets: rows.map(parseFeatures) });
+      const real = rows.filter(isRealPaket);
+      if (real.length > 0) {
+        return NextResponse.json({ pakets: real.map(parseFeatures) });
+      }
     }
     if (error) {
       console.error("[admin/paket] Supabase GET error:", error);

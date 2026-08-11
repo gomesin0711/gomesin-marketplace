@@ -18,14 +18,16 @@ export async function getPakets(): Promise<PaketData[]> {
   if (cache && now - cacheTime < CACHE_TTL) return cache;
   try {
     const rows = await db.paket.findMany({ orderBy: { sortOrder: "asc" } });
-    cache = rows.map((p) => ({
-      key: p.key,
-      name: p.name,
-      price: p.price,
-      duration: p.duration,
-      features: typeof p.features === 'string' ? JSON.parse(p.features) : (p.features || []),
-      active: p.active,
-    }));
+    cache = rows
+      .filter((p) => p.key !== "__site_banner__") // hide promo-banner config row
+      .map((p) => ({
+        key: p.key,
+        name: p.name,
+        price: p.price,
+        duration: p.duration,
+        features: typeof p.features === 'string' ? JSON.parse(p.features) : (p.features || []),
+        active: p.active,
+      }));
   } catch {
     // Fallback: hardcoded default pakets (matches Supabase data)
     cache = [

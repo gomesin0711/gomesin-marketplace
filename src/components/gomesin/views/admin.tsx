@@ -1817,9 +1817,17 @@ function PenggunaTab() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["admin-users"], queryFn: () => fetchJson("/api/admin/users"), ...RT });
   const [previewUser, setPreviewUser] = useState<any>(null);
+  const [deleteUser, setDeleteUser] = useState<any>(null);
   const del = useMutation({
-    mutationFn: (id: string) => fetch("/api/admin/users", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }),
-    onSuccess: () => { toast.success(tr("admUserDeleted")); qc.invalidateQueries({ queryKey: ["admin-users"] }); },
+    mutationFn: async (id: string) => {
+      const res = await fetch("/api/admin/users", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Gagal menghapus user");
+      }
+      return res.json();
+    },
+    onSuccess: () => { toast.success(tr("admUserDeleted")); setDeleteUser(null); qc.invalidateQueries({ queryKey: ["admin-users"] }); },
     onError: (e: any) => { const msg = e?.message || tr("admDeleteFailed2"); toast.error(msg); },
   });
   if (isLoading || !data) return <SkeletonGrid count={3} />;
@@ -1830,9 +1838,11 @@ function PenggunaTab() {
   const handleDelete = (u: any, e: React.MouseEvent) => {
     e.stopPropagation();
     if (isAdmin(u)) { toast.error(tr("admCannotDeleteAdmin")); return; }
-    if (confirm(`Hapus user "${u.name}" (${u.email})?`)) {
-      del.mutate(u.id);
-    }
+    setDeleteUser(u);
+  };
+
+  const confirmDelete = () => {
+    if (deleteUser) del.mutate(deleteUser.id);
   };
 
   return (
@@ -1949,10 +1959,7 @@ function PenggunaTab() {
                   variant="destructive"
                   className="w-full gap-2"
                   onClick={() => {
-                    if (confirm(`Hapus user "${previewUser.name}"?`)) {
-                      del.mutate(previewUser.id);
-                      setPreviewUser(null);
-                    }
+                    setDeleteUser(previewUser);
                   }}
                   disabled={del.isPending}
                 >
@@ -1968,6 +1975,29 @@ function PenggunaTab() {
           </div>
         </div>
       )}
+
+      {/* DELETE CONFIRMATION DIALOG */}
+      <AlertDialog open={deleteUser !== null} onOpenChange={(o) => !o && setDeleteUser(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus User?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteUser ? `User "${deleteUser.name}" (${deleteUser.email}) akan dihapus permanen beserta semua iklan dan pesannya. Tindakan ini tidak dapat dibatalkan.` : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={del.isPending}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              disabled={del.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {del.isPending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              {del.isPending ? "Menghapus..." : "Hapus"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -2181,100 +2211,290 @@ function BannerTab() {
   const { t } = useLang();
   const mounted = useMounted();
   const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
-  const [banners, setBanners] = useState([
-    { id: 1, title: tr("admBanner1Title"), status: "active", placement: "Home Hero", clicks: 342 },
-    { id: 2, title: tr("admBanner2Title"), status: "scheduled", placement: "Category Page", clicks: 0 },
-    { id: 3, title: tr("admBanner3Title"), status: "active", placement: "Sidebar", clicks: 128 },
-  ]);
-  const [showForm, setShowForm] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [newPlacement, setNewPlacement] = useState("Home Hero");
+  const qc = useQueryClient();
 
-  const addBanner = () => {
-    if (!newTitle.trim()) return;
-    setBanners([...banners, { id: Date.now(), title: newTitle.trim(), status: "scheduled", placement: newPlacement, clicks: 0 }]);
-    setNewTitle("");
-    setShowForm(false);
-    toast.success(tr("admBannerAdded"));
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-banner"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/banner");
+      if (!res.ok) return { banner: null };
+      return res.json();
+    },
+    staleTime: 0,
+  });
+
+  const banner = data?.banner;
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const [cta, setCta] = useState("Pasang Iklan");
+  const [imageUrl, setImageUrl] = useState("");
+  const [link, setLink] = useState("post");
+  const [gradient, setGradient] = useState("from-amber-500 via-orange-500 to-rose-500");
+  const [active, setActive] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // Hydrate form from server data once
+  useEffect(() => {
+    if (banner && !loaded) {
+      setTitle(banner.title || "");
+      setDesc(banner.desc || "");
+      setCta(banner.cta || "Pasang Iklan");
+      setImageUrl(banner.imageUrl || "");
+      setLink(banner.link || "post");
+      setGradient(banner.gradient || "from-amber-500 via-orange-500 to-rose-500");
+      setActive(banner.active !== false);
+      setLoaded(true);
+    }
+  }, [banner, loaded]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await fetch("/api/admin/banner", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Gagal menyimpan banner");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Banner berhasil disimpan. Perubahan langsung tampil di beranda.");
+      qc.invalidateQueries({ queryKey: ["admin-banner"] });
+    },
+    onError: (e: any) => toast.error(e.message || "Gagal menyimpan banner"),
+  });
+
+  const handleSave = () => {
+    if (!title.trim()) { toast.error("Judul banner wajib diisi"); return; }
+    if (!imageUrl) { toast.error("Foto banner wajib diunggah"); return; }
+    saveMutation.mutate({ title, desc, cta, imageUrl, link, gradient, active });
   };
-  const toggleStatus = (id: number) => {
-    setBanners(banners.map(b => b.id === id ? { ...b, status: b.status === "active" ? "scheduled" : "active" } : b));
+
+  // Compress + upload image as base64 data URL (same approach as /api/upload-banner)
+  const handleFile = async (file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast.error("File harus berupa gambar"); return; }
+    setUploading(true);
+    try {
+      // Compress to max ~200KB via canvas
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            const maxW = 1600;
+            const scale = Math.min(1, maxW / img.width);
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) { reject(new Error("Canvas tidak didukung")); return; }
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            // Start at quality 0.8, reduce until under 200KB
+            let q = 0.8;
+            let out = canvas.toDataURL("image/jpeg", q);
+            while (out.length > 280000 && q > 0.3) {
+              q -= 0.1;
+              out = canvas.toDataURL("image/jpeg", q);
+            }
+            resolve(out);
+          };
+          img.onerror = () => reject(new Error("Gagal memuat gambar"));
+          img.src = reader.result as string;
+        };
+        reader.onerror = () => reject(new Error("Gagal membaca file"));
+        reader.readAsDataURL(file);
+      });
+
+      // Send to upload-banner endpoint (validates + returns the data URL)
+      const res = await fetch("/api/upload-banner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataUrl }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Gagal upload");
+      }
+      const result = await res.json();
+      setImageUrl(result.url);
+      toast.success("Foto banner berhasil diunggah");
+    } catch (e: any) {
+      toast.error(e.message || "Gagal mengunggah foto");
+    } finally {
+      setUploading(false);
+    }
   };
-  const deleteBanner = (id: number) => {
-    setBanners(banners.filter(b => b.id !== id));
-    toast.success(tr("admBannerDeleted"));
-  };
+
+  const GRADIENTS = [
+    { value: "from-amber-500 via-orange-500 to-rose-500", label: "Jingga" },
+    { value: "from-emerald-500 via-green-600 to-teal-600", label: "Hijau" },
+    { value: "from-blue-600 via-indigo-600 to-violet-600", label: "Biru" },
+    { value: "from-rose-600 via-pink-600 to-fuchsia-600", label: "Merah Muda" },
+    { value: "from-slate-700 via-slate-800 to-slate-900", label: "Gelap" },
+  ];
+
+  if (isLoading) return <SkeletonGrid count={2} />;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-bold">Banner Promosi ({banners.length})</h2>
-        <Button size="sm" onClick={() => setShowForm(!showForm)}>
-          <Plus className="size-4" /> {showForm ? "Batal" : "Tambah Banner"}
-        </Button>
+        <h2 className="text-base font-bold">Banner Promosi Beranda</h2>
+        <Badge className={active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}>
+          {active ? "Aktif" : "Nonaktif"}
+        </Badge>
       </div>
+      <p className="text-xs text-muted-foreground">
+        Ubah tulisan dan foto banner yang tampil di beranda (online). Jika nonaktif, banner bawaan (default) yang akan tampil.
+      </p>
 
-      {/* Add banner form */}
-      {showForm && (
-        <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
-          <Input
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="Judul banner (mis. Promo Lebaran)"
-            className="h-9"
-          />
-          <div className="flex gap-2">
-            <select
-              value={newPlacement}
-              onChange={(e) => setNewPlacement(e.target.value)}
-              className="h-9 flex-1 rounded-md border border-border bg-card px-2 text-sm"
-            >
-              <option value="Home Hero">Home Hero</option>
-              <option value="Category Page">Category Page</option>
-              <option value="Sidebar">Sidebar</option>
-              <option value="Detail Page">Detail Page</option>
-            </select>
-            <Button size="sm" onClick={addBanner} disabled={!newTitle.trim()}>
-              <CheckCircle2 className="size-4" /> Simpan
-            </Button>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* ===== FORM ===== */}
+        <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+          <div>
+            <Label className="text-xs">Judul Banner *</Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="mis. Promo Spesial Akhir Tahun" className="mt-1" />
           </div>
-        </div>
-      )}
+          <div>
+            <Label className="text-xs">Deskripsi</Label>
+            <textarea
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              placeholder="Deskripsi singkat banner..."
+              rows={3}
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Teks Tombol (CTA)</Label>
+              <Input value={cta} onChange={(e) => setCta(e.target.value)} placeholder="Pasang Iklan" className="mt-1" />
+            </div>
+            <div>
+              <Label className="text-xs">Tujuan Tombol</Label>
+              <select
+                value={link}
+                onChange={(e) => setLink(e.target.value)}
+                className="mt-1 h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
+              >
+                <option value="post">Halaman Pasang Iklan</option>
+                <option value="listings">Halaman Daftar Iklan</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Warna Background (saat tanpa foto)</Label>
+            <select
+              value={gradient}
+              onChange={(e) => setGradient(e.target.value)}
+              className="mt-1 h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
+            >
+              {GRADIENTS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+            </select>
+          </div>
 
-      {/* Banner list */}
-      <div className="space-y-2">
-        {banners.map((b) => (
-          <div key={b.id} className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
-            <Image className="size-5 shrink-0 text-primary" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">{b.title}</p>
-              <p className="text-xs text-muted-foreground">{b.placement} · {b.clicks} klik</p>
+          {/* Photo upload */}
+          <div>
+            <Label className="text-xs">Foto Banner *</Label>
+            <div className="mt-1 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="flex h-20 w-32 shrink-0 items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-border bg-secondary/50 hover:border-primary"
+              >
+                {imageUrl ? (
+                  <img src={imageUrl} alt="Preview" className="size-full object-cover" />
+                ) : uploading ? (
+                  <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                ) : (
+                  <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                    <ImageIcon className="size-6" />
+                    <span className="text-[10px]">Upload</span>
+                  </div>
+                )}
+              </button>
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="text-xs text-muted-foreground">Klik kotak untuk memilih foto. Disarankan rasio 16:9 (mis. 1600×900).</p>
+                {imageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setImageUrl("")}
+                    className="text-xs font-medium text-destructive hover:underline"
+                  >
+                    Hapus foto
+                  </button>
+                )}
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
+              />
+            </div>
+          </div>
+
+          {/* Active toggle */}
+          <label className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div>
+              <p className="text-sm font-medium">Tampilkan banner ini</p>
+              <p className="text-xs text-muted-foreground">Jika nonaktif, beranda menampilkan banner bawaan</p>
             </div>
             <button
-              onClick={() => toggleStatus(b.id)}
-              className="shrink-0"
-              title="Toggle aktif"
+              type="button"
+              role="switch"
+              aria-checked={active}
+              onClick={() => setActive(!active)}
+              className={cn("relative h-6 w-11 shrink-0 rounded-full transition", active ? "bg-primary" : "bg-muted")}
             >
-              <Badge className={b.status === "active" ? "bg-orange-100 text-orange-700" : "bg-amber-100 text-amber-700"}>
-                {b.status === "active" ? tr("admActive2") : tr("admScheduled")}
-              </Badge>
+              <span className={cn("absolute top-0.5 size-5 rounded-full bg-white shadow transition", active ? "left-[22px]" : "left-0.5")} />
             </button>
-            <button
-              onClick={() => deleteBanner(b.id)}
-              className="grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-              aria-label="Hapus banner"
-            >
-              <Trash2 className="size-3.5" />
-            </button>
+          </label>
+
+          <Button onClick={handleSave} disabled={saveMutation.isPending || uploading} className="w-full">
+            {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+            {saveMutation.isPending ? "Menyimpan..." : "Simpan Banner"}
+          </Button>
+        </div>
+
+        {/* ===== LIVE PREVIEW ===== */}
+        <div className="space-y-2">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pratinjau (Preview)</Label>
+          <div className={cn(
+            "relative overflow-hidden rounded-2xl bg-gradient-to-r p-6 text-white shadow-xl",
+            gradient
+          )}>
+            {imageUrl && (
+              <img src={imageUrl} alt="" className="absolute inset-0 size-full object-cover" />
+            )}
+            <div className="absolute inset-0 bg-black/30" />
+            <div className="relative flex flex-col items-start gap-3">
+              <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wider backdrop-blur">
+                Promo
+              </span>
+              <h3 className="text-xl font-extrabold leading-tight drop-shadow-sm sm:text-2xl">
+                {title || "Judul Banner Anda"}
+              </h3>
+              {desc && (
+                <p className="max-w-md text-sm text-white/90">{desc}</p>
+              )}
+              <span className="mt-1 inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-black shadow-lg">
+                {cta || "Pasang Iklan"}
+              </span>
+            </div>
           </div>
-        ))}
-        {banners.length === 0 && (
-          <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            {tr("admNoBanner")}
-          </div>
-        )}
+          <p className="text-center text-[11px] text-muted-foreground">
+            Inilah yang akan tampil di beranda setelah disimpan.
+          </p>
+        </div>
       </div>
-      <p className="text-center text-xs text-muted-foreground">Kelola banner promosi yang tampil di beranda & halaman kategori.</p>
     </div>
   );
 }
