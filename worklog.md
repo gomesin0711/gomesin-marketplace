@@ -2276,3 +2276,27 @@ Stage Summary:
 - Shortcut question chips added above the input bar for buyer→seller chats — 7 common questions, click to fill the input.
 - Backend: no schema changes needed (listingId + listingTitle already in Message model; image/price/slug/title derived from Listing table via listingId lookup). Works on both local (Prisma+SQLite) and production (Supabase) without migrations.
 - Both servers running: Next.js 3000 (HTTP 200), chat-service 3003.
+
+---
+Task ID: 25
+Agent: Main (Z.ai Code)
+Task: Fix shortcut questions — receiver shouldn't see them; shortcut should only appear once
+
+Work Log:
+- Analyzed the issue: shortcut question chips (e.g. "Apakah masih tersedia?") were showing for BOTH sender (buyer) and receiver (seller), and they appeared permanently (every time the chat was open). User wanted: (1) shortcuts NOT on receiver side, (2) shortcuts only appear once (before first message).
+- Root cause: the render condition was `{bubbleListingTitle && (...)}` — this shows chips whenever a listing context exists, for both parties, permanently.
+- Fix: Changed condition to `{bubbleListingTitle && convo.length === 0 && (...)}` in profile.tsx (line ~2141). This ensures chips only render when there are zero messages in the conversation.
+- Logic: Buyer opens fresh chat from ad → no messages → chips show once. Buyer sends a message → convo.length > 0 → chips disappear forever. Receiver (seller) only sees the conversation after a message exists → convo.length > 0 → chips never show for receiver.
+
+Verification (Agent Browser — buyer=Admin, seller=udin):
+- Buyer (Admin) logged in → navigated to udin's listing → clicked "Chat Penjual" → chat opened with listing bubble (image + title + price + "Lihat Iklan" link). Existing conversation had messages from prior testing → shortcut chips correctly NOT shown (convo.length > 0). DOM: chipCount=0.
+- Seller (udin) logged in → opened Chat → clicked conversation with Admin → listing bubble visible (hasLihatIklan=true, hasRp=true in DOM) with messages visible. Shortcut chips NOT shown. DOM: chipCount=0. VLM confirmed: "No shortcut quick-reply question chips above the text input bar."
+- No console errors, no runtime errors. All API calls returned 200.
+- Lint: 0 new errors (6 pre-existing in .cjs files only).
+
+Stage Summary:
+- Files modified (1): src/components/gomesin/views/profile.tsx (1 line — condition change)
+- Shortcut question chips now only appear ONCE: before the first message is sent in a buyer→seller chat initiated from an ad page.
+- Receiver (seller) never sees the shortcut chips — they only see the conversation after a message exists.
+- Listing bubble (image + title + price + "Lihat Iklan" link) remains visible to both sender and receiver at all times (unchanged from Task 24).
+- Both servers running: Next.js 3000 (HTTP 200), chat-service 3003.

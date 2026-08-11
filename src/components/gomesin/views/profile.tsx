@@ -2135,8 +2135,10 @@ export function ProfileView() {
                             className="hidden"
                           />
                           {/* Shortcut questions — quick-tap chips for buyer→seller chats.
-                              Only shown when the conversation has a listing context. */}
-                          {bubbleListingTitle && (
+                              Only shown ONCE: before the first message is sent.
+                              The receiver (seller) only sees the conversation after a
+                              message exists, so the shortcuts never appear for them. */}
+                          {bubbleListingTitle && convo.length === 0 && (
                             <div className="flex gap-1.5 overflow-x-auto border-t border-[#E5E7EB] bg-[#F5F7F6] px-2 py-2 no-scrollbar md:px-3">
                               {[
                                 "Apakah masih tersedia?",
