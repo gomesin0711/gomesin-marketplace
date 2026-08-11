@@ -421,6 +421,35 @@ export function Header() {
               </button>
             )}
             <NotificationBell align="end" />
+            {/* Seller logo / avatar — top-right corner on mobile (matches desktop behavior) */}
+            {mounted && user ? (
+              <button
+                onClick={goToProfile}
+                className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full bg-primary/10 ring-1 ring-border hover:ring-primary/40"
+                aria-label="Akun Saya"
+              >
+                {user.logoImage ? (
+                  <img
+                    src={user.logoImage}
+                    alt=""
+                    className="size-full object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                ) : (
+                  <span className="text-[10px] font-bold text-primary">
+                    {user.name.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase()}
+                  </span>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={goToLogin}
+                className="grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary ring-1 ring-border hover:ring-primary/40"
+                aria-label="Masuk atau Daftar"
+              >
+                <User className="size-4" />
+              </button>
+            )}
           </div>
         </div>
 
