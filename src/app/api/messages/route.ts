@@ -22,6 +22,32 @@ function toISO(d: any): string {
   return d instanceof Date ? d.toISOString() : new Date(d).toISOString();
 }
 
+// ---------------------------------------------------------------------------
+// Soft-delete via "marker" messages
+// ---------------------------------------------------------------------------
+// When a user "deletes" or "clears" a chat with a partner, we insert a
+// special marker Message row (senderId=deleter, receiverId=partner,
+// content=CHAT_DELETED_MARKER) instead of hard-deleting real messages.
+//
+// When GETting messages:
+//   - For each conversation, find the latest marker SENT BY the current user.
+//   - Hide all messages with createdAt <= that marker's createdAt (i.e., the
+//     user's view is "cleared" of older messages).
+//   - Hide ALL marker messages from display (they are internal bookkeeping).
+//
+// This way:
+//   - When A deletes the chat, only A's view is affected. B still sees all
+//     real messages (B's perspective has no marker SENT BY B, so no time
+//     filtering; A's marker is filtered out from B's display).
+//   - If B sends a new message after A's deletion, A sees it (because the
+//     new message's createdAt > A's marker's createdAt).
+//   - Both A and B can independently delete their own views without
+//     affecting each other.
+// ---------------------------------------------------------------------------
+const CHAT_DELETED_MARKER = "__SYSTEM__:CHAT_DELETED";
+const isMarker = (content: string | null | undefined): boolean =>
+  !!content && content === CHAT_DELETED_MARKER;
+
 // GET /api/messages?userId=<id>
 export async function GET(req: NextRequest) {
   const userId = req.nextUrl.searchParams.get("userId");
@@ -70,35 +96,34 @@ async function getMessagesPrisma(userId: string) {
   for (const m of messages) {
     const isSender = m.senderId === userId;
     const partnerId = isSender ? m.receiverId : m.senderId;
-    const partnerUser = getUser(partnerId);
-    const senderUser = getUser(m.senderId);
-    const receiverUser = getUser(m.receiverId);
     const key = partnerId;
 
     if (m.listingId) listingIds.add(m.listingId);
 
     if (!convMap.has(key)) {
       convMap.set(key, {
-        id: key, partnerId,
-        name: partnerUser?.name || 'Unknown',
-        partnerImage: partnerUser?.logoImage || null,
-        lastMessage: m.content,
-        lastTime: toISO(m.createdAt),
-        unread: 0,
-        listingId: m.listingId || null,
-        listingTitle: m.listingTitle || null,
+        id: key,
+        partnerId,
+        name: (getUser(partnerId) as any)?.name || "Unknown",
+        partnerImage: (getUser(partnerId) as any)?.logoImage || null,
         messages: [],
       });
     }
 
     const conv = convMap.get(key)!;
     conv.messages.push({
-      id: m.id, content: m.content, image: m.image || null, sent: isSender, read: m.read,
+      id: m.id,
+      content: m.content,
+      image: m.image || null,
+      sent: isSender,
+      read: m.read,
       createdAt: toISO(m.createdAt),
-      senderName: isSender ? (senderUser as any)?.name : (receiverUser as any)?.name,
-      senderImage: isSender ? (senderUser as any)?.logoImage : (receiverUser as any)?.logoImage,
+      listingId: m.listingId || null,
+      listingTitle: m.listingTitle || null,
+      _isMarker: isMarker(m.content),
+      _senderId: m.senderId,
+      _receiverId: m.receiverId,
     });
-    if (!isSender && !m.read) conv.unread += 1;
   }
 
   const listings = listingIds.size > 0
@@ -106,11 +131,41 @@ async function getMessagesPrisma(userId: string) {
     : [];
   const listingMap = new Map(listings.map((l) => [l.id, l]));
 
-  const conversations = Array.from(convMap.values()).map((c: any) => {
+  const conversations: any[] = [];
+  for (const c of Array.from(convMap.values())) {
+    // --- Soft-delete filtering ---
+    // Find the latest marker SENT BY the current user (sent === true).
+    // (Messages are desc by createdAt, so markers[0] is the latest marker.)
+    const myMarkers = c.messages.filter((m: any) => m._isMarker && m.sent);
+    const latestMarkerAt = myMarkers.length > 0
+      ? new Date(myMarkers[0].createdAt).getTime()
+      : null;
+
+    // Hide messages older than or equal to the latest marker (the marker
+    // itself is also hidden by this filter, since its createdAt equals
+    // latestMarkerAt).
+    let visible: any[] = latestMarkerAt !== null
+      ? c.messages.filter((m: any) =>
+          new Date(m.createdAt).getTime() > (latestMarkerAt as number)
+        )
+      : c.messages.slice();
+
+    // Also hide ALL marker messages from display (covers the partner's
+    // markers, which are not used for time-filtering but should not be
+    // shown to the user either).
+    visible = visible.filter((m: any) => !m._isMarker);
+
+    // Skip the conversation entirely if no visible messages remain.
+    if (visible.length === 0) continue;
+
+    // Compute conversation-level fields from the newest visible message.
+    const newest = visible[0];
     let listingImage: string | null = null;
     let listingPrice: number | null = null;
-    if (c.listingId && listingMap.has(c.listingId)) {
-      const l = listingMap.get(c.listingId);
+    const listingId = newest.listingId || null;
+    const listingTitle = newest.listingTitle || null;
+    if (listingId && listingMap.has(listingId)) {
+      const l = listingMap.get(listingId);
       const lp = l?.price;
       listingPrice = typeof lp === "bigint" ? Number(lp) : lp ?? null;
       try {
@@ -118,9 +173,39 @@ async function getMessagesPrisma(userId: string) {
         if (Array.isArray(imgs) && imgs.length > 0) listingImage = imgs[0];
       } catch {}
     }
-    delete c.listingId;
-    return { ...c, listingImage, listingPrice };
-  });
+
+    // unread: count visible messages received but not read.
+    let unread = 0;
+    const formattedMessages = visible.map((m: any) => {
+      if (!m.sent && !m.read) unread += 1;
+      const senderU = getUser(m._senderId) as any;
+      const receiverU = getUser(m._receiverId) as any;
+      return {
+        id: m.id,
+        content: m.content,
+        image: m.image,
+        sent: m.sent,
+        read: m.read,
+        createdAt: m.createdAt,
+        senderName: m.sent ? senderU?.name : receiverU?.name,
+        senderImage: m.sent ? senderU?.logoImage : receiverU?.logoImage,
+      };
+    });
+
+    conversations.push({
+      id: c.id,
+      partnerId: c.partnerId,
+      name: c.name,
+      partnerImage: c.partnerImage,
+      lastMessage: newest.content,
+      lastTime: newest.createdAt,
+      unread,
+      listingTitle,
+      listingImage,
+      listingPrice,
+      messages: formattedMessages,
+    });
+  }
 
   conversations.sort((a, b) => new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime());
   return { conversations };
@@ -153,33 +238,32 @@ async function getMessagesSupabase(userId: string) {
   for (const m of messages || []) {
     const isSender = m.senderId === userId;
     const partnerId = isSender ? m.receiverId : m.senderId;
-    const partnerUser = getUser(partnerId);
-    const senderUser = getUser(m.senderId);
-    const receiverUser = getUser(m.receiverId);
     const key = partnerId;
     if (m.listingId) listingIds.add(m.listingId);
 
     if (!convMap.has(key)) {
       convMap.set(key, {
-        id: key, partnerId,
-        name: partnerUser?.name || 'Unknown',
-        partnerImage: partnerUser?.logoImage || null,
-        lastMessage: m.content,
-        lastTime: toISO(m.createdAt),
-        unread: 0,
-        listingId: m.listingId || null,
-        listingTitle: m.listingTitle || null,
+        id: key,
+        partnerId,
+        name: getUser(partnerId)?.name || "Unknown",
+        partnerImage: getUser(partnerId)?.logoImage || null,
         messages: [],
       });
     }
     const conv = convMap.get(key)!;
     conv.messages.push({
-      id: m.id, content: m.content, image: m.image || null, sent: isSender, read: m.read,
+      id: m.id,
+      content: m.content,
+      image: m.image || null,
+      sent: isSender,
+      read: m.read,
       createdAt: toISO(m.createdAt),
-      senderName: isSender ? senderUser?.name : receiverUser?.name,
-      senderImage: isSender ? senderUser?.logoImage : receiverUser?.logoImage,
+      listingId: m.listingId || null,
+      listingTitle: m.listingTitle || null,
+      _isMarker: isMarker(m.content),
+      _senderId: m.senderId,
+      _receiverId: m.receiverId,
     });
-    if (!isSender && !m.read) conv.unread += 1;
   }
 
   let listingMap: Record<string, any> = {};
@@ -188,20 +272,69 @@ async function getMessagesSupabase(userId: string) {
     for (const l of listings || []) listingMap[l.id] = l;
   }
 
-  const conversations = Array.from(convMap.values()).map((c: any) => {
+  const conversations: any[] = [];
+  for (const c of Array.from(convMap.values())) {
+    // --- Soft-delete filtering (same as Prisma path) ---
+    const myMarkers = c.messages.filter((m: any) => m._isMarker && m.sent);
+    const latestMarkerAt = myMarkers.length > 0
+      ? new Date(myMarkers[0].createdAt).getTime()
+      : null;
+
+    let visible: any[] = latestMarkerAt !== null
+      ? c.messages.filter((m: any) =>
+          new Date(m.createdAt).getTime() > (latestMarkerAt as number)
+        )
+      : c.messages.slice();
+
+    visible = visible.filter((m: any) => !m._isMarker);
+
+    if (visible.length === 0) continue;
+
+    const newest = visible[0];
     let listingImage: string | null = null;
     let listingPrice: number | null = null;
-    if (c.listingId && listingMap[c.listingId]) {
-      const l = listingMap[c.listingId];
+    const listingId = newest.listingId || null;
+    const listingTitle = newest.listingTitle || null;
+    if (listingId && listingMap[listingId]) {
+      const l = listingMap[listingId];
       listingPrice = typeof l.price === "string" ? Number(l.price) : l.price ?? null;
       try {
         const imgs = typeof l.images === "string" ? JSON.parse(l.images || "[]") : (l.images || []);
         if (Array.isArray(imgs) && imgs.length > 0) listingImage = imgs[0];
       } catch {}
     }
-    delete c.listingId;
-    return { ...c, listingImage, listingPrice };
-  });
+
+    let unread = 0;
+    const formattedMessages = visible.map((m: any) => {
+      if (!m.sent && !m.read) unread += 1;
+      const senderU = getUser(m._senderId);
+      const receiverU = getUser(m._receiverId);
+      return {
+        id: m.id,
+        content: m.content,
+        image: m.image,
+        sent: m.sent,
+        read: m.read,
+        createdAt: m.createdAt,
+        senderName: m.sent ? senderU?.name : receiverU?.name,
+        senderImage: m.sent ? senderU?.logoImage : receiverU?.logoImage,
+      };
+    });
+
+    conversations.push({
+      id: c.id,
+      partnerId: c.partnerId,
+      name: c.name,
+      partnerImage: c.partnerImage,
+      lastMessage: newest.content,
+      lastTime: newest.createdAt,
+      unread,
+      listingTitle,
+      listingImage,
+      listingPrice,
+      messages: formattedMessages,
+    });
+  }
 
   conversations.sort((a, b) => new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime());
   return { conversations };
@@ -316,10 +449,21 @@ export async function PATCH(req: NextRequest) {
 }
 
 // DELETE /api/messages
+//
+// Two modes:
+//   1. Single-message delete (body.messageId set): hard-deletes the single
+//      message row. (Used by per-message delete — currently the frontend
+//      only does this locally, but the endpoint is kept for compatibility.)
+//   2. Conversation-level "delete"/"clear" (body.userId + body.partnerId):
+//      SOFT-DELETE only — inserts a marker message instead of deleting real
+//      messages. This ensures the OTHER party's copy of the conversation is
+//      preserved. The GET handler filters out messages up to the user's
+//      latest marker. Both "Clear chat" and "Delete chat" use this mode.
 export async function DELETE(req: NextRequest) {
   try {
     const body = await req.json();
 
+    // --- Mode 1: single-message hard delete ---
     if (body.messageId) {
       if (isDbAvailable()) {
         try {
@@ -335,37 +479,52 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ ok: true, deleted: 1 });
     }
 
-    const { userId, partnerId, listingTitle } = body;
+    // --- Mode 2: conversation-level soft delete (marker message) ---
+    const { userId, partnerId } = body;
     if (!userId || !partnerId) {
       return NextResponse.json({ error: "userId dan partnerId wajib" }, { status: 400 });
+    }
+    if (userId === partnerId) {
+      return NextResponse.json({ error: "Tidak bisa hapus chat dengan diri sendiri" }, { status: 400 });
     }
 
     if (isDbAvailable()) {
       try {
-        const result = await db.message.deleteMany({
-          where: {
-            OR: [
-              { senderId: userId, receiverId: partnerId },
-              { senderId: partnerId, receiverId: userId },
-            ],
-            ...(listingTitle ? { listingTitle } : {}),
+        const marker = await db.message.create({
+          data: {
+            senderId: userId,
+            receiverId: partnerId,
+            content: CHAT_DELETED_MARKER,
+            image: null,
+            listingId: null,
+            listingTitle: null,
           },
         });
-        return NextResponse.json({ ok: true, deleted: result.count });
+        return NextResponse.json({ ok: true, softDeleted: true, markerId: marker.id });
       } catch (prismaErr) {
-        console.error("[messages] Prisma DELETE(many) error, trying Supabase:", prismaErr);
+        console.error("[messages] Prisma DELETE(soft) error, trying Supabase:", prismaErr);
       }
     }
 
     const supabase = await getSupabase();
-    let query = supabase
+    const { data: marker, error } = await supabase
       .from("Message")
-      .delete()
-      .or(`and(senderId.eq.${userId},receiverId.eq.${partnerId}),and(senderId.eq.${partnerId},receiverId.eq.${userId})`);
-    if (listingTitle) query = query.eq("listingTitle", listingTitle);
-    const { error } = await query;
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true, deleted: -1 });
+      .insert({
+        senderId: userId,
+        receiverId: partnerId,
+        content: CHAT_DELETED_MARKER,
+        image: null,
+        listingId: null,
+        listingTitle: null,
+        read: false,
+      })
+      .select("id")
+      .single();
+    if (error) {
+      console.error("[messages] Supabase DELETE(soft) error:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, softDeleted: true, markerId: marker?.id });
   } catch (e: any) {
     console.error("DELETE /api/messages error", e);
     return NextResponse.json({ error: e.message }, { status: 500 });

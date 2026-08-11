@@ -1999,3 +1999,80 @@ Stage Summary:
 - Vercel production: https://gomesin.vercel.app (build 29s, total 51s)
 - Browser-verified: listing image visible in chat bubble on both mobile + desktop, chat input visible without scrolling, no console errors.
 - Root cause of missing image: messages didn't store listingId, so API couldn't look up listing image. Fixed by passing listing info via listingOverride (from the current listing the user clicked) rather than relying on the API's conversation-level listing data.
+
+---
+Task ID: 20
+Agent: Main (Z.ai Code)
+Task: apabila akun a chat akun b dan akun a delete akun b, maka akun b tetap ada chat akun a. begitu juga sebaliknya. check and fix. deploy (chat deletion isolation — when one party deletes a chat, the other party's copy is preserved; deploy to production)
+
+Work Log:
+- Read previous worklog (Tasks 1–21 + 15-chat-image-layout) and confirmed the codebase state: chat deletion currently uses a HARD delete via `DELETE /api/messages` with `{userId, partnerId, listingTitle}`, which calls `db.message.deleteMany(...)` (Prisma) or `supabase.from("Message").delete()` (Supabase). This removes the message rows from the DB entirely — affecting BOTH parties. That is the bug.
+- Investigated the frontend (profile.tsx): `handleClearChat` (line 495) and `handleDeleteChat` (line 511) both POST to `DELETE /api/messages` with `{userId, partnerId, listingTitle}`. The per-message `deleteMessage` (line 932) is local-only (no API call). So only the conversation-level delete needs fixing.
+- Investigated the chat-service (mini-services/chat-service/index.ts): no delete logic — all deletion goes through the REST DELETE endpoint.
+
+Design decision — soft-delete via "marker" messages:
+- Instead of deleting real Message rows, insert a special marker Message row with content = `__SYSTEM__:CHAT_DELETED`, senderId = deleter, receiverId = partner.
+- The GET handler filters messages based on the latest marker SENT BY the current user:
+  - For the deleter (A): find A's latest marker → hide all messages with createdAt <= marker.createdAt. The conversation disappears from A's list if no visible messages remain.
+  - For the non-deleter (B): B has no marker SENT BY B, so no time-filtering happens. A's marker is filtered out from B's display (markers are internal bookkeeping, never shown).
+- This approach works on BOTH local dev (Prisma + SQLite) and production (Supabase REST) WITHOUT requiring any DDL/migration — no new tables, no new columns. The marker is just a regular Message row with a special content string.
+- Bonus: if the non-deleter (B) sends a NEW message after A's deletion, that message has createdAt > A's marker.createdAt, so A sees it (the conversation re-appears in A's list with just the new message).
+
+Implementation (src/app/api/messages/route.ts — full rewrite):
+- Added `CHAT_DELETED_MARKER = "__SYSTEM__:CHAT_DELETED"` constant + `isMarker()` helper.
+- GET handler (both Prisma `getMessagesPrisma` and Supabase `getMessagesSupabase` paths):
+  - Added `_isMarker`, `_senderId`, `_receiverId` internal fields to each message during grouping.
+  - After grouping by partnerId, for each conversation:
+    1. Find `myMarkers` = markers where `sent === true` (sent BY the current user). Messages are desc by createdAt, so `myMarkers[0]` is the latest marker.
+    2. If a latest marker exists, filter `visible = messages.filter(m => m.createdAt > latestMarker.createdAt)`.
+    3. Remove ALL markers from display: `visible = visible.filter(m => !m._isMarker)`.
+    4. If `visible.length === 0`, skip the conversation entirely (don't include it in the response).
+    5. Compute conversation-level fields (lastMessage, lastTime, unread, listingTitle, listingImage, listingPrice) from the newest VISIBLE message (not the marker).
+  - Strip internal fields (`_isMarker`, `_senderId`, `_receiverId`) before returning.
+- DELETE handler:
+  - Mode 1 (body.messageId set): single-message hard delete — UNCHANGED. Still calls `db.message.delete()` / `supabase.from("Message").delete().eq("id", ...)`. (Used by per-message delete; the frontend currently does this locally only, but the endpoint is kept for compatibility.)
+  - Mode 2 (body.userId + body.partnerId set, no messageId): SOFT-DELETE only. Inserts a marker Message row: `{senderId: userId, receiverId: partnerId, content: CHAT_DELETED_MARKER, image: null, listingId: null, listingTitle: null}`. Returns `{ok: true, softDeleted: true, markerId}`. Does NOT delete any real messages.
+  - The `listingTitle` field in the request body is now IGNORED for Mode 2 (the soft-delete affects the entire conversation with partnerId, not per-listing).
+
+Frontend (src/components/gomesin/views/profile.tsx):
+- NO CHANGES NEEDED. The existing `handleClearChat` and `handleDeleteChat` already POST `{userId, partnerId, listingTitle}` to `DELETE /api/messages`. The new handler accepts userId + partnerId (ignores listingTitle) and performs the soft-delete. The frontend's `queryClient.invalidateQueries(["messages"])` triggers a refetch which returns the filtered view (conversation gone for the deleter, preserved for the non-deleter).
+- The empty state ("Belum ada pesan") is already handled at line 1357-1365.
+
+Lint: 17 pre-existing problems (6 errors in .cjs + 11 warnings) — 0 new errors introduced.
+
+curl verification (local dev, Prisma + SQLite):
+- Seeded 3 messages admin ↔ udin.
+- Both users saw 4 messages (1 pre-existing "hehe" + 3 new).
+- User A (cmscg68u50000suwwwmzkqw46) deleted the chat via `DELETE /api/messages {userId: A, partnerId: B}`.
+  - A's view: 0 conversations (cleared). ✓
+  - B's view: 1 conversation with all 4 original messages preserved. ✓
+- B sent a new message to A after A's deletion.
+  - A's view: 1 conversation with 1 message (B's new message). ✓
+  - B's view: 1 conversation with 5 messages (4 original + 1 new). ✓
+- B also deleted the chat via `DELETE /api/messages {userId: B, partnerId: A}`.
+  - B's view: 0 conversations (cleared). ✓
+  - A's view: 1 conversation with B's new message still visible (not affected by B's deletion). ✓
+
+Browser verification (Playwright, two parallel sessions):
+- Wrote /home/z/my-project/tests/verify-task20-delete-isolation.py.
+- Seeded a message admin → udin via REST API.
+- Opened two browser contexts (admin session + udin session), both logged in via localStorage `gomesin-store` and navigated to profile → pesan panel.
+- Step 4: Both sessions see the conversation. ✓
+- Step 5: Admin right-clicked the conversation → "Hapus Chat". ✓
+- Step 6: Admin's view cleared (0 conversations, "Belum ada pesan" empty state visible). ✓
+- Step 7: Udin's view reloaded — conversation STILL visible with admin's message preserved. ✓
+- Step 8: Seeded new message udin → admin.
+- Step 9: Admin reloaded — sees the new message from udin (deletion doesn't block new messages). ✓
+- Console errors: 0 in both sessions. ✓
+- 8 screenshots saved to /home/z/my-project/upload/task20-delete-isolation-verify/.
+
+Deployment:
+- Committed and pushed to GitHub (origin/main). Vercel auto-deploys from GitHub.
+
+Stage Summary:
+- Files modified (1): src/app/api/messages/route.ts — full rewrite of GET (adds marker filtering for soft-delete) and DELETE (Mode 2 now inserts a marker instead of hard-deleting). Mode 1 (single-message) unchanged.
+- NO frontend changes needed — existing handleClearChat/handleDeleteChat calls work with the new soft-delete behavior.
+- NO Prisma schema changes — markers are stored as regular Message rows with a special content string. No DDL/migration needed → works on both local (Prisma+SQLite) and production (Supabase REST) without any Supabase dashboard changes.
+- Lint: 17 pre-existing problems — 0 new errors.
+- Browser-verified: A deletes → A cleared, B preserved. B deletes → B cleared, A preserved. New message after deletion → visible to the deleter. No console errors.
+- Soft-delete semantics: each party can independently "clear" their own view of the conversation without affecting the other party. The other party's messages are NEVER deleted from the DB. If either party sends a new message after a deletion, it becomes visible to the other party (including the deleter, since the new message's createdAt > the marker's createdAt).
