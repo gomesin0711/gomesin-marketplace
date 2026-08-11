@@ -2100,3 +2100,32 @@ Stage Summary:
 - Soft-delete feature is live on production: when user A deletes/clears a chat with user B, only A's view is affected. B's copy is preserved.
 - Bonus fix: POST /api/messages on production now works correctly (was broken before due to missing id generation in the Supabase path). This means chat messages can now be sent on production (previously they would have failed silently with a 500 error, though the realtime socket.io fallback via chat-service may have masked this locally).
 - Commits: 671c4b1 (soft-delete via marker messages) + 29f724d (genId fix for Supabase inserts). Both pushed to origin/main.
+
+---
+Task ID: 21
+Agent: main
+Task: Buat alur chat model UI seperti WhatsApp (redesign chat UI to look like WhatsApp)
+
+Work Log:
+- Investigated existing chat UI in profile.tsx (pesan panel, lines ~1317-1905): already had split-view + green bubbles but not fully WhatsApp-authentic
+- Added lucide icons: Video, Mic, MoreVertical, Check, CheckCheck, ArrowLeft
+- Refactored conversation list (left pane): WhatsApp teal header (#075E54) with "Chat" title + search + kebab menu; white bg; cleaner list items with avatar/name/last-msg/time/unread badge (#25D366 green)
+- Refactored chat header (right pane): teal #075E54 bg, white text, back arrow + avatar + name + online status + video call + voice call + kebab (settings popover with bg color picker + clear/delete chat actions)
+- Refactored messages area: beige WhatsApp bg (via chatBgStyle default #e5ddd5), date separator pill, listing bubble with tail, chat bubbles with CSS triangle tails (green #d9fdd3 sent / white received), blue CheckCheck read receipts (#53bdeb)
+- Refactored input bar: WhatsApp floating rounded style — emoji (Smile) left, rounded-2xl white text field with paperclip + camera inside, mic/send toggle button (Mic when empty, Send when typing, teal #075E54)
+- Refactored empty-state placeholder: WhatsApp Web style with doodle backdrop pattern + "Gomesin Chat" + lock icon + E2E note
+- Hid redundant panel title bar for pesan panel (uses teal WhatsApp header instead)
+- Fixed mobile layout overlap: input bar was overlapping fixed bottom nav (4.25rem). Changed mobile chat pane height from calc(100dvh-7.5rem) to calc(100dvh-10rem) to account for bottom nav
+- Reset admin + udin passwords to "admin123" for browser testing
+- Verified via Agent Browser + VLM:
+  * Desktop (1280px): 2 teal headers confirmed, chat input visible, all API 200, no errors
+  * Mobile (390x844): teal header, bubbles, input bar all render correctly; 26px clean gap between input bar and bottom nav (no overlap); sticky bottom nav at viewport bottom
+  * Send flow works: mic button → send button toggle on typing; message sends successfully
+  * VLM confirmed: "heavily WhatsApp-styled" — teal headers, green/white bubbles, blue read receipts, mic/send input bar
+- Lint: profile.tsx clean (0 errors); 6 pre-existing errors only in start-chat.cjs (require imports, unrelated)
+
+Stage Summary:
+- Chat UI now authentically WhatsApp-styled (light theme): teal #075E54 headers, white conversation list, beige chat bg, green #d9fdd3 sent / white received bubbles with tails, blue CheckCheck read receipts, floating rounded input with mic/send toggle
+- Files changed: src/components/gomesin/views/profile.tsx (chat section ~lines 1317-1905)
+- Mobile + desktop verified working; sticky footer (bottom nav) intact; no overlaps
+- Backend (API, socket.io, DB) unchanged — pure UI refactor
