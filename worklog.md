@@ -2300,3 +2300,21 @@ Stage Summary:
 - Receiver (seller) never sees the shortcut chips — they only see the conversation after a message exists.
 - Listing bubble (image + title + price + "Lihat Iklan" link) remains visible to both sender and receiver at all times (unchanged from Task 24).
 - Both servers running: Next.js 3000 (HTTP 200), chat-service 3003.
+
+---
+Task ID: 26
+Agent: Main (Z.ai Code)
+Task: Deploy to https://gomesin.vercel.app
+
+Work Log:
+- Used Vercel CLI with provided token ([REDACTED_TOKEN])
+- Verified token: authenticated as gomesin0711-1596
+- Ran `vercel --prod --yes` — build completed in 27s, deployed in 48s total
+- All 25 API routes built as serverless functions
+- Aliased to https://gomesin.vercel.app
+
+Stage Summary:
+- Production deployment: SUCCESS
+- URL: https://gomesin.vercel.app (HTTP 200, 0.84s response)
+- All fixes from Task 25 (shortcut questions only once, not on receiver) now live in production
+- Both servers running: Next.js 3000 (local dev), Vercel production (gomesin.vercel.app), chat-service 3003
