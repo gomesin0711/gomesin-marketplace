@@ -2202,6 +2202,54 @@ export function ProfileView() {
                               </Fragment>
                               );
                             })}
+                            {/* Existing conversation + listing override for a DIFFERENT
+                                listing than the last message — show the new listing's
+                                bubble at the BOTTOM (just above the input) so the user
+                                sees which ad they're about to discuss. This covers the
+                                case where the user clicks "Chat Penjual" on a listing
+                                but already has a prior chat with the same seller about
+                                a different ad. */}
+                            {convo.length > 0 && bubbleListingTitle && (() => {
+                              const lastMsgListingId = convo[convo.length - 1]?.listingId || null;
+                              const overrideListingId = override?.listingId ?? conv.listingId ?? null;
+                              const isDifferentListing = !!overrideListingId && overrideListingId !== lastMsgListingId;
+                              if (!isDifferentListing) return null;
+                              return (
+                                <div className="flex justify-start pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => { if (bubbleListingSlug) goToDetail(bubbleListingSlug); }}
+                                    className="relative max-w-[75%] overflow-hidden rounded-lg bg-white text-left shadow-sm ring-2 ring-[#16A34A]/30 transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40"
+                                    title={bubbleListingSlug ? "Buka iklan" : undefined}
+                                  >
+                                    <span className="absolute -left-1.5 top-0 h-3 w-3 overflow-hidden" aria-hidden>
+                                      <span className="absolute left-0 top-0 h-3 w-3 rounded-tr-sm bg-white" />
+                                    </span>
+                                    {bubbleListingImage ? (
+                                      <img src={proxyUrl(bubbleListingImage)} alt={bubbleListingTitle} className="max-h-44 w-full object-cover" />
+                                    ) : (
+                                      <div className="flex h-20 items-center justify-center bg-muted text-muted-foreground">
+                                        <Tag className="size-6" />
+                                      </div>
+                                    )}
+                                    <div className="p-2.5">
+                                      <p className="truncate text-[13px] font-medium text-[#17202A]">{bubbleListingTitle}</p>
+                                      {bubbleListingPrice != null && (
+                                        <p className="text-[13px] font-semibold text-[#16A34A]">Rp {bubbleListingPrice.toLocaleString("id-ID")}</p>
+                                      )}
+                                      <span className="mt-1 flex items-center justify-end gap-1 text-right text-[10px] text-[#6B7280]">
+                                        {bubbleListingSlug && (
+                                          <span className="inline-flex items-center gap-0.5 rounded-full bg-[#DCFCE7] px-1.5 py-0.5 text-[9px] font-semibold text-[#16A34A]">
+                                            <ExternalLink className="size-2.5" /> Lihat Iklan
+                                          </span>
+                                        )}
+                                        {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                                      </span>
+                                    </div>
+                                  </button>
+                                </div>
+                              );
+                            })()}
                             {chatSending && (
                               <div className="flex justify-start">
                                 <div className="relative flex items-center gap-1 rounded-lg bg-white px-3 py-2.5 shadow-sm">
