@@ -2103,15 +2103,18 @@ export function ProfileView() {
                               return (
                               <Fragment key={i}>
                                 {showListingBubble && (
-                                  <div className="flex justify-start">
+                                  <div className={cn("flex", isMe ? "justify-end" : "justify-start")}>
                                     <button
                                       type="button"
                                       onClick={() => { if (c.listingSlug) goToDetail(c.listingSlug); }}
-                                      className="relative max-w-[75%] overflow-hidden rounded-lg bg-white text-left shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40"
+                                      className={cn(
+                                        "relative max-w-[75%] overflow-hidden rounded-lg bg-white text-left shadow-sm ring-1 ring-[#16A34A]/30 transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40",
+                                        isMe ? "ring-[#16A34A]/40" : "ring-[#16A34A]/20"
+                                      )}
                                       title={c.listingSlug ? "Buka iklan" : undefined}
                                     >
-                                      <span className="absolute -left-1.5 top-0 h-3 w-3 overflow-hidden" aria-hidden>
-                                        <span className="absolute left-0 top-0 h-3 w-3 rounded-tr-sm bg-white" />
+                                      <span className={cn("absolute top-0 h-3 w-3 overflow-hidden", isMe ? "-right-1.5" : "-left-1.5")} aria-hidden>
+                                        <span className={cn("absolute top-0 h-3 w-3 bg-white", isMe ? "right-0 rounded-tl-sm" : "left-0 rounded-tr-sm")} />
                                       </span>
                                       {c.listingImage ? (
                                         <img src={proxyUrl(c.listingImage)} alt={c.listingTitle!} className="max-h-44 w-full object-cover" />
