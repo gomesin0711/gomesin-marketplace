@@ -207,6 +207,23 @@ export async function PATCH(
 
         const data: any = {};
 
+        // Boost/upgrade HANYA untuk iklan yang sudah aktif.
+        // Jika iklan belum aktif (draft, pending, rejected, expired, sold, dilanggar),
+        // tolak permintaan upgrade paket.
+        if (pkg) {
+          const isExpiredPkg = existing.status === "active" && !!existing.paymentExpiry && new Date(existing.paymentExpiry) < new Date();
+          if (existing.status !== "active" || existing.violationFlag || isExpiredPkg) {
+            const reason = existing.status === "draft" ? "Iklan belum aktif"
+              : existing.status === "pending" ? "Iklan masih menunggu verifikasi"
+              : existing.status === "rejected" ? "Iklan ditolak"
+              : existing.status === "sold" ? "Iklan sudah terjual"
+              : existing.violationFlag ? "Iklan ditandai melanggar"
+              : isExpiredPkg ? "Masa aktif iklan sudah berakhir"
+              : "Iklan tidak aktif";
+            return NextResponse.json({ error: `Boost/upgrade paket hanya tersedia untuk iklan yang sudah aktif. ${reason}.` }, { status: 400 });
+          }
+        }
+
         // Status change (e.g. mark as sold / un-sold)
         if (status !== undefined && !pkg) {
           if (!['active', 'sold', 'draft', 'pending', 'rejected'].includes(status)) {
@@ -288,6 +305,31 @@ export async function PATCH(
     }
 
     const data: any = {};
+
+    // Boost/upgrade HANYA untuk iklan yang sudah aktif (safety net di sisi server - Supabase).
+    if (pkg) {
+      // Ambil status listing dari Supabase untuk validasi
+      const { data: pkgCheckRow, error: pkgCheckErr } = await supabase
+        .from("Listing")
+        .select("status, paymentExpiry, violationFlag")
+        .eq("slug", slug)
+        .limit(1)
+        .single();
+      if (pkgCheckErr || !pkgCheckRow) {
+        return NextResponse.json({ error: "Iklan tidak ditemukan" }, { status: 404 });
+      }
+      const isExpiredPkg = pkgCheckRow.status === "active" && !!pkgCheckRow.paymentExpiry && new Date(pkgCheckRow.paymentExpiry) < new Date();
+      if (pkgCheckRow.status !== "active" || pkgCheckRow.violationFlag || isExpiredPkg) {
+        const reason = pkgCheckRow.status === "draft" ? "Iklan belum aktif"
+          : pkgCheckRow.status === "pending" ? "Iklan masih menunggu verifikasi"
+          : pkgCheckRow.status === "rejected" ? "Iklan ditolak"
+          : pkgCheckRow.status === "sold" ? "Iklan sudah terjual"
+          : pkgCheckRow.violationFlag ? "Iklan ditandai melanggar"
+          : isExpiredPkg ? "Masa aktif iklan sudah berakhir"
+          : "Iklan tidak aktif";
+        return NextResponse.json({ error: `Boost/upgrade paket hanya tersedia untuk iklan yang sudah aktif. ${reason}.` }, { status: 400 });
+      }
+    }
 
     // Status change (e.g. mark as sold / un-sold)
     if (status !== undefined && !pkg) {

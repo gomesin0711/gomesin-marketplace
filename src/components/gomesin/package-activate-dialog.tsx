@@ -150,6 +150,13 @@ export function PackageActivateDialog({
   const isPending = listing.status === "pending";
   const isSundulDisabled = isPending;
 
+  // Boost/upgrade HANYA untuk iklan yang sudah aktif.
+  // Jika iklan belum aktif (draft, pending, rejected, expired, sold, atau dilanggar),
+  // maka paket boost dinonaktifkan — boost hanya untuk upgrade iklan yang sudah terbit.
+  const isExpired = listing.status === "active" && !!listing.paymentExpiry && new Date(listing.paymentExpiry) < new Date();
+  const isViolation = !!(listing as any).violationFlag;
+  const isBoostDisabled = listing.status !== "active" || isViolation || isExpired;
+
   // Merge DB paket data into PACKAGES (override price/duration/name/originalPrice)
   const packages = PACKAGES.map((p) => {
     const db = paketMap[p.key];
@@ -164,14 +171,37 @@ export function PackageActivateDialog({
   const statusInfo =
     listing.status === "pending"
       ? { color: "bg-amber-500", text: tr("pendingVerification"), icon: Clock }
-      : listing.status === "rejected" || (listing as any).violationFlag
+      : listing.status === "rejected" || isViolation
       ? {
           color: "bg-red-500",
-          text: (listing as any).violationFlag ? tr("violation") : tr("rejected"),
-          icon: (listing as any).violationFlag ? AlertTriangle : XCircle,
+          text: isViolation ? tr("violation") : tr("rejected"),
+          icon: isViolation ? AlertTriangle : XCircle,
         }
-      : { color: "bg-orange-500", text: "Aktif", icon: CheckCircle2 };
+      : listing.status === "draft"
+      ? { color: "bg-slate-400", text: "Belum Aktif", icon: Clock }
+      : listing.status === "sold"
+      ? { color: "bg-emerald-600", text: "Terjual", icon: CheckCircle2 }
+      : isExpired
+      ? { color: "bg-red-500", text: "Non Aktif", icon: AlertTriangle }
+      : { color: "bg-green-500", text: "Aktif", icon: CheckCircle2 };
   const StatusIcon = statusInfo.icon;
+
+  // Pesan alasan kenapa boost dinonaktifkan
+  const boostDisabledReason = isBoostDisabled
+    ? listing.status === "draft"
+      ? "Iklan belum aktif. Aktifkan iklan terlebih dahulu sebelum mengupgrade paket."
+      : listing.status === "pending"
+      ? "Iklan masih menunggu verifikasi. Boost hanya tersedia untuk iklan yang sudah aktif."
+      : listing.status === "rejected"
+      ? "Iklan ditolak. Boost hanya tersedia untuk iklan yang sudah aktif."
+      : listing.status === "sold"
+      ? "Iklan sudah terjual. Boost tidak tersedia untuk iklan terjual."
+      : isViolation
+      ? "Iklan ditandai melanggar. Boost tidak tersedia untuk iklan yang dilanggar."
+      : isExpired
+      ? "Masa aktif iklan sudah berakhir. Perpanjang/aktifkan kembali sebelum mengupgrade paket."
+      : "Boost hanya tersedia untuk iklan yang sudah aktif."
+    : null;
 
   // Current package label for listing summary
   const currentPkgLabel =
@@ -377,12 +407,23 @@ export function PackageActivateDialog({
             {/* RIGHT — paket + metode pembayaran + total + footer */}
             <div className="flex flex-col space-y-3 md:overflow-y-auto md:pl-2">
 
+        {/* Warning banner: boost dinonaktifkan jika iklan belum aktif */}
+        {isBoostDisabled && boostDisabledReason && (
+          <div className="flex items-start gap-2.5 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800">
+            <AlertTriangle className="size-5 shrink-0 text-amber-500" />
+            <div>
+              <p className="text-sm font-bold">Boost Tidak Tersedia</p>
+              <p className="mt-0.5 text-xs leading-relaxed">{boostDisabledReason}</p>
+            </div>
+          </div>
+        )}
+
         {/* Package cards */}
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <div className={cn("grid grid-cols-2 gap-2 lg:grid-cols-4", isBoostDisabled && "pointer-events-none opacity-50")}>
           {packages.map((p) => {
             const isSel = selectedPackage === p.key;
             const PkgIcon = p.icon;
-            const isDisabled = p.key === "sundul" && isSundulDisabled;
+            const isDisabled = (p.key === "sundul" && isSundulDisabled) || isBoostDisabled;
             return (
               <button
                 key={p.key}
@@ -516,11 +557,11 @@ export function PackageActivateDialog({
           <Button
             type="button"
             onClick={handleSubmit}
-            disabled={submitting || (needsPayment && !paymentMethod)}
+            disabled={submitting || (needsPayment && !paymentMethod) || isBoostDisabled}
             className="w-full gap-1.5 bg-primary sm:w-auto"
           >
             {submitting ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-            {submitting ? "Memproses..." : buttonLabel}
+            {submitting ? "Memproses..." : isBoostDisabled ? "Boost Dinonaktifkan" : buttonLabel}
           </Button>
         </div>
             </div>

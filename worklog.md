@@ -2769,3 +2769,46 @@ Stage Summary:
 - Status tab and all its content (Status Saya, Pembaruan Terbaru) completely removed
 - Bookmark import cleaned up
 - Production deployed successfully
+
+---
+Task ID: 36
+Agent: main
+Task: Paket boost hanya aktif untuk upgrade iklan yang sudah aktif. Jika iklan belum aktif, paket boost dinonaktifkan. Boost = upgrade paket saja.
+
+Work Log:
+- Explored boost/package-activate logic: dashboard.tsx (renderGridCard/renderLineCard onClick), package-activate-dialog.tsx, post-ad.tsx, API /api/listings/[slug] PATCH
+- Found dashboard onClick allowed upgrade for BOTH "draft" AND "active" listings — draft should NOT be upgradeable
+- Found dialog had no guard for non-active listings
+- Found backend API had no validation for listing status when pkg provided
+
+Changes made:
+1. **dashboard.tsx** (renderGridCard + renderLineCard):
+   - Removed `l.status === "draft"` trigger from onClick
+   - Now only triggers goToUpgrade when `status === "active" && !violationFlag && !isExpired`
+   - Updated cursor classes accordingly (non-active = cursor-not-allowed opacity-80)
+
+2. **package-activate-dialog.tsx**:
+   - Added `isBoostDisabled` computed: `listing.status !== "active" || isViolation || isExpired`
+   - Added `boostDisabledReason` with specific messages per status (draft/pending/rejected/sold/violation/expired)
+   - Added amber warning banner at top of right column when isBoostDisabled
+   - Package cards grid gets `pointer-events-none opacity-50` when disabled
+   - Submit button disabled when isBoostDisabled, label changes to "Boost Dinonaktifkan"
+   - Improved statusInfo to handle draft/sold/expired statuses
+
+3. **API /api/listings/[slug] PATCH** (Prisma + Supabase paths):
+   - Added server-side validation: when `pkg` is provided, checks existing listing status
+   - Returns 400 with specific reason if listing not active (draft/pending/rejected/sold/violation/expired)
+   - Supabase path fetches status/paymentExpiry/violationFlag for validation before update
+
+Verification:
+- Lint: 6 errors + 11 warnings (all pre-existing, no new issues)
+- Browser test (active listing): upgrade dialog opens, packages selectable, Upgrade button enabled, no warning banner — VLM confirmed
+- API test (draft listing): PATCH with pkg returned 400 "Boost/upgrade paket hanya tersedia untuk iklan yang sudah aktif. Iklan belum aktif."
+- Restored test listing to active status after testing
+- Deployed to production: https://gomesin.vercel.app (Ready in 58s)
+
+Stage Summary:
+- Boost/upgrade package now ONLY available for active listings (status=active, no violation, not expired)
+- Draft, pending, rejected, sold, violation-flagged, and expired listings cannot be upgraded
+- Three layers of protection: frontend dashboard (not clickable), frontend dialog (warning + disabled), backend API (400 rejection)
+- Production deployed successfully

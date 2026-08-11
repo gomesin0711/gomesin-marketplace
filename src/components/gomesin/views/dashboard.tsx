@@ -261,13 +261,13 @@ export function DashboardView() {
       <div
         key={l.id}
         onClick={() => {
-          if (l.status === "draft") goToUpgrade(l.slug);
-          else if (l.status === "active" && !l.violationFlag) goToUpgrade(l.slug);
+          // Boost/upgrade HANYA untuk iklan yang sudah aktif (bukan draft, pending, rejected, expired, sold, atau dilanggar)
+          if (l.status === "active" && !l.violationFlag && !isExpired) goToUpgrade(l.slug);
         }}
         className={cn(
           "group flex flex-col overflow-hidden rounded-xl border bg-card transition sm:border-2",
           lineColor || "border-border",
-          (l.status === "draft" || (l.status === "active" && !l.violationFlag))
+          (l.status === "active" && !l.violationFlag && !isExpired)
             ? "cursor-pointer hover:shadow-lg"
             : "cursor-not-allowed opacity-80"
         )}
@@ -449,12 +449,12 @@ export function DashboardView() {
       <div
         key={l.id}
         onClick={() => {
-          if (l.status === "draft") goToUpgrade(l.slug);
-          else if (l.status === "active" && !l.violationFlag) goToUpgrade(l.slug);
+          // Boost/upgrade HANYA untuk iklan yang sudah aktif (bukan draft, pending, rejected, expired, sold, atau dilanggar)
+          if (l.status === "active" && !l.violationFlag && !isExpired) goToUpgrade(l.slug);
         }}
         className={cn(
           "group flex gap-3 border-b border-border p-3 transition hover:bg-accent/50",
-          (l.status === "draft" || (l.status === "active" && !l.violationFlag))
+          (l.status === "active" && !l.violationFlag && !isExpired)
             ? "cursor-pointer"
             : "cursor-not-allowed opacity-80"
         )}
