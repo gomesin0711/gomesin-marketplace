@@ -88,9 +88,57 @@ export function Header() {
       return res.json();
     },
     enabled: !!user?.id,
-    staleTime: Infinity, // Socket invalidates on new message / read receipt.
+    // Poll every 3 seconds so new messages are detected even WITHOUT
+    // socket.io (e.g. on Vercel production where there is no WebSocket
+    // server). The socket invalidation (when available) provides instant
+    // updates; polling is the universal fallback.
+    refetchInterval: 3000,
+    refetchIntervalInBackground: false,
   });
   const unreadCount = messagesData?.conversations?.reduce((a: number, c: any) => a + (c.unread || 0), 0) ?? 0;
+
+  // ===== Polling-based notification sound =====
+  // The socket "message:new" handler (below) only fires when socket.io is
+  // connected. In production (Vercel, no socket server) OR when the socket
+  // is temporarily down, messages arrive only via the 3s polling above.
+  // This effect watches the polled messagesData and plays the notification
+  // sound when a NEW incoming message (sent=false) appears that wasn't in
+  // the previous fetch. This guarantees the ringtone plays in ALL
+  // environments.
+  const seenMsgIdsRef = useRef<Set<string>>(new Set());
+  // Track whether we've done the initial load (so we don't sound off for
+  // pre-existing messages on first render).
+  const initialLoadDoneRef = useRef(false);
+  useEffect(() => {
+    if (!user || !messagesData?.conversations) return;
+    const convs = messagesData.conversations as any[];
+    // Collect ALL incoming (received) message ids currently visible.
+    const currentIncomingIds: string[] = [];
+    for (const c of convs) {
+      for (const m of c.messages || []) {
+        if (m.sent === false) currentIncomingIds.push(m.id);
+      }
+    }
+    if (!initialLoadDoneRef.current) {
+      // First load: seed the seen set with all existing incoming ids so we
+      // don't play sound for messages that were already there.
+      currentIncomingIds.forEach((id) => seenMsgIdsRef.current.add(id));
+      initialLoadDoneRef.current = true;
+      return;
+    }
+    // Subsequent loads: find incoming ids that are NOT in the seen set.
+    const newIncoming = currentIncomingIds.filter((id) => !seenMsgIdsRef.current.has(id));
+    if (newIncoming.length === 0) return;
+    // Add them to the seen set.
+    newIncoming.forEach((id) => seenMsgIdsRef.current.add(id));
+    // Play the notification sound. If the user is currently viewing an open
+    // chat, play a soft ding; otherwise play the full "Go mesin!" ringtone.
+    if (isChatOpen()) {
+      playDingSound();
+    } else {
+      playNotificationSound();
+    }
+  }, [messagesData, user]);
 
   // Realtime: refresh unread count instantly when a new message arrives or a read receipt comes in.
   useEffect(() => {
@@ -102,6 +150,10 @@ export function Header() {
       // "ding" (less intrusive). When chat is closed, play the full "Go mesin!"
       // ringtone so the user is alerted.
       if (msg && msg.senderId !== user.id) {
+        // Mark this message id as seen immediately so the polling-based sound
+        // effect (above) doesn't double-play the same message after the
+        // refetch lands.
+        if (msg.id) seenMsgIdsRef.current.add(msg.id);
         if (isChatOpen()) {
           playDingSound();
         } else {
