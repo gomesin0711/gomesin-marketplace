@@ -22,6 +22,12 @@ function toISO(d: any): string {
   return d instanceof Date ? d.toISOString() : new Date(d).toISOString();
 }
 
+// Supabase Message.id has no default — generate a cuid-compatible id.
+// (Mirrors the genId() helper in /api/auth/register/route.ts.)
+function genId(): string {
+  return "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
 // ---------------------------------------------------------------------------
 // Soft-delete via "marker" messages
 // ---------------------------------------------------------------------------
@@ -382,6 +388,7 @@ export async function POST(req: NextRequest) {
     // Supabase fallback
     const supabase = await getSupabase();
     const { data: msg, error } = await supabase.from("Message").insert({
+      id: genId(),
       senderId, receiverId,
       content: content?.trim() || "",
       image: image || null,
@@ -510,6 +517,7 @@ export async function DELETE(req: NextRequest) {
     const { data: marker, error } = await supabase
       .from("Message")
       .insert({
+        id: genId(),
         senderId: userId,
         receiverId: partnerId,
         content: CHAT_DELETED_MARKER,
