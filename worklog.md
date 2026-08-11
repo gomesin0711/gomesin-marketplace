@@ -2812,3 +2812,46 @@ Stage Summary:
 - Draft, pending, rejected, sold, violation-flagged, and expired listings cannot be upgraded
 - Three layers of protection: frontend dashboard (not clickable), frontend dialog (warning + disabled), backend API (400 rejection)
 - Production deployed successfully
+
+---
+Task ID: 37
+Agent: main
+Task: Three fixes: (1) Chat open should jump to last message instantly (frozen, no smooth scroll). (2) New listing notification should play "Iklan baru nih" ringtone. (3) Clicking notification icon should open a notification PAGE, not a popup.
+
+Work Log:
+- Investigated all three areas: chat scroll (profile.tsx line 721 used behavior:"smooth"), notification sound (notification-sound.ts had only chat sound, no listing sound), notification bell (notification-bell.tsx used Popover popup)
+
+Fix 1 — Chat instant scroll (no smooth):
+- profile.tsx: Changed scroll behavior from `scrollTo({behavior:"smooth"})` with 100ms setTimeout to `requestAnimationFrame(() => requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; }))` for instant jump
+- Chat now "freezes" at the bottom immediately — no scroll animation
+
+Fix 2 — "Iklan baru nih" ringtone for new listings:
+- Generated TTS audio file `/public/sounds/iklan-baru.wav` using z-ai tts CLI (voice: tongtong, 81KB)
+- notification-sound.ts: Added `listingAudioEl` (separate Audio element for /sounds/iklan-baru.wav)
+- Added `getListingAudio()` function
+- Updated `unlockNotificationSound()` to also unlock the listing audio element
+- Added `playListingNotificationSound()` exported function
+- use-new-listings-notif.ts: Added prevCountRef + firstLoadRef tracking
+- Added useEffect that plays `playListingNotificationSound()` when count INCREASES (new listings detected)
+- Skips first load (no sound for pre-existing listings) and skips when count drops (after markAllSeen)
+
+Fix 3 — Notification bell → page (not popup):
+- notification-bell.tsx: Completely rewrote — removed Popover, now a simple button that calls `goToProfilePanel("notifikasi")`
+- Added `NewListingsNotificationList` exported component that renders the REAL new listings (from useNewListingsNotif hook) as a full page
+- profile.tsx: Imported NewListingsNotificationList, replaced old mock notifikasi panel (which had hardcoded fake notifications) with `<NewListingsNotificationList />`
+- Removed unused `notifications` mock array from profile.tsx
+- Notification page shows: header with count, "Tandai semua dibaca" button, real new listing cards (image, title, price, time, seller), "Lihat semua iklan terbaru" link, empty state
+
+Verification:
+- Lint: 6 errors + 11 warnings (all pre-existing, no new issues)
+- Browser test (notification bell): clicked bell → navigated to full notifikasi page (not popup) — VLM confirmed full-page view with "Belum ada notifikasi" empty state
+- Browser test (chat scroll): opened chat conversation → VLM confirmed chat scrolled to bottom, latest messages visible above input field
+- Audio file: curl /sounds/iklan-baru.wav returns HTTP 200
+- Dev log: no errors
+- Deployed to production: https://gomesin.vercel.app (Ready in 53s)
+
+Stage Summary:
+- Chat opens frozen at the bottom (instant jump, no smooth scroll animation)
+- "Iklan baru nih" TTS ringtone plays when new listings are detected (60s polling, separate audio element)
+- Notification bell now navigates to a full notification page showing REAL new listings (not a popup with mock data)
+- Production deployed successfully

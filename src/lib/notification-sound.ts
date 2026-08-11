@@ -24,6 +24,7 @@
  */
 
 let audioEl: HTMLAudioElement | null = null;
+let listingAudioEl: HTMLAudioElement | null = null;
 let unlocked = false;
 
 // --- Web Audio API context for the short "ding" sound ---
@@ -43,6 +44,23 @@ function getAudio(): HTMLAudioElement | null {
     audioEl = null;
   }
   return audioEl;
+}
+
+/**
+ * Separate Audio element for the "Iklan baru nih" new-listing ringtone.
+ * Kept independent from the chat sound so volume/position don't clash.
+ */
+function getListingAudio(): HTMLAudioElement | null {
+  if (typeof window === "undefined") return null;
+  if (listingAudioEl) return listingAudioEl;
+  try {
+    listingAudioEl = new Audio("/sounds/iklan-baru.wav");
+    listingAudioEl.preload = "auto";
+    listingAudioEl.volume = 1;
+  } catch {
+    listingAudioEl = null;
+  }
+  return listingAudioEl;
 }
 
 function getAudioCtx(): AudioContext | null {
@@ -89,6 +107,21 @@ export function unlockNotificationSound() {
     el.muted = false;
     unlocked = true;
   }
+  // Also unlock the "Iklan baru nih" listing audio element.
+  try {
+    const lEl = getListingAudio();
+    if (lEl) {
+      lEl.muted = true;
+      const lp = lEl.play();
+      if (lp && typeof lp.then === "function") {
+        lp.then(() => { lEl.pause(); lEl.currentTime = 0; lEl.muted = false; }).catch(() => { lEl.muted = false; });
+      } else {
+        lEl.muted = false;
+      }
+    }
+  } catch {
+    // ignore
+  }
   // Also unlock the Web Audio API AudioContext (for the ding sound).
   // A user gesture allows us to create & resume an AudioContext.
   try {
@@ -119,6 +152,29 @@ function isSoundEnabled(): boolean {
 export function playNotificationSound() {
   if (!isSoundEnabled()) return;
   const el = getAudio();
+  if (!el) return;
+  try {
+    el.currentTime = 0;
+    const p = el.play();
+    if (p && typeof p.then === "function") {
+      p.catch(() => {
+        // Autoplay still blocked (no interaction yet) — try unlocking on next gesture.
+      });
+    }
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Play the "Iklan baru nih" ringtone when a NEW listing is detected.
+ * Uses a separate audio element (/sounds/iklan-baru.wav) so it doesn't
+ * interfere with the chat notification sound.
+ * Respects the user's chat sound preference (same toggle).
+ */
+export function playListingNotificationSound() {
+  if (!isSoundEnabled()) return;
+  const el = getListingAudio();
   if (!el) return;
   try {
     el.currentTime = 0;

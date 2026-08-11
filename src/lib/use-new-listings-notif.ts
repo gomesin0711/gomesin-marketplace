@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { playListingNotificationSound } from "@/lib/notification-sound";
 
 /**
  * Tracks "new listings" notifications for the user.
@@ -10,6 +11,8 @@ import { useQuery } from "@tanstack/react-query";
  * - Stores `lastSeenAt` (ISO timestamp) in localStorage.
  * - Returns the count of listings whose `createdAt` is newer than `lastSeenAt`.
  * - `markAllSeen()` updates `lastSeenAt` to "now" — which clears the badge.
+ * - Plays the "Iklan baru nih" ringtone when NEW listings are detected
+ *   (count increases beyond the previous known count).
  *
  * The list of new listings itself is also returned so the bell dropdown can
  * display them. Once the user opens the dropdown, `markAllSeen()` is called
@@ -73,6 +76,26 @@ export function useNewListingsNotif() {
   });
 
   const count = newListings.length;
+
+  // Play the "Iklan baru nih" ringtone when NEW listings appear.
+  // We track the previous count in a ref — only play when the count
+  // INCREASES (not on first load, and not when it drops to 0 after markAllSeen).
+  const prevCountRef = useRef<number>(0);
+  // Skip the very first data load so we don't sound off for pre-existing listings.
+  const firstLoadRef = useRef<boolean>(true);
+  useEffect(() => {
+    if (firstLoadRef.current) {
+      // First time we get data — seed prevCount without playing sound.
+      prevCountRef.current = count;
+      firstLoadRef.current = false;
+      return;
+    }
+    if (count > prevCountRef.current) {
+      // New listings detected since last poll — play the ringtone.
+      playListingNotificationSound();
+    }
+    prevCountRef.current = count;
+  }, [count]);
 
   const markAllSeen = () => {
     const now = Date.now();
