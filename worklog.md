@@ -2578,3 +2578,50 @@ Stage Summary:
 - Works fully in the sandbox (socket.io signaling + WebRTC). In production, the UI is deployed but signaling requires a separate WebSocket host.
 - Both servers running: Next.js 3000 (HTTP 200), chat-service 3003.
 - Production live at https://gomesin.vercel.app.
+
+---
+Task ID: 32
+Agent: Main (Z.ai Code)
+Task: Homepage → ad detail → "Chat Penjual" → chat opens with listing image+link as first message
+
+Work Log:
+- User requested: "dihalaman beranda apabila diklik iklan maka masuk ke halaman iklan, di halaman iklan ada tombol chat penjual. dan diklik lalu masuk ke halaman chat dan langsung chat dengan penjual pertama chat muncul gambar iklan dan linknya."
+- Investigated the existing flow: home.tsx (ListingCard click → goToDetail), detail.tsx (has "Chat Penjual" button → goToProfileChat with listing context), profile.tsx (pendingChatPartner useEffect → listingOverride → listing bubble render).
+- Found that the feature was ALREADY IMPLEMENTED for the fresh-chat case (empty conversation shows listing bubble at top when convo.length === 0 && bubbleListingTitle).
+- Identified a gap: when the user clicks "Chat Penjual" on a listing but ALREADY has an existing conversation with that seller about a DIFFERENT listing, the new listing's image didn't show (because the "fresh chat" bubble only renders when convo.length === 0).
+- Added a BOTTOM listing bubble in profile.tsx that shows when:
+  * convo.length > 0 (existing messages exist)
+  * bubbleListingTitle is set (listing override from "Chat Penjual" click)
+  * The last message's listingId differs from the override's listingId (it's a new/different listing)
+  The bubble appears at the bottom of the messages (just above the input) with a green ring highlight to indicate "this is the listing you're about to discuss".
+- Both cases now covered:
+  * Fresh chat (no messages): listing bubble at TOP (existing code)
+  * Existing chat + different listing: listing bubble at BOTTOM (new code)
+  * Existing chat + same listing: no extra bubble (inline bubble already shows before relevant messages)
+
+Verification (Agent Browser + VLM):
+- Logged in as Admin (gomesin0711@gmail.com) on dev server.
+- Homepage: clicked udin's "tes" listing → navigated to detail page with "Chat Penjual" button. ✓
+- Clicked "Chat Penjual" → chat page opened with existing udin conversation. ✓
+- VLM analysis of screenshot confirmed:
+  * Green chat header with "udin" name and "Online" status ✓
+  * Product/listing card visible with image, title "tes", price "Rp 1.234.568", and "Lihat Iklan" link ✓
+  * Product card positioned at the BOTTOM of the message history, just above the message input ✓
+  * Message input field with "Tulis pesan..." placeholder ✓
+- Note: Listings whose seller has no registered user account (e.g., "PT. Karya Teknik Sukses") show a "seller not registered" toast instead of opening chat — this is by design (chat requires both parties to have GoMesin accounts).
+- Lint: 0 new errors (6 pre-existing in start-chat.cjs only).
+- Dev server: HTTP 200, all API calls 200, no runtime errors.
+
+Deployment:
+- Committed: "feat: show listing image+link bubble when chatting with seller from ad detail" (1 file, 48 insertions).
+- Pushed to GitHub (main branch).
+- Deployed to Vercel production via `vercel --prod --yes --token [REDACTED]` — build 30s, deploy 56s.
+- Aliased to https://gomesin.vercel.app (HTTP 200, age: 0, x-vercel-cache: PRERENDER — fresh deployment confirmed).
+
+Stage Summary:
+- Files modified (1): src/components/gomesin/views/profile.tsx
+- Full flow verified: Homepage listing click → ad detail page → "Chat Penjual" button → chat opens with listing image + title + price + "Lihat Iklan" link.
+- The listing bubble shows in TWO positions depending on chat state:
+  * Empty chat: bubble at TOP (first thing the user sees)
+  * Existing chat about a different listing: bubble at BOTTOM (just above input, with green ring highlight)
+- Production live at https://gomesin.vercel.app.
