@@ -2048,18 +2048,18 @@ export function ProfileView() {
                               <span className="rounded-md bg-[#DCFCE7] px-3 py-1 text-[11px] font-medium text-[#16A34A] shadow-sm">Hari ini</span>
                             </div>
                             {/* Fresh chat (no messages yet) — show the listing bubble
-                                from the override so the buyer sees which ad they're
-                                chatting about before sending the first message. */}
+                                on the RIGHT (sender side) because the current user is
+                                the one who clicked "Chat Penjual" to ask about this ad. */}
                             {convo.length === 0 && bubbleListingTitle && (
-                              <div className="flex justify-start">
+                              <div className="flex justify-end">
                                 <button
                                   type="button"
                                   onClick={() => { if (bubbleListingSlug) goToDetail(bubbleListingSlug); }}
-                                  className="relative max-w-[75%] overflow-hidden rounded-lg bg-white text-left shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40"
+                                  className="relative max-w-[75%] overflow-hidden rounded-lg bg-white text-left shadow-sm ring-1 ring-[#16A34A]/30 transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40"
                                   title={bubbleListingSlug ? "Buka iklan" : undefined}
                                 >
-                                  <span className="absolute -left-1.5 top-0 h-3 w-3 overflow-hidden" aria-hidden>
-                                    <span className="absolute left-0 top-0 h-3 w-3 rounded-tr-sm bg-white" />
+                                  <span className="absolute -right-1.5 top-0 h-3 w-3 overflow-hidden" aria-hidden>
+                                    <span className="absolute right-0 top-0 h-3 w-3 rounded-tl-sm bg-white" />
                                   </span>
                                   {bubbleListingImage ? (
                                     <img src={proxyUrl(bubbleListingImage)} alt={bubbleListingTitle} className="max-h-44 w-full object-cover" />
@@ -2204,26 +2204,26 @@ export function ProfileView() {
                             })}
                             {/* Existing conversation + listing override for a DIFFERENT
                                 listing than the last message — show the new listing's
-                                bubble at the BOTTOM (just above the input) so the user
-                                sees which ad they're about to discuss. This covers the
-                                case where the user clicks "Chat Penjual" on a listing
-                                but already has a prior chat with the same seller about
-                                a different ad. */}
+                                bubble at the BOTTOM on the RIGHT (sender side, since the
+                                current user clicked "Chat Penjual" to ask about this ad).
+                                This covers the case where the user clicks "Chat Penjual"
+                                on a listing but already has a prior chat with the same
+                                seller about a different ad. */}
                             {convo.length > 0 && bubbleListingTitle && (() => {
                               const lastMsgListingId = convo[convo.length - 1]?.listingId || null;
                               const overrideListingId = override?.listingId ?? conv.listingId ?? null;
                               const isDifferentListing = !!overrideListingId && overrideListingId !== lastMsgListingId;
                               if (!isDifferentListing) return null;
                               return (
-                                <div className="flex justify-start pt-1">
+                                <div className="flex justify-end pt-1">
                                   <button
                                     type="button"
                                     onClick={() => { if (bubbleListingSlug) goToDetail(bubbleListingSlug); }}
                                     className="relative max-w-[75%] overflow-hidden rounded-lg bg-white text-left shadow-sm ring-2 ring-[#16A34A]/30 transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40"
                                     title={bubbleListingSlug ? "Buka iklan" : undefined}
                                   >
-                                    <span className="absolute -left-1.5 top-0 h-3 w-3 overflow-hidden" aria-hidden>
-                                      <span className="absolute left-0 top-0 h-3 w-3 rounded-tr-sm bg-white" />
+                                    <span className="absolute -right-1.5 top-0 h-3 w-3 overflow-hidden" aria-hidden>
+                                      <span className="absolute right-0 top-0 h-3 w-3 rounded-tl-sm bg-white" />
                                     </span>
                                     {bubbleListingImage ? (
                                       <img src={proxyUrl(bubbleListingImage)} alt={bubbleListingTitle} className="max-h-44 w-full object-cover" />
