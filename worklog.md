@@ -2625,3 +2625,32 @@ Stage Summary:
   * Empty chat: bubble at TOP (first thing the user sees)
   * Existing chat about a different listing: bubble at BOTTOM (just above input, with green ring highlight)
 - Production live at https://gomesin.vercel.app.
+
+---
+Task ID: 33
+Agent: Main (Z.ai Code)
+Task: Move listing image+link bubble to the RIGHT (sender) side of chat
+
+Work Log:
+- User requested: "dihalaman chat akun admin. harusnya posisi gambar link ada disebelah kanan." — the listing image/link bubble should be on the right side of the chat.
+- The listing bubble (image + title + price + "Lihat Iklan" link) was previously positioned on the LEFT (justify-start) — which is the receiver/seller side. But since the current user (admin) is the one who clicked "Chat Penjual" to ask about the ad, the bubble should be on the RIGHT (sender side), matching the alignment of the user's own sent messages.
+- Updated BOTH listing bubbles in profile.tsx:
+  1. Fresh-chat bubble (top, when convo.length === 0): justify-start → justify-end, tail moved from -left-1.5/rounded-tr-sm to -right-1.5/rounded-tl-sm, added ring-1 ring-[#16A34A]/30 to signal it's the current listing.
+  2. Existing-conversation bubble (bottom, when different listing): justify-start → justify-end, tail moved from -left-1.5/rounded-tr-sm to -right-1.5/rounded-tl-sm.
+
+Verification (Agent Browser + VLM):
+- Logged in as Admin → home → clicked udin's "tes" listing → detail page → clicked "Chat Penjual" → chat opened with udin conversation.
+- VLM analysis confirmed: "The product/listing card (containing the image, title 'tes', price 'Rp 1.234.568', and the 'Lihat Iklan' link) is positioned on the RIGHT side of the chat window. It follows the same alignment as messages sent by the current user."
+- Lint: 0 new errors (6 pre-existing in start-chat.cjs only).
+- Dev server: HTTP 200, all API calls 200, no runtime errors.
+
+Deployment:
+- Committed: "fix: position listing image+link bubble on the RIGHT (sender) side of chat" (1 file, 14 insertions, 14 deletions).
+- Pushed to GitHub (main branch).
+- Deployed to Vercel production via `vercel --prod --yes --token [REDACTED]` — build 30s, deploy 53s.
+- Aliased to https://gomesin.vercel.app (HTTP 200, age: 0, x-vercel-cache: PRERENDER — fresh deployment confirmed).
+
+Stage Summary:
+- Files modified (1): src/components/gomesin/views/profile.tsx
+- The listing image+link bubble now appears on the RIGHT side of the chat (sender side), matching the alignment of the current user's sent messages. This applies to both the fresh-chat case (bubble at top) and the existing-conversation case (bubble at bottom).
+- Production live at https://gomesin.vercel.app.
