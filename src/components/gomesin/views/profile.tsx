@@ -79,6 +79,7 @@ import {
   Bookmark,
   CircleDot,
   CameraOff,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -283,7 +284,7 @@ export function ProfileView() {
     },
     enabled: !!user?.id,
     staleTime: 0,
-    refetchInterval: 5000, // Polling fallback — socket invalidates instantly when up.
+    refetchInterval: 3000, // Polling fallback — picks up new messages within 3s even without socket.io (production has no socket server).
     refetchIntervalInBackground: false,
   });
   const conversations: any[] = messagesData?.conversations ?? [];
@@ -312,6 +313,7 @@ export function ProfileView() {
   // Call dialog state — activates the Voice / Video call buttons in the chat header.
   // type: "voice" | "video"; partner: { name, image, phone } | null
   const [callDialog, setCallDialog] = useState<{ type: "voice" | "video"; name: string; image: string | null; phone: string | null } | null>(null);
+  const [callCopied, setCallCopied] = useState(false);
   // GoMesin chat UI state — internal tabs (Chat / Status / Panggilan), search, new-chat sheet, left menu.
   const [chatTab, setChatTab] = useState<"chat" | "status" | "panggilan">("chat");
   const [chatSearch, setChatSearch] = useState("");
@@ -673,6 +675,46 @@ export function ProfileView() {
     });
     return off;
   }, [user, subscribe, queryClient]);
+
+  // ── Realtime polling sync ──────────────────────────────────────────────
+  // The socket.io chat-service only runs in the sandbox (port 3003). In
+  // production (Vercel) there is no socket server, so we CANNOT rely on
+  // `message:new` events for realtime delivery. Instead, the conversations
+  // query polls /api/messages every 3s (refetchInterval below). This effect
+  // watches the polled data and, whenever the DB has MORE messages than the
+  // local state for the currently-open chat, replaces local with the fresh DB
+  // snapshot — so new incoming messages appear within ~3s WITHOUT a manual
+  // refresh, even when socket.io is unavailable.
+  useEffect(() => {
+    if (activeChatId === null || !messagesData) return;
+    const conv = allConversations.find((c: any) => c.id === activeChatId);
+    if (!conv || !conv.messages) return;
+    const dbCount = conv.messages.length;
+    const localCount = chatMessages[activeChatId as any]?.length || 0;
+    // Only sync when DB has strictly more messages (new incoming messages).
+    // When equal or fewer, leave local alone (preserves optimistic sends
+    // that haven't hit the DB yet).
+    if (dbCount <= localCount) return;
+    const dbHistory = [...conv.messages].reverse().map((m: any) => ({
+      role: (m.sent ? "user" : "assistant") as "user" | "assistant",
+      content: m.content,
+      image: m.image || undefined,
+      listingId: m.listingId || null,
+      listingTitle: m.listingTitle || null,
+      listingImage: m.listingImage || null,
+      listingPrice: m.listingPrice ?? null,
+      listingSlug: m.listingSlug || null,
+    }));
+    setChatMessages((prev) => ({ ...prev, [activeChatId as any]: dbHistory }));
+    // Auto-mark incoming as read since the chat is open.
+    if (user && conv.partnerId) {
+      fetch("/api/messages", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, partnerId: conv.partnerId }),
+      }).then(() => queryClient.invalidateQueries({ queryKey: ["messages"] }));
+    }
+  }, [messagesData, activeChatId, user, queryClient]);
 
   // Auto-scroll to bottom when chat messages change
   useEffect(() => {
@@ -2396,12 +2438,13 @@ export function ProfileView() {
                             </div>
                           )}
                           {/* Call dialog — activated by the Voice / Video call buttons in the chat header.
-                              Shows a ringing-style overlay, then offers to continue via tel: (voice)
-                              or WhatsApp (video, since GoMesin doesn't run its own WebRTC infra). */}
+                              Shows a ringing-style overlay with the partner's phone number and
+                              multiple ways to connect: direct tel: link (mobile), WhatsApp bridge
+                              (works everywhere), and copy-to-clipboard fallback (universal). */}
                           {callDialog && (
                             <div
                               className="fixed inset-0 z-[90] flex flex-col items-center justify-between bg-gradient-to-b from-[#0f3d23] via-[#16A34A] to-[#0a2d18] p-6 text-white"
-                              onClick={() => setCallDialog(null)}
+                              onClick={() => { setCallDialog(null); setCallCopied(false); }}
                             >
                               <div className="flex w-full items-center justify-between">
                                 <span className="text-sm font-medium text-white/70">
@@ -2410,7 +2453,7 @@ export function ProfileView() {
                                 <button
                                   aria-label="Tutup"
                                   className="grid size-10 place-items-center rounded-full bg-white/10 hover:bg-white/20"
-                                  onClick={(e) => { e.stopPropagation(); setCallDialog(null); }}
+                                  onClick={(e) => { e.stopPropagation(); setCallDialog(null); setCallCopied(false); }}
                                 >
                                   <X className="size-5" />
                                 </button>
@@ -2432,48 +2475,89 @@ export function ProfileView() {
                                 </div>
                                 <div className="text-center">
                                   <p className="text-2xl font-semibold">{callDialog.name}</p>
-                                  <p className="mt-1 text-sm text-white/70">
-                                    {callDialog.phone ? "Menghubungkan…" : "Nomor telepon tidak tersedia"}
-                                  </p>
+                                  {callDialog.phone ? (
+                                    <p className="mt-1 text-lg font-medium tracking-wide text-white/90">
+                                      {callDialog.phone}
+                                    </p>
+                                  ) : (
+                                    <p className="mt-1 text-sm text-white/70">Nomor telepon tidak tersedia</p>
+                                  )}
                                 </div>
                               </div>
-                              <div className="flex w-full max-w-xs items-center justify-center gap-6" onClick={(e) => e.stopPropagation()}>
+                              {/* Action buttons — multiple pathways so the call works on
+                                  mobile, desktop, AND inside iframe sandboxes (where tel:
+                                  links are blocked by the browser). */}
+                              <div className="flex w-full max-w-sm flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
                                 {callDialog.phone ? (
                                   <>
-                                    <button
-                                      onClick={() => {
-                                        const cleaned = callDialog.phone!.replace(/[^0-9+]/g, "");
-                                        if (callDialog.type === "video") {
-                                          // WhatsApp supports video calls — open the chat as a bridge.
-                                          const wa = cleaned.replace(/^0/, "62");
-                                          window.open(`https://wa.me/${wa}`, "_blank");
-                                        } else {
-                                          window.location.href = `tel:${cleaned}`;
-                                        }
-                                        setCallDialog(null);
-                                      }}
-                                      className="grid size-16 place-items-center rounded-full bg-[#22C55E] shadow-lg transition hover:bg-[#16A34A] active:scale-95"
-                                      aria-label={callDialog.type === "video" ? "Mulai video call" : "Angkat"}
-                                    >
-                                      {callDialog.type === "video" ? <Video className="size-7" /> : <Phone className="size-7" />}
-                                    </button>
-                                    <button
-                                      onClick={() => setCallDialog(null)}
-                                      className="grid size-16 place-items-center rounded-full bg-red-500 shadow-lg transition hover:bg-red-600 active:scale-95"
-                                      aria-label="Tutup"
-                                    >
-                                      <X className="size-7" />
-                                    </button>
+                                    <div className="flex items-center justify-center gap-4">
+                                      {/* Direct phone call — tel: link works on mobile devices
+                                          with a telephony handler. On desktop/iframe it may be
+                                          silently ignored, which is why we also offer WhatsApp
+                                          and copy below. */}
+                                      <a
+                                        href={`tel:${callDialog.phone.replace(/[^0-9+]/g, "")}`}
+                                        onClick={() => { setCallDialog(null); setCallCopied(false); }}
+                                        className="grid size-16 place-items-center rounded-full bg-[#22C55E] shadow-lg transition hover:bg-[#16A34A] active:scale-95"
+                                        aria-label="Telepon"
+                                      >
+                                        {callDialog.type === "video" ? <Video className="size-7" /> : <Phone className="size-7" />}
+                                      </a>
+                                      {/* WhatsApp bridge — works everywhere (opens wa.me in a new
+                                          tab). From the WhatsApp chat the user can place a voice or
+                                          video call. This is the most reliable cross-platform option. */}
+                                      <a
+                                        href={`https://wa.me/${callDialog.phone.replace(/^0/, "62").replace(/[^0-9]/g, "")}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={() => { setCallDialog(null); setCallCopied(false); }}
+                                        className="grid size-16 place-items-center rounded-full bg-[#25D366] shadow-lg transition hover:bg-[#1ebe5d] active:scale-95"
+                                        aria-label="Hubungi via WhatsApp"
+                                      >
+                                        <MessageCircle className="size-7" />
+                                      </a>
+                                      {/* Copy number — universal fallback that works in ALL
+                                          environments (mobile, desktop, iframe). User can paste
+                                          the number into any phone dialer. */}
+                                      <button
+                                        onClick={() => {
+                                          const num = callDialog.phone!;
+                                          try {
+                                            navigator.clipboard?.writeText(num);
+                                          } catch { /* clipboard may be blocked in some iframes */ }
+                                          setCallCopied(true);
+                                          toast.success("Nomor disalin", { description: num, duration: 3000 });
+                                          setTimeout(() => setCallCopied(false), 2500);
+                                        }}
+                                        className="grid size-16 place-items-center rounded-full bg-white/15 shadow-lg transition hover:bg-white/25 active:scale-95"
+                                        aria-label="Salin nomor"
+                                      >
+                                        {callCopied ? <Check className="size-7" /> : <Copy className="size-7" />}
+                                      </button>
+                                    </div>
+                                    {/* Labels under each button */}
+                                    <div className="flex items-center justify-center gap-4 text-xs text-white/70">
+                                      <span className="w-16 text-center">{callDialog.type === "video" ? "Video" : "Telepon"}</span>
+                                      <span className="w-16 text-center">WhatsApp</span>
+                                      <span className="w-16 text-center">{callCopied ? "Disalin" : "Salin"}</span>
+                                    </div>
                                   </>
                                 ) : (
                                   <button
-                                    onClick={() => setCallDialog(null)}
+                                    onClick={() => { setCallDialog(null); setCallCopied(false); }}
                                     className="grid size-16 place-items-center rounded-full bg-red-500 shadow-lg transition hover:bg-red-600 active:scale-95"
                                     aria-label="Tutup"
                                   >
                                     <X className="size-7" />
                                   </button>
                                 )}
+                                {/* Close button — always available */}
+                                <button
+                                  onClick={() => { setCallDialog(null); setCallCopied(false); }}
+                                  className="mt-2 rounded-full bg-white/10 px-6 py-2 text-sm font-medium text-white/80 transition hover:bg-white/20"
+                                >
+                                  Tutup
+                                </button>
                               </div>
                             </div>
                           )}
