@@ -69,6 +69,16 @@ import {
   Check,
   CheckCheck,
   ArrowLeft,
+  Moon,
+  Sun,
+  Users,
+  UserPlus,
+  PhoneMissed,
+  PhoneOutgoing,
+  PhoneIncoming,
+  Bookmark,
+  CircleDot,
+  CameraOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -263,7 +273,7 @@ export function ProfileView() {
   // Fetch user's messages (conversations) — realtime via socket.io invalidation.
   // Polling fallback (5s) guarantees freshness even if the socket is temporarily
   // unavailable (e.g. chat-service restart, network glitch).
-  const { data: messagesData, refetch: refetchMessages } = useQuery({
+  const { data: messagesData, refetch: refetchMessages, isLoading: messagesLoading } = useQuery({
     queryKey: ["messages", user?.id],
     queryFn: async () => {
       const res = await fetch(`/api/messages?userId=${user!.id}`);
@@ -298,6 +308,22 @@ export function ProfileView() {
   const [chatMessages, setChatMessages] = useState<{ [key: number]: { role: "user" | "assistant"; content: string; image?: string; animation?: string }[] }>({});
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  // GoMesin chat UI state — internal tabs (Chat / Status / Panggilan), search, new-chat sheet, left menu.
+  const [chatTab, setChatTab] = useState<"chat" | "status" | "panggilan">("chat");
+  const [chatSearch, setChatSearch] = useState("");
+  const [newChatOpen, setNewChatOpen] = useState(false);
+  const [leftMenuOpen, setLeftMenuOpen] = useState(false);
+  // Filtered conversations for the GoMesin chat search bar (depends on chatSearch state above).
+  const filteredConversations: any[] = chatSearch.trim()
+    ? allConversations.filter((c) => {
+        const q = chatSearch.toLowerCase();
+        return (
+          (c.name || "").toLowerCase().includes(q) ||
+          (c.lastMessage || "").toLowerCase().includes(q) ||
+          (c.listingTitle || "").toLowerCase().includes(q)
+        );
+      })
+    : allConversations;
   const [showEmoji, setShowEmoji] = useState(false);
   const [showGifs, setShowGifs] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
@@ -1310,7 +1336,7 @@ export function ProfileView() {
             <FavoritesView />
           ) : panel !== null ? (
             <div className="h-full">
-              {/* Panel header — hidden for pesan (uses WhatsApp teal header) and on mobile for full-page panels */}
+              {/* Panel header — hidden for pesan (uses GoMesin green header) and on mobile for full-page panels */}
               <div className={cn(
                 "flex items-center justify-between border-b border-border p-3",
                 (panel === "pesan" || panel === "saldo" || panel === "notifikasi" || panel === "keamanan" || panel === "pengaturan" || panel === "bantuan") && "max-md:hidden",
@@ -1321,108 +1347,411 @@ export function ProfileView() {
                   <X className="size-4" />
                 </button>
               </div>
-              {/* Panel content — WhatsApp split view (pesan) / normal flow (other panels) */}
+              {/* Panel content — GoMesin split view (pesan) / normal flow (other panels) */}
               <div className={cn(
                 panel === "pesan"
                   ? "flex overflow-hidden h-[calc(100dvh-10rem)] max-md:h-[calc(100dvh-10rem)] md:h-[calc(100vh-9rem)]"
                   : "block"
               )}>
 
-                {/* ===== LEFT: Conversation list (full pane on mobile, sidebar on desktop) ===== */}
+                {/* ===== LEFT: GoMesin conversation list (full pane on mobile, sidebar on desktop) ===== */}
                 {panel === "pesan" && (
                   <div className={cn(
-                    "flex-col w-full bg-white",
+                    "relative flex-col w-full bg-[#FFFFFF]",
                     activeChatId !== null
-                      ? "hidden md:flex md:w-[360px] md:shrink-0 md:border-r md:border-black/10"
-                      : "flex md:w-[360px] md:shrink-0 md:border-r md:border-black/10"
+                      ? "hidden md:flex md:w-[360px] md:shrink-0 md:border-r md:border-[#E5E7EB]"
+                      : "flex md:w-[360px] md:shrink-0 md:border-r md:border-[#E5E7EB]"
                   )}>
-                    {/* WhatsApp-style teal header */}
-                    <div className="flex items-center gap-3 bg-[#075E54] px-3 py-3 text-white md:px-4 md:py-3.5">
-                      <button
-                        onClick={() => { setPanel(null); clearProfilePanel(); }}
-                        aria-label="Kembali"
-                        className="grid size-8 shrink-0 place-items-center rounded-full text-white/90 hover:bg-white/10 md:hidden"
-                      >
-                        <ArrowLeft className="size-5" />
-                      </button>
-                      <h2 className="flex-1 text-lg font-semibold tracking-wide md:text-xl">Chat</h2>
-                      <button
-                        aria-label="Cari"
-                        className="grid size-9 shrink-0 place-items-center rounded-full text-white/90 transition hover:bg-white/10"
-                      >
-                        <Search className="size-5" />
-                      </button>
-                      <button
-                        aria-label="Menu"
-                        className="grid size-9 shrink-0 place-items-center rounded-full text-white/90 transition hover:bg-white/10"
-                      >
-                        <MoreVertical className="size-5" />
-                      </button>
-                    </div>
-                    {/* Search bar — WhatsApp-style pill */}
-                    <div className="bg-white px-3 py-2">
-                      <div className="flex items-center gap-3 rounded-lg bg-[#f0f2f5] px-3 py-1.5">
-                        <Search className="size-4 text-[#54656f]" />
-                        <input
-                          type="text"
-                          placeholder="Cari chat atau pengguna"
-                          className="flex-1 bg-transparent text-sm text-[#111b21] outline-none placeholder:text-[#54656f]"
-                        />
-                      </div>
-                    </div>
-                    {/* Conversation list */}
-                    <div className="flex-1 overflow-y-auto gomesin-scroll bg-white">
-                      {allConversations.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-                          <div className="grid size-16 place-items-center rounded-full bg-[#f0f2f5]">
-                            <MessageSquare className="size-8 text-[#54656f]" />
-                          </div>
-                          <p className="mt-4 text-sm font-semibold text-[#111b21]">Belum ada pesan</p>
-                          <p className="mt-1 text-xs text-[#667781]">Pesan dari pembeli akan muncul di sini.</p>
-                          <Button variant="outline" size="sm" className="mt-4 border-[#075E54] text-[#075E54] hover:bg-[#075E54]/5" onClick={() => { setPanel(null); clearProfilePanel(); goToListings({}); }}>
-                            Jelajahi iklan
-                          </Button>
+                    {/* GoMesin green header — logo + wordmark + search + kebab */}
+                    <div className="bg-[#16A34A] text-white">
+                      <div className="flex items-center gap-2 px-3 py-3 md:px-4 md:py-3.5">
+                        <button
+                          onClick={() => { setPanel(null); clearProfilePanel(); }}
+                          aria-label="Kembali"
+                          className="grid size-8 shrink-0 place-items-center rounded-full text-white/90 hover:bg-white/10 md:hidden"
+                        >
+                          <ArrowLeft className="size-5" />
+                        </button>
+                        {/* GoMesin logo mark — rounded speech bubble with gear spark */}
+                        <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/15 ring-1 ring-white/25">
+                          <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                            <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+                          </svg>
                         </div>
-                      ) : (
-                        allConversations.map((c: any) => (
+                        <h2 className="flex-1 text-lg font-bold tracking-tight md:text-xl">
+                          Go<span className="font-extrabold">Mesin</span>
+                        </h2>
+                        <button
+                          onClick={() => setChatTab("chat")}
+                          aria-label="Cari chat"
+                          className="grid size-9 shrink-0 place-items-center rounded-full text-white/90 transition hover:bg-white/10"
+                        >
+                          <Search className="size-5" />
+                        </button>
+                        <Popover open={leftMenuOpen} onOpenChange={setLeftMenuOpen}>
+                          <PopoverTrigger asChild>
+                            <button
+                              aria-label="Menu"
+                              className="grid size-9 shrink-0 place-items-center rounded-full text-white/90 transition hover:bg-white/10"
+                            >
+                              <MoreVertical className="size-5" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-56 p-2" align="end">
+                            <button
+                              onClick={() => { setLeftMenuOpen(false); setChatTab("status"); }}
+                              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
+                            >
+                              <Bookmark className="size-4 text-[#16A34A]" /> Status
+                            </button>
+                            <button
+                              onClick={() => { setLeftMenuOpen(false); setChatTab("panggilan"); }}
+                              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
+                            >
+                              <Phone className="size-4 text-[#16A34A]" /> Panggilan
+                            </button>
+                            <button
+                              onClick={() => { setLeftMenuOpen(false); setNewChatOpen(true); }}
+                              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
+                            >
+                              <Users className="size-4 text-[#16A34A]" /> Grup Baru
+                            </button>
+                            <div className="my-1 border-t border-[#E5E7EB]" />
+                            <button
+                              onClick={() => { setLeftMenuOpen(false); setPanel("pengaturan"); }}
+                              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
+                            >
+                              <Settings className="size-4 text-[#6B7280]" /> Pengaturan
+                            </button>
+                            <button
+                              onClick={() => { setLeftMenuOpen(false); setPanel("bantuan"); }}
+                              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
+                            >
+                              <HelpCircle className="size-4 text-[#6B7280]" /> Bantuan
+                            </button>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      {/* Internal tabs: Chat / Status / Panggilan — underline-style with badge counts */}
+                      <div className="flex items-stretch px-2">
+                        {([
+                          { key: "chat", label: "Chat", badge: unreadCount },
+                          { key: "status", label: "Status", badge: 0 },
+                          { key: "panggilan", label: "Panggilan", badge: 0 },
+                        ] as const).map((t) => (
                           <button
-                            key={c.id}
-                            onClick={() => openChat(c.id)}
-                            onContextMenu={(e) => handleConvContextMenu(e, c.id)}
+                            key={t.key}
+                            onClick={() => setChatTab(t.key)}
                             className={cn(
-                              "flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-[#f5f6f6] md:px-4",
-                              activeChatId === c.id ? "bg-[#f0f2f5]" : ""
+                              "relative flex flex-1 items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition",
+                              chatTab === t.key ? "text-white" : "text-white/60 hover:text-white/90"
                             )}
                           >
-                            <Avatar className="size-12 shrink-0 rounded-full">
-                              {c.partnerImage ? (
-                                <img src={c.partnerImage} alt={c.name} className="size-full rounded-full object-cover" />
-                              ) : (
-                                <AvatarFallback className="bg-[#d9fdd3] text-sm font-bold text-[#075E54]">
-                                  {c.name.split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
-                                </AvatarFallback>
+                            {t.label}
+                            {t.badge > 0 && (
+                              <span className="grid min-w-4 place-items-center rounded-full bg-white px-1 text-[10px] font-bold text-[#16A34A]">
+                                {t.badge > 99 ? "99+" : t.badge}
+                              </span>
+                            )}
+                            {chatTab === t.key && (
+                              <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-white" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* ===== Chat tab: search + conversation list ===== */}
+                    {chatTab === "chat" && (
+                      <>
+                        {/* Search pill */}
+                        <div className="bg-[#FFFFFF] px-3 py-2">
+                          <div className="flex items-center gap-3 rounded-xl bg-[#F5F7F6] px-3 py-2 ring-1 ring-[#E5E7EB]">
+                            <Search className="size-4 text-[#6B7280]" />
+                            <input
+                              type="text"
+                              value={chatSearch}
+                              onChange={(e) => setChatSearch(e.target.value)}
+                              placeholder="Cari chat atau pengguna"
+                              className="flex-1 bg-transparent text-sm text-[#17202A] outline-none placeholder:text-[#6B7280]"
+                            />
+                            {chatSearch && (
+                              <button
+                                onClick={() => setChatSearch("")}
+                                aria-label="Hapus pencarian"
+                                className="grid size-5 place-items-center rounded-full text-[#6B7280] hover:bg-black/5"
+                              >
+                                <X className="size-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Conversation list — loading skeleton / empty / list */}
+                        <div className="flex-1 overflow-y-auto gomesin-scroll bg-[#FFFFFF]">
+                          {messagesLoading ? (
+                            // Skeleton — gray pulsing bars mimicking conversation rows
+                            <div className="space-y-0">
+                              {Array.from({ length: 6 }).map((_, i) => (
+                                <div key={i} className="flex items-center gap-3 px-4 py-3">
+                                  <div className="size-12 shrink-0 animate-pulse rounded-full bg-[#F5F7F6]" />
+                                  <div className="min-w-0 flex-1 space-y-2 border-b border-[#E5E7EB] pb-3">
+                                    <div className="flex justify-between">
+                                      <div className="h-3.5 w-24 animate-pulse rounded bg-[#F5F7F6]" />
+                                      <div className="h-3 w-10 animate-pulse rounded bg-[#F5F7F6]" />
+                                    </div>
+                                    <div className="h-3 w-48 animate-pulse rounded bg-[#F5F7F6]" />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : filteredConversations.length === 0 ? (
+                            // Empty state — GoMesin branded
+                            <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+                              <div className="grid size-20 place-items-center rounded-2xl bg-[#DCFCE7]">
+                                <MessageSquare className="size-10 text-[#16A34A]" strokeWidth={1.8} />
+                              </div>
+                              <p className="mt-4 text-base font-semibold text-[#17202A]">
+                                {chatSearch ? "Tidak ditemukan" : "Mulai Mengobrol"}
+                              </p>
+                              <p className="mt-1 max-w-[15rem] text-xs text-[#6B7280]">
+                                {chatSearch
+                                  ? `Tidak ada chat yang cocok dengan "${chatSearch}".`
+                                  : "Pilih iklan lalu ketuk 'Chat Penjual' untuk memulai percakapan pertama Anda di GoMesin."}
+                              </p>
+                              {!chatSearch && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-4 border-[#16A34A] text-[#16A34A] hover:bg-[#DCFCE7] hover:text-[#16A34A]"
+                                  onClick={() => { setPanel(null); clearProfilePanel(); goToListings({}); }}
+                                >
+                                  Jelajahi iklan
+                                </Button>
                               )}
-                            </Avatar>
-                            <div className="min-w-0 flex-1 border-b border-black/5 pb-3">
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="truncate text-[15px] font-normal text-[#111b21]">{c.name}</p>
-                                <span className={cn(
-                                  "shrink-0 text-[11px] tabular-nums",
-                                  c.unread > 0 ? "font-medium text-[#075E54]" : "text-[#667781]"
-                                )}>
-                                  {timeAgo(c.lastTime, mounted ? lang : "id")}
-                                </span>
-                              </div>
-                              <div className="mt-0.5 flex items-center justify-between gap-2">
-                                <p className="truncate text-[13px] text-[#667781]">{c.lastMessage}</p>
-                                {c.unread > 0 && <span className="grid min-w-5 shrink-0 place-items-center rounded-full bg-[#25D366] px-1.5 text-[11px] font-bold text-white">{c.unread}</span>}
-                              </div>
-                              {c.listingTitle && <p className="mt-0.5 truncate text-[11px] font-medium text-[#075E54]">🏷 {c.listingTitle}</p>}
+                            </div>
+                          ) : (
+                            filteredConversations.map((c: any) => (
+                              <button
+                                key={c.id}
+                                onClick={() => openChat(c.id)}
+                                onContextMenu={(e) => handleConvContextMenu(e, c.id)}
+                                className={cn(
+                                  "flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-[#F5F7F6] md:px-4",
+                                  activeChatId === c.id ? "bg-[#DCFCE7]/60" : ""
+                                )}
+                              >
+                                <div className="relative shrink-0">
+                                  <Avatar className="size-12 rounded-full">
+                                    {c.partnerImage ? (
+                                      <img src={c.partnerImage} alt={c.name} className="size-full rounded-full object-cover" />
+                                    ) : (
+                                      <AvatarFallback className="bg-[#DCFCE7] text-sm font-bold text-[#16A34A]">
+                                        {(c.name || "?").split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
+                                      </AvatarFallback>
+                                    )}
+                                  </Avatar>
+                                  {/* online dot — purely visual */}
+                                  <span className="absolute bottom-0 right-0 size-3 rounded-full border-2 border-white bg-[#16A34A]" aria-hidden />
+                                </div>
+                                <div className="min-w-0 flex-1 border-b border-[#E5E7EB] pb-3">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className={cn("truncate text-[15px] text-[#17202A]", c.unread > 0 ? "font-semibold" : "font-normal")}>{c.name}</p>
+                                    <span className={cn(
+                                      "shrink-0 text-[11px] tabular-nums",
+                                      c.unread > 0 ? "font-semibold text-[#16A34A]" : "text-[#6B7280]"
+                                    )}>
+                                      {timeAgo(c.lastTime, mounted ? lang : "id")}
+                                    </span>
+                                  </div>
+                                  <div className="mt-0.5 flex items-center justify-between gap-2">
+                                    <p className={cn(
+                                      "truncate text-[13px]",
+                                      c.unread > 0 ? "font-medium text-[#17202A]" : "text-[#6B7280]"
+                                    )}>
+                                      {c.lastMessage}
+                                    </p>
+                                    {c.unread > 0 && (
+                                      <span className="grid min-w-5 shrink-0 place-items-center rounded-full bg-[#16A34A] px-1.5 text-[11px] font-bold text-white">
+                                        {c.unread > 99 ? "99+" : c.unread}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {c.listingTitle && (
+                                    <p className="mt-1 inline-flex items-center gap-1 truncate text-[11px] font-medium text-[#16A34A]">
+                                      <Tag className="size-3" /> {c.listingTitle}
+                                    </p>
+                                  )}
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+
+                        {/* Floating Action Button — new chat (above bottom nav on mobile) */}
+                        {!messagesLoading && filteredConversations.length > 0 && (
+                          <button
+                            onClick={() => setNewChatOpen(true)}
+                            aria-label="Chat baru"
+                            className="absolute bottom-4 right-4 z-30 grid size-14 place-items-center rounded-2xl bg-[#16A34A] text-white shadow-lg shadow-[#16A34A]/30 transition hover:bg-[#15803D] hover:scale-105 active:scale-95 md:bottom-6 md:right-6"
+                          >
+                            <Plus className="size-6" />
+                          </button>
+                        )}
+
+                        {/* New chat sheet — quick actions (new chat / new group / contacts) */}
+                        {newChatOpen && (
+                          <div className="absolute inset-0 z-40" onClick={() => setNewChatOpen(false)}>
+                            <div className="absolute inset-0 bg-black/20 backdrop-blur-[1px]" />
+                            <div
+                              className="absolute bottom-4 right-4 w-60 overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-xl md:bottom-6 md:right-6"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                onClick={() => { setNewChatOpen(false); setPanel(null); clearProfilePanel(); goToListings({}); }}
+                                className="flex w-full items-center gap-3 px-4 py-3 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
+                              >
+                                <span className="grid size-9 place-items-center rounded-full bg-[#DCFCE7] text-[#16A34A]"><Plus className="size-4" /></span>
+                                Chat Baru
+                              </button>
+                              <button
+                                onClick={() => { setNewChatOpen(false); toast.info("Grup segera hadir"); }}
+                                className="flex w-full items-center gap-3 px-4 py-3 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
+                              >
+                                <span className="grid size-9 place-items-center rounded-full bg-[#DCFCE7] text-[#16A34A]"><Users className="size-4" /></span>
+                                Grup Baru
+                              </button>
+                              <button
+                                onClick={() => { setNewChatOpen(false); toast.info("Daftar kontak segera hadir"); }}
+                                className="flex w-full items-center gap-3 px-4 py-3 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
+                              >
+                                <span className="grid size-9 place-items-center rounded-full bg-[#DCFCE7] text-[#16A34A]"><UserPlus className="size-4" /></span>
+                                Kontak
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* ===== Status tab — mock status/stories ring UI ===== */}
+                    {chatTab === "status" && (
+                      <div className="flex-1 overflow-y-auto bg-[#FFFFFF]">
+                        {/* My status */}
+                        <div className="px-4 py-3">
+                          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#6B7280]">Status Saya</p>
+                          <button className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left transition hover:bg-[#F5F7F6]">
+                            <div className="relative shrink-0">
+                              <Avatar className="size-12 rounded-full ring-2 ring-[#E5E7EB]">
+                                <AvatarFallback className="bg-[#16A34A] text-sm font-bold text-white">
+                                  {user?.name?.[0]?.toUpperCase() || "G"}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span className="absolute -bottom-0.5 -right-0.5 grid size-5 place-items-center rounded-full border-2 border-white bg-[#16A34A] text-white">
+                                <Plus className="size-3" />
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-[#17202A]">Status saya</p>
+                              <p className="text-xs text-[#6B7280]">Ketuk untuk menambahkan status</p>
                             </div>
                           </button>
-                        ))
-                      )}
-                    </div>
+                        </div>
+                        <div className="border-t border-[#E5E7EB] px-4 py-3">
+                          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#6B7280]">Pembaruan Terbaru</p>
+                          <div className="space-y-1">
+                            {allConversations.slice(0, 4).map((c: any) => (
+                              <button key={c.id} className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left transition hover:bg-[#F5F7F6]">
+                                <div className="shrink-0 rounded-full bg-gradient-to-tr from-[#16A34A] to-[#DCFCE7] p-0.5">
+                                  <Avatar className="size-11 rounded-full ring-2 ring-white">
+                                    {c.partnerImage ? (
+                                      <img src={c.partnerImage} alt={c.name} className="size-full rounded-full object-cover" />
+                                    ) : (
+                                      <AvatarFallback className="bg-[#DCFCE7] text-xs font-bold text-[#16A34A]">
+                                        {(c.name || "?").split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
+                                      </AvatarFallback>
+                                    )}
+                                  </Avatar>
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-medium text-[#17202A]">{c.name}</p>
+                                  <p className="text-xs text-[#6B7280]">{timeAgo(c.lastTime, mounted ? lang : "id")} lalu</p>
+                                </div>
+                              </button>
+                            ))}
+                            {allConversations.length === 0 && (
+                              <div className="py-8 text-center">
+                                <Bookmark className="mx-auto size-8 text-[#E5E7EB]" />
+                                <p className="mt-2 text-xs text-[#6B7280]">Belum ada status. Status kontak akan muncul di sini.</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ===== Panggilan tab — mock recent calls ===== */}
+                    {chatTab === "panggilan" && (
+                      <div className="flex-1 overflow-y-auto bg-[#FFFFFF]">
+                        <div className="px-4 py-3">
+                          <button
+                            onClick={() => toast.info("Mulai panggilan baru segera hadir")}
+                            className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left transition hover:bg-[#F5F7F6]"
+                          >
+                            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-[#DCFCE7] text-[#16A34A]">
+                              <Phone className="size-5" />
+                            </span>
+                            <div>
+                              <p className="text-sm font-semibold text-[#17202A]">Mulai panggilan baru</p>
+                              <p className="text-xs text-[#6B7280]">Cari kontak untuk dihubungi</p>
+                            </div>
+                          </button>
+                        </div>
+                        <div className="border-t border-[#E5E7EB] px-4 py-3">
+                          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#6B7280]">Terbaru</p>
+                          <div className="space-y-1">
+                            {allConversations.slice(0, 5).map((c: any, i: number) => {
+                              const isOutgoing = i % 2 === 0;
+                              const isMissed = i === 1;
+                              return (
+                                <div key={c.id} className="flex w-full items-center gap-3 rounded-xl px-1 py-2">
+                                  <Avatar className="size-11 shrink-0 rounded-full">
+                                    {c.partnerImage ? (
+                                      <img src={c.partnerImage} alt={c.name} className="size-full rounded-full object-cover" />
+                                    ) : (
+                                      <AvatarFallback className="bg-[#DCFCE7] text-xs font-bold text-[#16A34A]">
+                                        {(c.name || "?").split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
+                                      </AvatarFallback>
+                                    )}
+                                  </Avatar>
+                                  <div className="min-w-0 flex-1">
+                                    <p className={cn("truncate text-sm font-medium", isMissed ? "text-red-600" : "text-[#17202A]")}>{c.name}</p>
+                                    <p className="flex items-center gap-1 text-xs text-[#6B7280]">
+                                      {isMissed ? <PhoneMissed className="size-3 text-red-500" /> : isOutgoing ? <PhoneOutgoing className="size-3 text-[#16A34A]" /> : <PhoneIncoming className="size-3 text-[#6B7280]" />}
+                                      {timeAgo(c.lastTime, mounted ? lang : "id")} lalu
+                                    </p>
+                                  </div>
+                                  <button
+                                    onClick={() => toast.info("Panggilan suara segera hadir")}
+                                    aria-label="Panggil"
+                                    className="grid size-9 shrink-0 place-items-center rounded-full text-[#16A34A] transition hover:bg-[#DCFCE7]"
+                                  >
+                                    <Phone className="size-4" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                            {allConversations.length === 0 && (
+                              <div className="py-8 text-center">
+                                <Phone className="mx-auto size-8 text-[#E5E7EB]" />
+                                <p className="mt-2 text-xs text-[#6B7280]">Belum ada panggilan. Riwayat panggilan akan muncul di sini.</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1457,7 +1786,7 @@ export function ProfileView() {
                 {/* ===== RIGHT: Chat view or placeholder (full pane on mobile when chat open) ===== */}
                 {panel === "pesan" && (
                   <div className={cn(
-                    "flex-col bg-[#f0f2f5] w-full min-h-0",
+                    "flex-col bg-[#F5F7F6] w-full min-h-0",
                     // Mobile: full width when a chat is open; hidden when no chat (list is shown)
                     // Desktop: flex-1 pane always visible
                     activeChatId !== null
@@ -1477,8 +1806,8 @@ export function ProfileView() {
                       const bubbleListingPrice = override?.listingPrice ?? conv.listingPrice ?? null;
                       return (
                         <>
-                          {/* Chat header — WhatsApp teal with call + kebab */}
-                          <div className="flex items-center gap-2 bg-[#075E54] px-2 py-2 text-white md:px-3 md:py-2.5">
+                          {/* Chat header — GoMesin green with call + kebab */}
+                          <div className="flex items-center gap-2 bg-[#16A34A] px-2 py-2 text-white md:px-3 md:py-2.5">
                             <button
                               onClick={() => setActiveChatId(null)}
                               aria-label="Kembali"
@@ -1505,7 +1834,7 @@ export function ProfileView() {
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-[15px] font-medium leading-tight text-white">{conv.name}</p>
                               <p className="truncate text-[11px] leading-tight text-white/70">
-                                <span className="inline-block size-1.5 rounded-full bg-[#25D366] align-middle" /> online
+                                <span className="inline-block size-1.5 rounded-full bg-[#22C55E] align-middle ring-1 ring-white/50" /> online
                               </p>
                             </div>
                             <button
@@ -1530,7 +1859,7 @@ export function ProfileView() {
                                 </button>
                               </PopoverTrigger>
                               <PopoverContent className="w-64 p-3" align="end">
-                                <p className="mb-2 text-xs font-bold text-foreground">Warna Background Chat</p>
+                                <p className="mb-2 text-xs font-bold text-[#17202A]">Warna Background Chat</p>
                                 <div className="grid grid-cols-5 gap-2">
                                   {chatBgPresets.map((p) => (
                                     <button
@@ -1538,7 +1867,7 @@ export function ProfileView() {
                                       onClick={() => { setChatBg(p.key); }}
                                       className={cn(
                                         "size-9 rounded-full border-2 transition",
-                                        chatBgKey === p.key ? "border-primary ring-2 ring-primary/30" : "border-border hover:scale-110"
+                                        chatBgKey === p.key ? "border-[#16A34A] ring-2 ring-[#16A34A]/30" : "border-[#E5E7EB] hover:scale-110"
                                       )}
                                       style={{ backgroundColor: p.color }}
                                       title={p.label}
@@ -1546,16 +1875,23 @@ export function ProfileView() {
                                     />
                                   ))}
                                 </div>
-                                <div className="mt-3 border-t border-border pt-2">
+                                <div className="mt-3 border-t border-[#E5E7EB] pt-2">
+                                  <button
+                                    onClick={() => { setChatBg(chatBgKey === "dark" ? "default" : "dark"); }}
+                                    className="flex w-full items-center gap-2.5 px-2 py-2 text-sm text-[#17202A] transition hover:bg-[#F5F7F6] rounded-md"
+                                  >
+                                    {chatBgKey === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+                                    {chatBgKey === "dark" ? "Mode Terang" : "Mode Gelap"}
+                                  </button>
                                   <button
                                     onClick={() => { setChatBgOpen(false); handleClearChat(); }}
-                                    className="flex w-full items-center gap-2.5 px-2 py-2 text-sm text-foreground transition hover:bg-accent rounded-md"
+                                    className="flex w-full items-center gap-2.5 px-2 py-2 text-sm text-[#17202A] transition hover:bg-[#F5F7F6] rounded-md"
                                   >
                                     <Eraser className="size-4" /> Bersihkan Chat
                                   </button>
                                   <button
                                     onClick={() => { setChatBgOpen(false); handleDeleteChat(); }}
-                                    className="flex w-full items-center gap-2.5 px-2 py-2 text-sm text-red-600 transition hover:bg-accent rounded-md"
+                                    className="flex w-full items-center gap-2.5 px-2 py-2 text-sm text-red-600 transition hover:bg-[#F5F7F6] rounded-md"
                                   >
                                     <Trash2 className="size-4" /> Hapus Chat
                                   </button>
@@ -1570,13 +1906,13 @@ export function ProfileView() {
                             style={chatBgStyle}
                           >
                             <div className="flex justify-center py-1">
-                              <span className="rounded-md bg-[#e1f2fa] px-3 py-1 text-[11px] font-medium text-[#3b5560] shadow-sm">Hari ini</span>
+                              <span className="rounded-md bg-[#DCFCE7] px-3 py-1 text-[11px] font-medium text-[#16A34A] shadow-sm">Hari ini</span>
                             </div>
                             {/* Listing as a chat bubble (left-aligned, from partner) */}
                             {bubbleListingTitle && (
                               <div className="flex justify-start">
                                 <div className="relative max-w-[75%] overflow-hidden rounded-lg bg-white shadow-sm">
-                                  {/* WhatsApp tail — top-left */}
+                                  {/* GoMesin bubble tail — top-left */}
                                   <span className="absolute -left-1.5 top-0 h-3 w-3 overflow-hidden" aria-hidden>
                                     <span className="absolute left-0 top-0 h-3 w-3 rounded-tr-sm bg-white" />
                                   </span>
@@ -1588,11 +1924,11 @@ export function ProfileView() {
                                     </div>
                                   )}
                                   <div className="p-2.5">
-                                    <p className="truncate text-[13px] font-medium text-[#111b21]">{bubbleListingTitle}</p>
+                                    <p className="truncate text-[13px] font-medium text-[#17202A]">{bubbleListingTitle}</p>
                                     {bubbleListingPrice != null && (
-                                      <p className="text-[13px] font-semibold text-[#075E54]">Rp {bubbleListingPrice.toLocaleString("id-ID")}</p>
+                                      <p className="text-[13px] font-semibold text-[#16A34A]">Rp {bubbleListingPrice.toLocaleString("id-ID")}</p>
                                     )}
-                                    <span className="mt-1 block text-right text-[10px] text-[#667781]">
+                                    <span className="mt-1 block text-right text-[10px] text-[#6B7280]">
                                       {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
                                     </span>
                                   </div>
@@ -1601,7 +1937,7 @@ export function ProfileView() {
                             )}
                             {/* Chat messages */}
                             {convo.map((c, i) => {
-                              // Detect emoji-only messages (render big, WhatsApp-style)
+                              // Detect emoji-only messages (render big, GoMesin-style)
                               const isEmojiOnly = !!c.content && c.content.trim().length > 0 && /^[\s\p{Extended_Pictographic}\u200d\ufe0f]+$/u.test(c.content.trim()) && c.content.trim().length <= 12;
                               const isMe = c.role === "user";
                               return (
@@ -1624,12 +1960,12 @@ export function ProfileView() {
                                       : cn(
                                           "max-w-[75%] md:max-w-[65%] px-2 py-1.5 text-[14px] font-normal",
                                           isMe
-                                            ? "rounded-lg bg-[#d9fdd3] text-[#111b21]"
-                                            : "rounded-lg bg-white text-[#111b21]"
+                                            ? "rounded-lg bg-[#DCFCE7] text-[#17202A]"
+                                            : "rounded-lg bg-white text-[#17202A]"
                                         )
                                   )}
                                 >
-                                  {/* WhatsApp bubble tail */}
+                                  {/* GoMesin bubble tail */}
                                   {!isEmojiOnly && (
                                     <span
                                       className={cn(
@@ -1641,7 +1977,7 @@ export function ProfileView() {
                                       <span
                                         className={cn(
                                           "absolute top-0 h-3 w-3 rounded-sm",
-                                          isMe ? "right-0 bg-[#d9fdd3]" : "left-0 bg-white"
+                                          isMe ? "right-0 bg-[#DCFCE7]" : "left-0 bg-white"
                                         )}
                                       />
                                     </span>
@@ -1660,9 +1996,9 @@ export function ProfileView() {
                                     </p>
                                   )}
                                   {!isEmojiOnly && (
-                                    <span className="flex items-center justify-end gap-1 pt-0.5 text-[10px] text-[#667781]">
+                                    <span className={cn("flex items-center justify-end gap-1 pt-0.5 text-[10px]", chatBgIsDark ? "text-white/60" : "text-[#6B7280]")}>
                                       {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
-                                      {isMe && <CheckCheck className="size-3.5 text-[#53bdeb]" />}
+                                      {isMe && <CheckCheck className="size-3.5 text-[#16A34A]" />}
                                     </span>
                                   )}
                                 </div>
@@ -1675,9 +2011,9 @@ export function ProfileView() {
                                   <span className="absolute -left-1.5 top-0 h-3 w-3 overflow-hidden" aria-hidden>
                                     <span className="absolute left-0 top-0 h-3 w-3 rounded-tr-sm bg-white" />
                                   </span>
-                                  <span className="size-2 animate-bounce rounded-full bg-[#8696a0] [animation-delay:-0.3s]" />
-                                  <span className="size-2 animate-bounce rounded-full bg-[#8696a0] [animation-delay:-0.15s]" />
-                                  <span className="size-2 animate-bounce rounded-full bg-[#8696a0]" />
+                                  <span className="size-2 animate-bounce rounded-full bg-[#16A34A] [animation-delay:-0.3s]" />
+                                  <span className="size-2 animate-bounce rounded-full bg-[#16A34A] [animation-delay:-0.15s]" />
+                                  <span className="size-2 animate-bounce rounded-full bg-[#16A34A]" />
                                 </div>
                               </div>
                             )}
@@ -1770,10 +2106,10 @@ export function ProfileView() {
                             onChange={handleImageSelect}
                             className="hidden"
                           />
-                          {/* Input — WhatsApp-style floating rounded bar with mic/send toggle */}
+                          {/* Input — GoMesin floating rounded bar with mic/send toggle */}
                           <form
                             onSubmit={(e) => { e.preventDefault(); sendChat(); }}
-                            className="flex items-end gap-2 bg-[#f0f2f5] px-2 py-2 md:px-3 md:py-2.5"
+                            className="flex items-end gap-2 bg-[#F5F7F6] px-2 py-2 md:px-3 md:py-2.5"
                           >
                             <button
                               type="button"
@@ -1781,7 +2117,7 @@ export function ProfileView() {
                               aria-label="Emoji"
                               className={cn(
                                 "grid size-10 shrink-0 place-items-center rounded-full transition hover:bg-black/5",
-                                showEmoji ? "text-[#075E54]" : "text-[#54656f]"
+                                showEmoji ? "text-[#16A34A]" : "text-[#6B7280]"
                               )}
                             >
                               <Smile className="size-6" />
@@ -1792,7 +2128,7 @@ export function ProfileView() {
                                 value={chatInput}
                                 onChange={(e) => setChatInput(e.target.value)}
                                 placeholder="Tulis pesan..."
-                                className="h-11 w-full rounded-2xl border border-transparent bg-white pr-20 pl-4 text-[15px] text-[#111b21] outline-none shadow-sm placeholder:text-[#667781]"
+                                className="h-11 w-full rounded-2xl border border-transparent bg-white pr-20 pl-4 text-[15px] text-[#17202A] outline-none shadow-sm placeholder:text-[#6B7280]"
                                 disabled={chatSending}
                               />
                               <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
@@ -1800,7 +2136,7 @@ export function ProfileView() {
                                   type="button"
                                   onClick={() => fileInputRef.current?.click()}
                                   aria-label="Lampirkan gambar"
-                                  className="grid size-8 place-items-center rounded-full text-[#54656f] hover:bg-black/5"
+                                  className="grid size-8 place-items-center rounded-full text-[#6B7280] hover:bg-black/5"
                                 >
                                   <Paperclip className="size-5" />
                                 </button>
@@ -1808,13 +2144,13 @@ export function ProfileView() {
                                   type="button"
                                   onClick={() => cameraInputRef.current?.click()}
                                   aria-label="Buka kamera"
-                                  className="grid size-8 place-items-center rounded-full text-[#54656f] hover:bg-black/5"
+                                  className="grid size-8 place-items-center rounded-full text-[#6B7280] hover:bg-black/5"
                                 >
                                   <Camera className="size-5" />
                                 </button>
                               </div>
                             </div>
-                            {/* WhatsApp: mic icon when empty, send icon when typing */}
+                            {/* GoMesin: mic icon when empty, send icon when typing */}
                             <button
                               type={chatInput.trim() || pendingImage ? "submit" : "button"}
                               aria-label={chatInput.trim() || pendingImage ? "Kirim" : "Rekam suara"}
@@ -1822,8 +2158,8 @@ export function ProfileView() {
                               className={cn(
                                 "grid size-11 shrink-0 place-items-center rounded-full text-white shadow-sm transition",
                                 chatInput.trim() || pendingImage
-                                  ? "bg-[#075E54] hover:bg-[#064c44]"
-                                  : "bg-[#075E54] hover:bg-[#064c44]"
+                                  ? "bg-[#16A34A] hover:bg-[#15803D]"
+                                  : "bg-[#16A34A] hover:bg-[#15803D]"
                               )}
                             >
                               {chatSending ? (
@@ -1877,26 +2213,34 @@ export function ProfileView() {
                         </>
                       );
                     })() : (
-                      /* Placeholder when no chat selected — WhatsApp Web style */
-                      <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden bg-[#f0f2f5]">
-                        {/* WhatsApp-style doodle backdrop */}
+                      /* Placeholder when no chat selected — GoMesin branded empty state */
+                      <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden bg-[#F5F7F6]">
+                        {/* GoMesin subtle dot pattern backdrop */}
                         <div
-                          className="pointer-events-none absolute inset-0 opacity-[0.04]"
+                          className="pointer-events-none absolute inset-0 opacity-[0.05]"
                           style={{
                             backgroundImage:
-                              "radial-gradient(circle at 20% 30%, #075E54 2px, transparent 2px), radial-gradient(circle at 70% 60%, #075E54 2px, transparent 2px), radial-gradient(circle at 40% 80%, #075E54 1px, transparent 1px)",
+                              "radial-gradient(circle at 20% 30%, #16A34A 2px, transparent 2px), radial-gradient(circle at 70% 60%, #16A34A 2px, transparent 2px), radial-gradient(circle at 40% 80%, #16A34A 1px, transparent 1px)",
                             backgroundSize: "60px 60px, 80px 80px, 40px 40px",
                           }}
                           aria-hidden
                         />
                         <div className="relative text-center">
-                          <MessageCircle className="mx-auto size-20 text-[#075E54]/30" strokeWidth={1.2} />
-                          <p className="mt-5 text-2xl font-light text-[#41525d]">Gomesin Chat</p>
-                          <p className="mx-auto mt-2 max-w-xs text-sm text-[#667781]">
+                          {/* GoMesin logo mark — large rounded speech bubble */}
+                          <div className="mx-auto grid size-20 place-items-center rounded-3xl bg-[#DCFCE7] ring-1 ring-[#16A34A]/15">
+                            <svg viewBox="0 0 24 24" className="size-10 text-[#16A34A]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                              <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+                            </svg>
+                          </div>
+                          <p className="mt-5 text-2xl font-bold tracking-tight text-[#17202A]">
+                            Go<span className="text-[#16A34A]">Mesin</span> Chat
+                          </p>
+                          <p className="mx-auto mt-2 max-w-xs text-sm text-[#6B7280]">
                             Pilih chat di sebelah kiri untuk mulai pesan dengan penjual atau pembeli.
                           </p>
-                          <p className="mt-6 text-[11px] text-[#667781]/70">
-                            <Lock className="mr-1 inline size-3 align-text-bottom" />
+                          <p className="mt-6 inline-flex items-center gap-1 rounded-full bg-[#DCFCE7] px-3 py-1 text-[11px] font-medium text-[#16A34A]">
+                            <Lock className="size-3" />
                             Pesan terenkripsi end-to-end
                           </p>
                         </div>
