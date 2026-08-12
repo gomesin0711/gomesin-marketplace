@@ -2899,3 +2899,45 @@ Stage Summary:
 - Shows seller's uploaded logoImage as circular photo, or initials fallback, or User icon when not logged in
 - Clicking the avatar navigates to the Akun Saya (profile) page
 - Production deployed successfully at https://gomesin.vercel.app
+
+---
+Task ID: 46
+Agent: Main
+Task: Rebrand — ganti semua tulisan "gomesin" → "mesinKU"
+
+Work Log:
+- Scanned seluruh codebase (src/, public/, scripts/, prisma/, mini-services/) untuk semua kemunculan "gomesin" (case-insensitive).
+- Dikategorikan: (a) teks tampilan user → diganti "mesinKU"; (b) identifier internal (localStorage keys, CSS classes gomesin-scroll/gomesin-fade-up, i18n keys footerGomesin/commonGomesinUser, folder src/components/gomesin/, history state {gomesin:true}, zustand name gomesin-store) → DIPERTAHANKAN agar state user & styling tidak rusak.
+- Wordmark (5 instance: header, footer, login x3): pattern `>go</span>mesin` → `>mesin</span>KU` ("mesin" diwarnai text-primary, "KU" foreground).
+- layout.tsx metadata: title, description, keywords, authors, OG title/siteName, apple-mobile-web-app-title, application-name → mesinKU.
+- i18n.ts: placeholder-swap technique untuk ganti value "Gomesin"→"mesinKU" di 3 bahasa (id/en/zh) TANPA menyentuh key `footerGomesin`/`commonGomesinUser`. Key `gomesin-lang` (localStorage) dipertahankan.
+- email.ts (from/subject/h2), save-image.ts + img-proxy (User-Agent GomesinBot→mesinKUBot), auth-fallback.ts seed (Admin mesinKU, mesinKU0711@gmail.com, company mesinKU).
+- API routes: chat (system prompt), listings (default seller name), register-otp + forgot-password (WA caption GOMESIN→mesinKU), send-wa-proof (caption).
+- Views: home (banner), detail (document.title), login (wordmark+alt), profile (Tentang/Support/Help/mainto/WA greeting + komentar), post-ad + package-activate-dialog (WA caption + qris image path + alt), admin (demo hint + audit log emails).
+- pwa-install-prompt.tsx (popup title/share title/alt), call-overlay.tsx + use-call.ts + types.ts (komentar), seed-data.json (default seller name).
+- File renames: public/gomesin-workspace.tar.gz → mesinKU-workspace.tar.gz, public/qris-gomesin.jpeg → qris-mesinKU.jpeg.
+- public/manifest.json: name, short_name, screenshot labels → mesinKU.
+- public/sw.js: cache name gomesin-v7 → mesinKU-v9 (purge old cache) + skip rule for /mesinKU-workspace.tar.gz.
+- next.config.ts: Content-Disposition header rule untuk /mesinKU-workspace.tar.gz (sebelum catch-all).
+- scripts/fix-pw.mjs + fix-admin-pw.mjs (email), gen-pwa-icons.mjs (SRC path), prisma/seed-admin.ts (email+name), prisma/schema.prisma (comment), mini-services/chat-service (package name + comment + bun.lock).
+- Dibuat scripts/rebrand-db.mjs — migrasi one-off yang replace "gomesin"→"mesinKU" (case-insensitive) di semua text field User/Seller/Listing di SQLite lokal. Dijalankan → 7 row diupdate (admin user email+company, 6 seller names "Admin Gomesin"/"Anda (Pengguna Gomesin)").
+- Git: remote origin/main berada di a46bcf4 (memiliki feature tasks 46+ tapi TIDAK memiliki tasks 42-45 yang hanya di-deploy via vercel --prod tanpa push). Lakukan git reset --hard origin/main untuk dapat kode terbaru, lalu re-apply rebrand di atasnya. Commit a8f8f75, push fast-forward berhasil.
+- Lint: 6 error pre-existing di start-chat.cjs (require imports) + 10 warning pre-existing — TIDAK ada error baru dari rebrand.
+- Verifikasi via Agent Browser (localhost:3000):
+  1. Title: "mesinKU — Jual baru/bekas Mesin Cetak..." ✓
+  2. Header wordmark: "mesinKU" (span "mesin" text-primary orange oklch(0.68 0.17 55), suffix "KU" foreground) ✓
+  3. visibleGomesin di body.innerText = 0 ✓
+  4. Admin login mesinKU0711@gmail.com / admin123 → dashboard accessible, email "mesinKU0711@gmail.com" tampil, 0 gomesin ✓
+  5. mesinKU-workspace.tar.gz → 200 OK + Content-Disposition: attachment; filename="mesinKU-workspace.tar.gz" ✓
+  6. qris-mesinKU.jpeg → 200 OK image/jpeg ✓
+  7. manifest.json → name/short_name = mesinKU ✓
+
+Stage Summary:
+- Semua teks tampilan user "gomesin" (GoMesin/Gomesin/GOMESIN/gomesin) → "mesinKU" di seluruh codebase.
+- Wordmark: "mesin" (primary) + "KU" (foreground) — konsisten di header, footer, login (3 instance).
+- File user-visible di-rename: workspace archive + QRIS image.
+- SW cache dibump ke mesinKU-v9 (purge cache lama saat user visit berikutnya).
+- Identifier internal dipertahankan (localStorage keys, CSS classes, i18n keys, folder, history state) → state user & styling tidak rusak.
+- Admin login: mesinKU0711@gmail.com / admin123 (email di DB & auth-fallback seed sama).
+- Catatan: remote origin/main TIDAK memiliki tasks 42-45 (BackupDownloadCard, archive 7.4MB, wordmark font +1pt, SW v8) — feature itu hanya ada di deployment Vercel. Push ini fast-forward di atas origin/main (a46bcf4). Jika Vercel auto-deploy dari git aktif, deployment akan dari kode ini (tanpa tasks 42-45). Untuk deploy manual, perlu Vercel token.
+- DB Supabase produksi masih punya "Admin Gomesin" dll — perlu jalankan rebrand serupa di Supabase jika ingin produksi ikut rebrand.
