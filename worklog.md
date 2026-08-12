@@ -3009,3 +3009,43 @@ Stage Summary:
 - Commit 0b08bbc (Task 47: rebrand GoMesin→mesinKU di halaman chat + CSS class + localStorage migration) sudah live di produksi.
 - Production https://gomesin.vercel.app: HTTP 200, title mesinKU, chat page 100% bebas "gomesin"/"GoMesin" (verified via VLM + Agent Browser).
 - Vercel token dipakai untuk deploy manual (auto-deploy dari git juga mungkin aktif, tapi deploy ini dilakukan explicit via CLI untuk memastikan).
+
+---
+Task ID: 49
+Agent: Main
+Task: Bersihkan git history dari file besar (Opsi A: git filter-repo + force-push)
+
+Work Log:
+- Investigasi penyebab .git gendut (288MB):
+  * upload/workspace-cd89f9cd-... — 251.5MB (6 versi file 52MB, sudah dihapus tapi masih di history)
+  * db/custom.db — 69.6MB (42 versi database SQLite lokal)
+  * skills/design/design-templates/ — ~38MB (178 template HTML besar, tidak dipakai app)
+  * public/mesinKU-workspace.tar.gz — 59.7MB (file distribusi, dipertahankan)
+- Update .gitignore: tambah `db/*.db`, `db/*.db-journal`, `/skills/design/design-templates/`, `/upload/`
+- git rm --cached -r db/custom.db skills/design/design-templates/ upload/ → untrack 263 file (working tree dipertahankan).
+- Commit: "chore: stop tracking large files" (94c0536).
+- Install git-filter-repo via pip (--break-system-packages) → /home/z/.local/bin/git-filter-repo.
+- Jalankan: `git-filter-repo --force --path upload/ --path db/custom.db --path skills/design/design-templates/ --invert-paths`
+  * 116 commits di-rewrite dalam 0.05s
+  * History baru ditulis, repo di-repack
+  * origin remote dihapus otomatis oleh filter-repo (safety feature)
+- Re-add origin remote: `git remote add origin https://gomesin0711:<GITHUB_TOKEN>@github.com/gomesin0711/gomesin-marketplace.git`
+- Force-push: `git push --force origin main` → `+ 0b08bbc...94c0536 main -> main (forced update)`
+  * GitHub warning: mesinKU-workspace.tar.gz 59.71MB > 50MB recommended (tapi < 100MB hard limit, push sukses)
+- Post-clean: `git reflog expire --expire=now --all` + `git gc --prune=now --aggressive` + hapus .git/filter-repo backup.
+- Verifikasi:
+  * Local .git: 291MB → 75MB (74% reduction, -216MB)
+  * Local & remote main sama di 94c0536
+  * Large blob tersisa di history: HANYA public/mesinKU-workspace.tar.gz (59.7MB, file distribusi intentional)
+  * Dev server: running normal, semua API 200
+  * Production https://gomesin.vercel.app: HTTP 200, tetap live
+  * Working tree: db/custom.db (1.8MB), skills/design/design-templates/ (49MB), upload/ (15MB) — SEMUA masih ada di disk lokal, hanya tidak di-track git lagi
+  * Tracked files: 1222 (sebelumnya ~1460)
+
+Stage Summary:
+- .git size: 291MB → 75MB (hemat 216MB / 74%)
+- File dihapus dari history: upload/ (251MB workspace archive + 83 screenshot), db/custom.db (42 versi DB), skills/design/design-templates/ (178 file ~38MB)
+- .gitignore diupdate agar file besar tidak ikut commit lagi
+- Force-push ke GitHub sukses — repo di GitHub juga sudah ramping
+- Production tetap live, dev server normal, working tree intact
+- CATATAN: Siapa pun yang punya clone LAMA harus re-clone (clone lama masih punya file besar di history-nya). Vercel auto-deploy (jika aktif) akan tetap jalan dari kode terbaru.
