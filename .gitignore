@@ -50,6 +50,15 @@ test
 prompt
 
 server.log
+
+# Database files (SQLite local — jangan di-commit, ada di .vercelignore juga)
+db/*.db
+db/*.db-journal
+
 # Skills directory
 /skills/tool-results/
-upload/workspace-*.tar.*
+# Large design HTML templates (~38MB) — tidak dipakai oleh app
+/skills/design/design-templates/
+
+# Upload folder (screenshot verifikasi sementara — bukan source code)
+/upload/
