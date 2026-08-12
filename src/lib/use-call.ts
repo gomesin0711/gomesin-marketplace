@@ -3,7 +3,7 @@
 /**
  * useCall — WebRTC in-app voice/video call hook.
  *
- * Enables voice & video calls BETWEEN GoMesin users only — no phone numbers.
+ * Enables voice & video calls BETWEEN mesinKU users only — no phone numbers.
  * Uses WebRTC for peer-to-peer media (audio/video) and the existing socket.io
  * chat-service (port 3003) for signaling (request, accept, reject, end,
  * SDP offer/answer, ICE candidates).
@@ -154,7 +154,7 @@ export function useCall() {
         // dialog immediately, even while we're still getting local media.
         callRequest({
           from: user.id,
-          fromName: user.name || "Pengguna GoMesin",
+          fromName: user.name || "Pengguna mesinKU",
           fromImage: user.logoImage || null,
           to: partnerId,
           type,
@@ -374,7 +374,7 @@ export function useCall() {
         callId: p.callId,
         type: p.type,
         partnerId: p.from,
-        partnerName: p.fromName || "Pengguna GoMesin",
+        partnerName: p.fromName || "Pengguna mesinKU",
         partnerImage: p.fromImage || null,
       };
       callInfoRef.current = info;

@@ -220,7 +220,7 @@ export async function POST(req: NextRequest) {
 
       // Compose WhatsApp message
       const message =
-        `*GOMESIN — KODE VERIFIKASI*\n\n` +
+        `*mesinKU — KODE VERIFIKASI*\n\n` +
         `Kode OTP untuk reset kata sandi Anda:\n\n` +
         `*${otpCode}*\n\n` +
         `Jangan berikan kode ini kepada siapa pun.\n` +

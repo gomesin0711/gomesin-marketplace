@@ -94,7 +94,7 @@ function isChromium(b: Browser): boolean {
 /* ------------------------------------------------------------------ */
 
 const T: Record<string, Record<string, string>> = {
-  popupTitle:    { id: "Install Aplikasi Gomesin", en: "Install Gomesin App", zh: "\u5b89\u88c5 Gomesin \u5e94\u7528" },
+  popupTitle:    { id: "Install Aplikasi mesinKU", en: "Install mesinKU App", zh: "\u5b89\u88c5 mesinKU \u5e94\u7528" },
   popupDesc:     { id: "Akses marketplace mesin industri terlengkap langsung dari home screen Anda.", en: "Access the largest industrial machinery marketplace directly from your home screen.", zh: "\u4ece\u4e3b\u5c4f\u5e55\u76f4\u63a5\u8bbf\u95ee\u6700\u5927\u7684\u5de5\u4e1a\u673a\u68b0\u5e02\u573a\u3002" },
   install:       { id: "Install Sekarang", en: "Install Now", zh: "\u7acb\u5373\u5b89\u88c5" },
   later:         { id: "Nanti Saja", en: "Not Now", zh: "\u4ee5\u540e\u518d\u8bf4" },
@@ -194,7 +194,7 @@ export function PwaInstallPrompt() {
     if (platform === "ios" && navigator.share) {
       try {
         await navigator.share({
-          title: "Gomesin",
+          title: "mesinKU",
           text: "Marketplace Mesin Industri #1 di Indonesia",
           url: window.location.href,
         });
@@ -297,7 +297,7 @@ export function PwaInstallPrompt() {
 
             <div className="mx-auto mb-3 grid size-20 place-items-center rounded-2xl bg-white shadow-lg">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/pwa-icon-192.png" alt="Gomesin" className="size-16 rounded-xl" />
+              <img src="/pwa-icon-192.png" alt="mesinKU" className="size-16 rounded-xl" />
             </div>
 
             <h2 className="text-lg font-bold text-white">

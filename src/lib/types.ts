@@ -1,4 +1,4 @@
-// Shared types & helpers for Gomesin
+// Shared types & helpers for mesinKU
 import type { Lang } from "./i18n";
 import { translations, formatT } from "./i18n";
 

@@ -313,12 +313,12 @@ export function ProfileView() {
   // Call buttons are wired to setPendingCall() in the zustand store. The
   // app-shell (always mounted) watches pendingCall and triggers the global
   // useCall hook → CallOverlay. No call dialog state needed here.
-  // GoMesin chat UI state — internal tabs (Chat / Panggilan), search, new-chat sheet, left menu.
+  // mesinKU chat UI state — internal tabs (Chat / Panggilan), search, new-chat sheet, left menu.
   const [chatTab, setChatTab] = useState<"chat" | "panggilan">("chat");
   const [chatSearch, setChatSearch] = useState("");
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [leftMenuOpen, setLeftMenuOpen] = useState(false);
-  // Filtered conversations for the GoMesin chat search bar (depends on chatSearch state above).
+  // Filtered conversations for the mesinKU chat search bar (depends on chatSearch state above).
   const filteredConversations: any[] = chatSearch.trim()
     ? allConversations.filter((c) => {
         const q = chatSearch.toLowerCase();
@@ -418,7 +418,7 @@ export function ProfileView() {
 
   const faqs = [
     { q: tr("profFaqQ1"), a: tr("profFaqA1") },
-    { q: tr("profFaqQ2"), a: "Ya. Pasang iklan di Gomesin memilih paket mulai dari Gold. Paket Premium tersedia untuk menonjolkan iklan Anda." },
+    { q: tr("profFaqQ2"), a: "Ya. Pasang iklan di mesinKU memilih paket mulai dari Gold. Paket Premium tersedia untuk menonjolkan iklan Anda." },
     { q: tr("profFaqQ3"), a: "Buka detail iklan, klik 'Chat Penjual' untuk chat AI, atau 'WhatsApp' untuk chat langsung via WA." },
     { q: tr("profFaqQ4"), a: "Selalu survei mesin langsung sebelum membayar. Gunakan rekening pribadi penjual dan hindari transfer ke pihak ketiga." },
     { q: tr("profFaqQ5"), a: "Masuk ke Dashboard Iklan Saya, pilih iklan yang ingin dihapus, lalu klik tombol hapus." },
@@ -1366,7 +1366,7 @@ export function ProfileView() {
             const motivations = [
               "Mesin yang terawat adalah aset yang menghasilkan. Rawat, jual, untung!",
               "Setiap iklan yang jujur membangun kepercayaan pembeli industri.",
-              "Harga wajar + foto jelas = iklan cepat laku di Gomesin.",
+              "Harga wajar + foto jelas = iklan cepat laku di mesinKU.",
               "Jangan takut bersaing. Mesin berkualitas selalu dicari pembeli.",
               "Sukses dimulai dari iklan pertama. Pasang iklan Anda hari ini!",
               "Pembeli industri mencari mesin siap pakai. Pastikan mesin Anda ready.",
@@ -1461,7 +1461,7 @@ export function ProfileView() {
             <FavoritesView />
           ) : panel !== null ? (
             <div className="h-full">
-              {/* Panel header — hidden for pesan (uses GoMesin green header) and on mobile for full-page panels */}
+              {/* Panel header — hidden for pesan (uses mesinKU green header) and on mobile for full-page panels */}
               <div className={cn(
                 "flex items-center justify-between border-b border-border p-3",
                 (panel === "pesan" || panel === "saldo" || panel === "notifikasi" || panel === "keamanan" || panel === "pengaturan" || panel === "bantuan") && "max-md:hidden",
@@ -1472,14 +1472,14 @@ export function ProfileView() {
                   <X className="size-4" />
                 </button>
               </div>
-              {/* Panel content — GoMesin split view (pesan) / normal flow (other panels) */}
+              {/* Panel content — mesinKU split view (pesan) / normal flow (other panels) */}
               <div className={cn(
                 panel === "pesan"
                   ? "flex overflow-hidden h-[calc(100dvh-10rem)] max-md:h-[calc(100dvh-10rem)] md:h-[calc(100vh-9rem)]"
                   : "block"
               )}>
 
-                {/* ===== LEFT: GoMesin conversation list (full pane on mobile, sidebar on desktop) ===== */}
+                {/* ===== LEFT: mesinKU conversation list (full pane on mobile, sidebar on desktop) ===== */}
                 {panel === "pesan" && (
                   <div className={cn(
                     "relative flex-col w-full bg-[#FFFFFF]",
@@ -1487,7 +1487,7 @@ export function ProfileView() {
                       ? "hidden md:flex md:w-[360px] md:shrink-0 md:border-r md:border-[#E5E7EB]"
                       : "flex md:w-[360px] md:shrink-0 md:border-r md:border-[#E5E7EB]"
                   )}>
-                    {/* GoMesin green header — logo + wordmark + search + kebab */}
+                    {/* mesinKU green header — logo + wordmark + search + kebab */}
                     <div className="bg-[#16A34A] text-white">
                       <div className="flex items-center gap-2 px-3 py-3 md:px-4 md:py-3.5">
                         <button
@@ -1497,7 +1497,7 @@ export function ProfileView() {
                         >
                           <ArrowLeft className="size-5" />
                         </button>
-                        {/* GoMesin logo mark — rounded speech bubble with gear spark */}
+                        {/* mesinKU logo mark — rounded speech bubble with gear spark */}
                         <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/15 ring-1 ring-white/25">
                           <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                             <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
@@ -1613,7 +1613,7 @@ export function ProfileView() {
                               ))}
                             </div>
                           ) : filteredConversations.length === 0 ? (
-                            // Empty state — GoMesin branded
+                            // Empty state — mesinKU branded
                             <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
                               <div className="grid size-20 place-items-center rounded-2xl bg-[#DCFCE7]">
                                 <MessageSquare className="size-10 text-[#16A34A]" strokeWidth={1.8} />
@@ -1624,7 +1624,7 @@ export function ProfileView() {
                               <p className="mt-1 max-w-[15rem] text-xs text-[#6B7280]">
                                 {chatSearch
                                   ? `Tidak ada chat yang cocok dengan "${chatSearch}".`
-                                  : "Pilih iklan lalu ketuk 'Chat Penjual' untuk memulai percakapan pertama Anda di GoMesin."}
+                                  : "Pilih iklan lalu ketuk 'Chat Penjual' untuk memulai percakapan pertama Anda di mesinKU."}
                               </p>
                               {!chatSearch && (
                                 <Button
@@ -1857,7 +1857,7 @@ export function ProfileView() {
                       const bubbleListingSlug = override?.listingSlug ?? conv.listingSlug ?? null;
                       return (
                         <>
-                          {/* Chat header — GoMesin green with call + kebab */}
+                          {/* Chat header — mesinKU green with call + kebab */}
                           <div className="flex items-center gap-2 bg-[#16A34A] px-2 py-2 text-white md:px-3 md:py-2.5">
                             <button
                               onClick={() => setActiveChatId(null)}
@@ -2020,7 +2020,7 @@ export function ProfileView() {
                                 if buyer asks about Ad X then later Ad Y, both bubbles
                                 appear at their correct positions. */}
                             {convo.map((c, i) => {
-                              // Detect emoji-only messages (render big, GoMesin-style)
+                              // Detect emoji-only messages (render big, mesinKU-style)
                               const isEmojiOnly = !!c.content && c.content.trim().length > 0 && /^[\s\p{Extended_Pictographic}\u200d\ufe0f]+$/u.test(c.content.trim()) && c.content.trim().length <= 12;
                               const isMe = c.role === "user";
                               // Inline listing bubble: show when this message carries a
@@ -2092,7 +2092,7 @@ export function ProfileView() {
                                         )
                                   )}
                                 >
-                                  {/* GoMesin bubble tail */}
+                                  {/* mesinKU bubble tail */}
                                   {!isEmojiOnly && (
                                     <span
                                       className={cn(
@@ -2311,7 +2311,7 @@ export function ProfileView() {
                               ))}
                             </div>
                           )}
-                          {/* Input — GoMesin floating rounded bar with mic/send toggle */}
+                          {/* Input — mesinKU floating rounded bar with mic/send toggle */}
                           <form
                             onSubmit={(e) => { e.preventDefault(); sendChat(); }}
                             className="flex items-end gap-2 bg-[#F5F7F6] px-2 py-2 md:px-3 md:py-2.5"
@@ -2355,7 +2355,7 @@ export function ProfileView() {
                                 </button>
                               </div>
                             </div>
-                            {/* GoMesin: mic icon when empty, send icon when typing */}
+                            {/* mesinKU: mic icon when empty, send icon when typing */}
                             <button
                               type={chatInput.trim() || pendingImage ? "submit" : "button"}
                               aria-label={chatInput.trim() || pendingImage ? "Kirim" : "Rekam suara"}
@@ -2422,9 +2422,9 @@ export function ProfileView() {
                         </>
                       );
                     })() : (
-                      /* Placeholder when no chat selected — GoMesin branded empty state */
+                      /* Placeholder when no chat selected — mesinKU branded empty state */
                       <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden bg-[#F5F7F6]">
-                        {/* GoMesin subtle dot pattern backdrop */}
+                        {/* mesinKU subtle dot pattern backdrop */}
                         <div
                           className="pointer-events-none absolute inset-0 opacity-[0.05]"
                           style={{
@@ -2435,7 +2435,7 @@ export function ProfileView() {
                           aria-hidden
                         />
                         <div className="relative text-center">
-                          {/* GoMesin logo mark — large rounded speech bubble */}
+                          {/* mesinKU logo mark — large rounded speech bubble */}
                           <div className="mx-auto grid size-20 place-items-center rounded-3xl bg-[#DCFCE7] ring-1 ring-[#16A34A]/15">
                             <svg viewBox="0 0 24 24" className="size-10 text-[#16A34A]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
@@ -3378,10 +3378,10 @@ export function ProfileView() {
 
                 {/* Tentang */}
                 <div className="rounded-xl border border-border bg-card p-5 md:p-6">
-                  <p className="mb-3 text-base font-bold md:text-lg">Tentang Gomesin</p>
+                  <p className="mb-3 text-base font-bold md:text-lg">Tentang mesinKU</p>
                   <div className="space-y-2 text-sm text-muted-foreground">
                     <div className="flex justify-between"><span>Versi Aplikasi</span><span className="font-medium text-foreground">1.0.0</span></div>
-                    <div className="flex justify-between"><span>Email Dukungan</span><span className="font-medium text-foreground">gomesin0711@gmail.com</span></div>
+                    <div className="flex justify-between"><span>Email Dukungan</span><span className="font-medium text-foreground">mesinKU0711@gmail.com</span></div>
                     <div className="flex justify-between"><span>WhatsApp</span><span className="font-medium text-foreground">0858 8808 2208</span></div>
                     <div className="flex justify-between"><span>Lokasi</span><span className="font-medium text-foreground">Tangerang, Indonesia</span></div>
                   </div>
@@ -3456,7 +3456,7 @@ export function ProfileView() {
                     "3. REKENING PRIBADI — Transfer hanya ke rekening pribadi penjual, bukan ke pihak ketiga atau agen.",
                     "4. HINDARI DP BESAR — Jangan membayar DP besar sebelum melihat mesin. Bayar lunas saat serah terima.",
                     "5. HATI-HATI HARGA MURAH — Jika harga terlalu murah dari pasaran, waspadai penipuan.",
-                    "6. GUNAKAN CHAT GOMESIN — Hubungi penjual via chat Gomesin atau WhatsApp yang tercatat di sistem.",
+                    "6. GUNAKAN CHAT mesinKU — Hubungi penjual via chat mesinKU atau WhatsApp yang tercatat di sistem.",
                     "7. LAPOR PELANGGARAN — Jika menemui penjual curiga, laporkan ke admin via menu 'Keamanan'.",
                   ],
                 },
@@ -3508,7 +3508,7 @@ export function ProfileView() {
                         </Avatar>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1">
-                            <p className="text-sm font-bold">Tim Support Gomesin</p>
+                            <p className="text-sm font-bold">Tim Support mesinKU</p>
                             <span className="size-2 rounded-full bg-orange-500" />
                           </div>
                           <p className="text-[11px] text-muted-foreground">Online · 08.00-20.00 WIB</p>
@@ -3576,7 +3576,7 @@ export function ProfileView() {
                               <LifeBuoy className="size-5" />
                             </span>
                             <div>
-                              <p className="text-base font-bold">Pusat Bantuan Gomesin</p>
+                              <p className="text-base font-bold">Pusat Bantuan mesinKU</p>
                               <p className="text-xs text-primary-foreground/80">Tim support siap membantu 7 hari · 08.00-20.00 WIB</p>
                             </div>
                           </div>
@@ -3589,7 +3589,7 @@ export function ProfileView() {
                               <MessageSquare className="size-4" /> Chat Support
                             </Button>
                             <a
-                              href="https://wa.me/6285888082208?text=Halo%20Gomesin%2C%20saya%20butuh%20bantuan"
+                              href="https://wa.me/6285888082208?text=Halo%20mesinKU%2C%20saya%20butuh%20bantuan"
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-[#25D366] px-3 text-sm font-semibold text-white hover:bg-[#1ebe5d]"
@@ -3709,7 +3709,7 @@ export function ProfileView() {
                         <p className="mb-3 text-sm font-bold">Hubungi Kami</p>
                         <div className="space-y-2">
                           <a
-                            href="mailto:gomesin0711@gmail.com"
+                            href="mailto:mesinKU0711@gmail.com"
                             className="flex items-center gap-3 rounded-lg border border-border p-2.5 transition hover:bg-accent"
                           >
                             <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
@@ -3717,7 +3717,7 @@ export function ProfileView() {
                             </span>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs text-muted-foreground">Email</p>
-                              <p className="text-sm font-semibold">gomesin0711@gmail.com</p>
+                              <p className="text-sm font-semibold">mesinKU0711@gmail.com</p>
                             </div>
                             <ExternalLink className="size-3.5 text-muted-foreground" />
                           </a>

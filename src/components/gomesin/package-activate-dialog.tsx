@@ -779,7 +779,7 @@ export function PackageActivateDialog({
                         //    Chat messages already sent above, so proof is delivered
                         //    even if this navigation aborts the remaining JS.
                         const caption =
-                          `*Bukti Pembayaran Upgrade Iklan Gomesin*\n\n` +
+                          `*Bukti Pembayaran Upgrade Iklan mesinKU*\n\n` +
                           `Paket: ${selectedPkg.name}\n` +
                           `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
                           `Kode Unik: ${uniqueCode !== null ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
@@ -825,8 +825,8 @@ export function PackageActivateDialog({
                 {/* QR code */}
                 <div className="rounded-2xl border-2 border-border bg-white p-4 shadow-lg sm:p-6">
                   <img
-                    src="/qris-gomesin.jpeg"
-                    alt="QRIS Gomesin"
+                    src="/qris-mesinKU.jpeg"
+                    alt="QRIS mesinKU"
                     className="h-auto w-full max-w-[250px] object-contain"
                   />
                 </div>
@@ -1055,7 +1055,7 @@ export function PackageActivateDialog({
                         //    Chat messages already sent above, so proof is delivered
                         //    even if this navigation aborts the remaining JS.
                         const caption =
-                          `*Bukti Pembayaran Upgrade Iklan Gomesin*\n\n` +
+                          `*Bukti Pembayaran Upgrade Iklan mesinKU*\n\n` +
                           `Paket: ${selectedPkg.name}\n` +
                           `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
                           `Kode Unik: ${uniqueCode !== null ? String(uniqueCode).padStart(3, "0") : "-"}\n` +

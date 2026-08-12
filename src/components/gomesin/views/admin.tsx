@@ -90,7 +90,7 @@ export function AdminView({ initialTab }: { initialTab?: Tab }) {
         <h2 className="mt-4 text-xl font-bold">Akses Ditolak</h2>
         <p className="mt-2 text-sm text-muted-foreground">Silakan masuk dengan akun admin.</p>
         <Button className="mt-4" onClick={goToLogin}>Masuk Admin</Button>
-        <p className="mt-2 text-xs text-muted-foreground">gomesin0711@gmail.com / admin123</p>
+        <p className="mt-2 text-xs text-muted-foreground">mesinKU0711@gmail.com / admin123</p>
       </div>
     );
   }
@@ -3244,16 +3244,16 @@ function AuditTab() {
   const mounted = useMounted();
   const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
   const allLogs = [
-    { id: 1, action: "LOGIN", user: "gomesin0711@gmail.com", detail: tr("admAuditDetail1"), time: tr("admAuditTime1"), icon: Lock, category: "auth" },
-    { id: 2, action: "IKLAN_APPROVE", user: "gomesin0711@gmail.com", detail: tr("admAuditDetail2"), time: tr("admAuditTime2"), icon: CheckCircle2, category: "iklan" },
-    { id: 3, action: "PENJUAL_VERIFY", user: "gomesin0711@gmail.com", detail: tr("admAuditDetail3"), time: tr("admAuditTime3"), icon: BadgeCheck, category: "penjual" },
-    { id: 4, action: "KATEGORI_CREATE", user: "gomesin0711@gmail.com", detail: tr("admAuditDetail4"), time: tr("admAuditTime4"), icon: FolderTree, category: "kategori" },
-    { id: 5, action: "IKLAN_DELETE", user: "gomesin0711@gmail.com", detail: tr("admAuditDetail5"), time: tr("admAuditTime5"), icon: Trash2, category: "iklan" },
-    { id: 6, action: "IKLAN_CREATE", user: "budi@gomesin.id", detail: tr("admAuditDetail6"), time: tr("admAuditTime5"), icon: Plus, category: "iklan" },
-    { id: 7, action: "USER_REGISTER", user: "siti@gomesin.com", detail: tr("admAuditDetail7"), time: tr("admAuditTime6"), icon: Users, category: "user" },
-    { id: 8, action: "LOGIN", user: "budi@gomesin.id", detail: tr("admAuditDetail8"), time: tr("admAuditTime6"), icon: Lock, category: "auth" },
-    { id: 9, action: "IKLAN_VIOLATION", user: "gomesin0711@gmail.com", detail: tr("admAuditDetail9"), time: tr("admAuditTime7"), icon: XCircle, category: "iklan" },
-    { id: 10, action: "BANNER_CREATE", user: "gomesin0711@gmail.com", detail: tr("admAuditDetail10"), time: tr("admAuditTime8"), icon: Image, category: "banner" },
+    { id: 1, action: "LOGIN", user: "mesinKU0711@gmail.com", detail: tr("admAuditDetail1"), time: tr("admAuditTime1"), icon: Lock, category: "auth" },
+    { id: 2, action: "IKLAN_APPROVE", user: "mesinKU0711@gmail.com", detail: tr("admAuditDetail2"), time: tr("admAuditTime2"), icon: CheckCircle2, category: "iklan" },
+    { id: 3, action: "PENJUAL_VERIFY", user: "mesinKU0711@gmail.com", detail: tr("admAuditDetail3"), time: tr("admAuditTime3"), icon: BadgeCheck, category: "penjual" },
+    { id: 4, action: "KATEGORI_CREATE", user: "mesinKU0711@gmail.com", detail: tr("admAuditDetail4"), time: tr("admAuditTime4"), icon: FolderTree, category: "kategori" },
+    { id: 5, action: "IKLAN_DELETE", user: "mesinKU0711@gmail.com", detail: tr("admAuditDetail5"), time: tr("admAuditTime5"), icon: Trash2, category: "iklan" },
+    { id: 6, action: "IKLAN_CREATE", user: "budi@mesinKU.id", detail: tr("admAuditDetail6"), time: tr("admAuditTime5"), icon: Plus, category: "iklan" },
+    { id: 7, action: "USER_REGISTER", user: "siti@mesinKU.com", detail: tr("admAuditDetail7"), time: tr("admAuditTime6"), icon: Users, category: "user" },
+    { id: 8, action: "LOGIN", user: "budi@mesinKU.id", detail: tr("admAuditDetail8"), time: tr("admAuditTime6"), icon: Lock, category: "auth" },
+    { id: 9, action: "IKLAN_VIOLATION", user: "mesinKU0711@gmail.com", detail: tr("admAuditDetail9"), time: tr("admAuditTime7"), icon: XCircle, category: "iklan" },
+    { id: 10, action: "BANNER_CREATE", user: "mesinKU0711@gmail.com", detail: tr("admAuditDetail10"), time: tr("admAuditTime8"), icon: Image, category: "banner" },
   ];
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");

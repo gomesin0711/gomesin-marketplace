@@ -1414,7 +1414,7 @@ export function PostAdView() {
                         // The chat messages are already sent above, so even if navigation aborts
                         // the remaining JS, the proof is delivered to admin chat.
                         const caption =
-                          `*Bukti Pembayaran Iklan Gomesin*\n\n` +
+                          `*Bukti Pembayaran Iklan mesinKU*\n\n` +
                           `Paket: ${pkgName}\n` +
                           `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
                           `Kode Unik: ${uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
@@ -1473,8 +1473,8 @@ export function PostAdView() {
                   <>
                     <div className="rounded-2xl border-2 border-border bg-white p-4 shadow-lg sm:p-6">
                       <img
-                        src="/qris-gomesin.jpeg"
-                        alt="QRIS Gomesin"
+                        src="/qris-mesinKU.jpeg"
+                        alt="QRIS mesinKU"
                         className="h-auto w-full max-w-[250px] object-contain"
                       />
                     </div>

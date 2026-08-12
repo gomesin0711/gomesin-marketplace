@@ -4,7 +4,7 @@ import { hashPassword } from "../src/lib/auth";
 const db = new PrismaClient();
 
 async function main() {
-  const email = "gomesin711@gmail.com";
+  const email = "mesinKU0711@gmail.com";
   const existing = await db.user.findUnique({ where: { email } });
   if (existing) {
     // ensure role admin
@@ -18,7 +18,7 @@ async function main() {
   }
   const admin = await db.user.create({
     data: {
-      name: "Admin Gomesin",
+      name: "Admin mesinKU",
       email,
       password: hashPassword("admin123"),
       phone: "0812-0000-0000",

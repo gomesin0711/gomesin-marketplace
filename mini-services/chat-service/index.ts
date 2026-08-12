@@ -164,7 +164,7 @@ io.on('connection', (socket) => {
   })
 
   // ── In-app call signaling ──────────────────────────────────────────────
-  // Voice/video calls between GoMesin users — NO phone numbers, purely
+  // Voice/video calls between mesinKU users — NO phone numbers, purely
   // in-app. WebRTC handles the peer-to-peer media; socket.io only relays
   // the signaling (request, accept, reject, end, SDP/ICE).
   socket.on(

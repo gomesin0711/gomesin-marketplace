@@ -253,9 +253,9 @@ export function LoginView() {
         </button>
         <div className="flex flex-col items-center text-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.jpeg" alt="Gomesin" className="size-16 rounded-2xl shadow-lg object-cover" />
+          <img src="/logo.jpeg" alt="mesinKU" className="size-16 rounded-2xl shadow-lg object-cover" />
           <h1 className="mt-3 text-2xl font-extrabold tracking-tight">
-            <span className="text-primary">go</span>mesin
+            <span className="text-primary">mesin</span>KU
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">{tr("loginTitle")}</p>
         </div>
@@ -301,11 +301,11 @@ export function LoginView() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo.jpeg"
-              alt="Gomesin"
+              alt="mesinKU"
               className="size-24 rounded-3xl shadow-2xl object-cover ring-4 ring-white/20"
             />
             <h1 className="mt-6 text-3xl font-extrabold tracking-tight text-primary-foreground">
-              <span className="text-white">go</span>mesin
+              <span className="text-white">mesin</span>KU
             </h1>
             <h2 className="mt-5 text-2xl font-black leading-tight text-white">
               Jual &amp; beli mesin industri, lebih cepat, lebih aman.
@@ -343,9 +343,9 @@ export function LoginView() {
             </button>
             <div className="mb-6 flex items-center gap-2.5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.jpeg" alt="Gomesin" className="size-10 rounded-xl object-cover shadow-sm" />
+              <img src="/logo.jpeg" alt="mesinKU" className="size-10 rounded-xl object-cover shadow-sm" />
               <h1 className="text-xl font-extrabold tracking-tight">
-                <span className="text-primary">go</span>mesin
+                <span className="text-primary">mesin</span>KU
               </h1>
             </div>
             <FormSection

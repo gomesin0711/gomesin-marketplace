@@ -395,7 +395,7 @@ export function HomeView() {
                     Bingung Jual mesin baru/bekas dimana?
                   </h1>
                   <p className="mt-2 text-base font-bold text-orange-400 sm:text-xl md:text-2xl">
-                    Pasang iklan di gomesin saja!!!
+                    Pasang iklan di mesinKU saja!!!
                   </p>
                   <p className="mt-1 text-xs text-white/90 sm:text-sm md:text-base">
                     Ada ribuan Mesin CETAK, Mesin CNC dan Mesin industri lainnya...

@@ -12,11 +12,11 @@ const spaceGrotesk = Space_Grotesk({
 
 
 export const metadata: Metadata = {
-  title: "Gomesin — Jual baru/bekas Mesin Cetak, Mesin Industri & Jasa Teknisi Berkualitas",
+  title: "mesinKU — Jual baru/bekas Mesin Cetak, Mesin Industri & Jasa Teknisi Berkualitas",
   description:
-    "Gomesin adalah marketplace mesin industri terlengkap di Indonesia. Beli & jual mesin cetak, CNC, laser, woodworking, food processing, kompresor, generator, dan sparepart mesin bekas & baru.",
+    "mesinKU adalah marketplace mesin industri terlengkap di Indonesia. Beli & jual mesin cetak, CNC, laser, woodworking, food processing, kompresor, generator, dan sparepart mesin bekas & baru.",
   keywords: [
-    "gomesin",
+    "mesinKU",
     "jual mesin industri",
     "mesin cetak",
     "mesin CNC",
@@ -25,11 +25,11 @@ export const metadata: Metadata = {
     "sparepart mesin",
     "marketplace mesin",
   ],
-  authors: [{ name: "Gomesin" }],
+  authors: [{ name: "mesinKU" }],
   openGraph: {
-    title: "Gomesin — Marketplace Mesin Industri",
+    title: "mesinKU — Marketplace Mesin Industri",
     description: "Jual beli mesin industri, mesin cetak, CNC & sparepart mesin di Indonesia.",
-    siteName: "Gomesin",
+    siteName: "mesinKU",
     type: "website",
     images: [{ url: "/pwa-icon-512.png", width: 512, height: 512 }],
   },
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     "mobile-web-app-capable": "yes",
     "apple-mobile-web-app-capable": "yes",
     "apple-mobile-web-app-status-bar-style": "default",
-    "apple-mobile-web-app-title": "Gomesin",
+    "apple-mobile-web-app-title": "mesinKU",
     "theme-color": "#F57C00",
   },
 };
@@ -53,10 +53,10 @@ export default function RootLayout({
       <head>
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#F57C00" />
-        <meta name="application-name" content="Gomesin" />
+        <meta name="application-name" content="mesinKU" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="Gomesin" />
+        <meta name="apple-mobile-web-app-title" content="mesinKU" />
         <link rel="apple-touch-icon" href="/pwa-icon-180.png" />
         <link rel="apple-touch-icon" sizes="152x152" href="/pwa-icon-152.png" />
         <link rel="apple-touch-icon" sizes="120x120" href="/pwa-icon-120.png" />

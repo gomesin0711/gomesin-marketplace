@@ -26,6 +26,25 @@ const nextConfig: NextConfig = {
         },
       ],
     },
+    // Force browser to DOWNLOAD the workspace archive instead of rendering
+    // the binary gzip stream inline. MUST be before the catch-all /:path*.
+    {
+      source: "/mesinKU-workspace.tar.gz",
+      headers: [
+        {
+          key: "Content-Disposition",
+          value: "attachment; filename=\"mesinKU-workspace.tar.gz\"",
+        },
+        {
+          key: "Content-Type",
+          value: "application/gzip",
+        },
+        {
+          key: "Cache-Control",
+          value: "public, max-age=3600",
+        },
+      ],
+    },
     // Allow preview panel (iframe cross-origin) to load all resources
     {
       source: "/:path*",

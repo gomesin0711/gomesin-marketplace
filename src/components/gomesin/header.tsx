@@ -29,17 +29,17 @@ function Logo() {
       <button
         onClick={() => useStore.getState().goHome()}
         className="flex items-center gap-2"
-        aria-label="Gomesin Beranda"
+        aria-label="mesinKU Beranda"
       >
         <img
           src="/logo-sm.jpeg"
-          alt="Gomesin"
+          alt="mesinKU"
           width={36}
           height={36}
           className="size-9 rounded-lg object-cover shadow-sm"
         />
         <span className="tracking-tight text-xl font-bold" style={{ fontFamily: 'var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif' }}>
-          <span className="text-primary">go</span>mesin
+          <span className="text-primary">mesin</span>KU
         </span>
       </button>
       <button
@@ -132,7 +132,7 @@ export function Header() {
     // Add them to the seen set.
     newIncoming.forEach((id) => seenMsgIdsRef.current.add(id));
     // Play the notification sound. If the user is currently viewing an open
-    // chat, play a soft ding; otherwise play the full "Go mesin!" ringtone.
+    // chat, play a soft ding; otherwise play the full "mesinKU!" ringtone.
     if (isChatOpen()) {
       playDingSound();
     } else {
@@ -147,7 +147,7 @@ export function Header() {
       queryClient.invalidateQueries({ queryKey: ["messages"] });
       // Play notification sound for incoming messages (not from self).
       // When a chat conversation is currently open & visible, play only a soft
-      // "ding" (less intrusive). When chat is closed, play the full "Go mesin!"
+      // "ding" (less intrusive). When chat is closed, play the full "mesinKU!"
       // ringtone so the user is alerted.
       if (msg && msg.senderId !== user.id) {
         // Mark this message id as seen immediately so the polling-based sound

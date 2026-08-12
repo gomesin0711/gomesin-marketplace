@@ -44,7 +44,7 @@ async function resolveTmpfilesDirectUrl(dlUrl: string): Promise<string | null> {
     );
     const viewerRes = await fetch(viewerUrl, {
       redirect: "follow",
-      headers: { "User-Agent": "GomesinBot/1.0", Accept: "text/html,*/*" },
+      headers: { "User-Agent": "mesinKUBot/1.0", Accept: "text/html,*/*" },
     });
     if (!viewerRes.ok) return null;
     const html = await viewerRes.text();
@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
     let res = await fetch(fetchUrl, {
       redirect: "follow",
       headers: {
-        "User-Agent": "GomesinBot/1.0",
+        "User-Agent": "mesinKUBot/1.0",
         Accept: "image/*,*/*;q=0.8",
       },
     });
@@ -118,7 +118,7 @@ export async function GET(req: NextRequest) {
         res = await fetch(fetchUrl, {
           redirect: "follow",
           headers: {
-            "User-Agent": "GomesinBot/1.0",
+            "User-Agent": "mesinKUBot/1.0",
             Accept: "image/*,*/*;q=0.8",
           },
         });
@@ -133,7 +133,7 @@ export async function GET(req: NextRequest) {
         res = await fetch(fetchUrl, {
           redirect: "follow",
           headers: {
-            "User-Agent": "GomesinBot/1.0",
+            "User-Agent": "mesinKUBot/1.0",
             Accept: "image/*,*/*;q=0.8",
           },
         });

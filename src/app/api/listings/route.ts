@@ -357,7 +357,7 @@ export async function POST(req: NextRequest) {
         if (userId) {
           dbUser = await db.user.findUnique({ where: { id: userId } });
         }
-        const finalName = dbUser?.name || userName || "Anda (Pengguna Gomesin)";
+        const finalName = dbUser?.name || userName || "Anda (Pengguna mesinKU)";
         const finalPhone = dbUser?.phone || userPhone || "0812-0000-0000";
 
         // Find or create a seller record tied to this user.
@@ -475,7 +475,7 @@ export async function POST(req: NextRequest) {
         sellerId = existingByUser[0].sellerId;
       }
     }
-    const finalName = userName || "Anda (Pengguna Gomesin)";
+    const finalName = userName || "Anda (Pengguna mesinKU)";
     const finalPhone = userPhone || "0812-0000-0000";
     if (!sellerId) {
       const { data: existingByName } = await supabase

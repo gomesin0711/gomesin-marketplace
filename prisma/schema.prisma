@@ -1,4 +1,4 @@
-// Gomesin — Industrial Machine Marketplace schema
+// mesinKU — Industrial Machine Marketplace schema
 
 generator client {
   provider = "prisma-client-js"

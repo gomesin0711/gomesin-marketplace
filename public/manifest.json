@@ -1,6 +1,6 @@
 {
-  "name": "Gomesin — Marketplace Mesin Industri",
-  "short_name": "Gomesin",
+  "name": "mesinKU — Marketplace Mesin Industri",
+  "short_name": "mesinKU",
   "description": "Jual beli mesin industri, mesin cetak, CNC & sparepart mesin di Indonesia.",
   "id": "/?source=pwa",
   "start_url": "/",
@@ -71,14 +71,14 @@
       "sizes": "512x512",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "Gomesin Homepage"
+      "label": "mesinKU Homepage"
     },
     {
       "src": "/pwa-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "form_factor": "wide",
-      "label": "Gomesin Desktop"
+      "label": "mesinKU Desktop"
     }
   ]
 }

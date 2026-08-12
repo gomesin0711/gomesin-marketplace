@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
       .map(([k, v]) => `- ${k}: ${v}`)
       .join("\n");
 
-    const systemPrompt = `Kamu adalah "${l.seller.name}", seorang penjual mesin industri di Gomesin (marketplace mesin industri Indonesia).
+    const systemPrompt = `Kamu adalah "${l.seller.name}", seorang penjual mesin industri di mesinKU (marketplace mesin industri Indonesia).
 Kamu sedang menerima chat dari calon pembeli mengenai iklan berikut:
 
 Judul: ${l.title}

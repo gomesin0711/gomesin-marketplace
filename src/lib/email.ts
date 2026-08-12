@@ -28,12 +28,12 @@ export async function sendOtpEmail(
     }
 
     const { error } = await resend.emails.send({
-      from: "GoMesin <noreply@resend.dev>",
+      from: "mesinKU <noreply@resend.dev>",
       to: [to],
-      subject: "GoMesin - Kode Verifikasi",
+      subject: "mesinKU - Kode Verifikasi",
       html: `
         <div style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:24px;">
-          <h2 style="color:#222;margin:0 0 8px;">GoMesin - Kode Verifikasi</h2>
+          <h2 style="color:#222;margin:0 0 8px;">mesinKU - Kode Verifikasi</h2>
           <p style="color:#555;margin:0 0 20px;">Kode OTP Anda:</p>
           <div style="font-size:32px;font-weight:bold;letter-spacing:6px;color:#222;text-align:center;padding:16px 0;border:2px dashed #ddd;border-radius:8px;">
             ${otpCode}

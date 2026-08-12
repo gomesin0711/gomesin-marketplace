@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gomesin-v7';
+const CACHE_NAME = 'mesinKU-v9';
 
 // Critical URLs to pre-cache for PWA installability
 const PRECACHE_URLS = [
@@ -40,6 +40,9 @@ self.addEventListener('fetch', (event) => {
 
   // Never cache API calls — always network
   if (url.pathname.startsWith('/api/')) return;
+
+  // Never cache the workspace archive — it's large and changes when rebuilt.
+  if (url.pathname === '/mesinKU-workspace.tar.gz') return;
 
   // Cache-first for images (chatglm CDN, img-proxy, local listing images)
   if (

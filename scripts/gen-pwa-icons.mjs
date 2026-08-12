@@ -1,7 +1,7 @@
 import sharp from 'sharp';
 import { mkdirSync } from 'fs';
 
-const SRC = '/home/z/my-project/upload/gomesin logo.jpeg';
+const SRC = '/home/z/my-project/upload/mesinKU logo.jpeg';
 const OUT_DIR = '/home/z/my-project/public';
 
 const SIZES = [120, 152, 180, 192, 512];

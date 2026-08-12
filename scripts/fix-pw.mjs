@@ -10,12 +10,12 @@ async function main() {
   console.log('Self-verify:', verifyPassword('admin123', hash));
   
   const result = await prisma.user.update({
-    where: { email: 'gomesin0711@gmail.com' },
+    where: { email: 'mesinKU0711@gmail.com' },
     data: { password: hash }
   });
   console.log('Updated:', result.email);
   
-  const user = await prisma.user.findUnique({ where: { email: 'gomesin0711@gmail.com' } });
+  const user = await prisma.user.findUnique({ where: { email: 'mesinKU0711@gmail.com' } });
   console.log('DB pw prefix:', user.password.substring(0, 30));
   console.log('Final verify:', verifyPassword('admin123', user.password));
   

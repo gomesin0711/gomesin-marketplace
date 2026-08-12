@@ -94,9 +94,9 @@ export function DetailView() {
     setMeta("twitter:title", title);
     setMeta("twitter:description", desc);
     setMeta("twitter:image", imageUrl);
-    document.title = `${title} — Gomesin`;
+    document.title = `${title} — mesinKU`;
     return () => {
-      document.title = "Gomesin — Jual baru/bekas Mesin Cetak, Mesin Industri & Jasa Teknisi Berkualitas";
+      document.title = "mesinKU — Jual baru/bekas Mesin Cetak, Mesin Industri & Jasa Teknisi Berkualitas";
     };
   }, [l, mounted, lang]);
 

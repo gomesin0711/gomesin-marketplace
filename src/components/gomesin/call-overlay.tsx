@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * CallOverlay — full-screen in-app call UI for GoMesin.
+ * CallOverlay — full-screen in-app call UI for mesinKU.
  *
  * Renders different layouts based on the call state:
  *   - calling:   outgoing call — "Memanggil..." + local preview + cancel
@@ -9,7 +9,7 @@
  *   - connecting/connected: active call — remote video (full) + local (pip) + controls
  *   - ended:     brief "Panggilan berakhir" before cleanup
  *
- * No phone numbers — purely between GoMesin users via WebRTC.
+ * No phone numbers — purely between mesinKU users via WebRTC.
  */
 
 import { useEffect, useRef, useState } from "react";

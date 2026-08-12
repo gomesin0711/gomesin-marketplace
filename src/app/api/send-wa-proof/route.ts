@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
     const adminNumber = process.env.WHATSAPP_ADMIN_NUMBER || "6285888082208";
     const finalFileName = fileName || `bukti-pembayaran-${Date.now()}.jpg`;
-    const finalCaption = caption || "Bukti Pembayaran Iklan Gomesin";
+    const finalCaption = caption || "Bukti Pembayaran Iklan mesinKU";
 
     // Kirim gambar via Fonnte API (base64 langsung, tidak perlu URL publik).
     const result = await sendWhatsAppImage(

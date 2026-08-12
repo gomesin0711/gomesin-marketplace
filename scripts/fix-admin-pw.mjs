@@ -8,7 +8,7 @@ const hash = scryptSync('admin123', salt, 64).toString('hex');
 const newPw = `${salt}:${hash}`;
 
 const result = await db.user.update({
-  where: { email: 'gomesin711@gmail.com' },
+  where: { email: 'mesinKU0711@gmail.com' },
   data: { password: newPw },
   select: { email: true },
 });

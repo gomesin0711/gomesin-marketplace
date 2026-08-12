@@ -46,7 +46,7 @@ export async function saveImageToLocal(input: string): Promise<string> {
     await ensureDir();
     try {
       const res = await fetch(input, {
-        headers: { "User-Agent": "GomesinBot/1.0", Accept: "image/*" },
+        headers: { "User-Agent": "mesinKUBot/1.0", Accept: "image/*" },
         signal: AbortSignal.timeout(15000),
       });
       if (!res.ok) return input; // fallback: keep external URL
