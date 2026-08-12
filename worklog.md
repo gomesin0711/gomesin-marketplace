@@ -2941,3 +2941,46 @@ Stage Summary:
 - Admin login: mesinKU0711@gmail.com / admin123 (email di DB & auth-fallback seed sama).
 - Catatan: remote origin/main TIDAK memiliki tasks 42-45 (BackupDownloadCard, archive 7.4MB, wordmark font +1pt, SW v8) — feature itu hanya ada di deployment Vercel. Push ini fast-forward di atas origin/main (a46bcf4). Jika Vercel auto-deploy dari git aktif, deployment akan dari kode ini (tanpa tasks 42-45). Untuk deploy manual, perlu Vercel token.
 - DB Supabase produksi masih punya "Admin Gomesin" dll — perlu jalankan rebrand serupa di Supabase jika ingin produksi ikut rebrand.
+
+---
+Task ID: 47
+Agent: Main
+Task: Rebrand chat page — ganti semua tulisan "gomesin"/"GoMesin" → "mesinKU" di halaman chat (Pesan/messages view)
+
+Work Log:
+- Verifikasi awal: semua teks VISIBLE di chat-widget.tsx sudah "mesinKU" (Task 46 sebelumnya sukses). Tapi user masih lihat "gomesin" di halaman chat.
+- Cek database (User/Seller/Message) untuk "gomesin" → 0 row (sudah bersih dari migrasi rebrand-db.mjs Task 46).
+- Cek i18n.ts chat-related keys (chatGreeting, chatPlaceholder, chatOnline, quick1-4) → semua value sudah bersih.
+- Cek chat API route (system prompt) + chat-service mini-service → sudah "mesinKU".
+- Agent Browser test: login sebagai admin (mesinKU0711@gmail.com), klik tombol "Chat" di header → masuk Pesan/messages view.
+- Ditemukan TEKS "GoMesin" (2 instance) di halaman chat yang terlewat oleh Task 46:
+  1. profile.tsx line 1507-1509: wordmark header panel kiri `Go<span className="font-extrabold">Mesin</span>` (green bg, white text)
+  2. profile.tsx line 2445-2447: wordmark header panel kanan (empty state) `Go<span className="text-[#16A34A]">Mesin</span> Chat` (white bg)
+  - Pattern ini berbeda dari wordmark header utama (`>go</span>mesin`) yang sudah di-rebrand Task 46, sehingga terlewat.
+- FIX: kedua wordmark → `mesin<span ...>KU</span>` (dua-tone: "mesin" + "KU" mewarnai sesuai style original).
+- FIX tambahan: profile.tsx line 3330 — teks user-visible `Bunyi "Go mesin!" saat pesan masuk` → `Bunyi "mesinKU!" saat pesan masuk` (di panel Pengaturan > Notifikasi & Suara).
+- Rename internal identifiers yang dipakai di halaman chat (CSS class + localStorage keys):
+  * globals.css: `.gomesin-scroll` → `.mesinku-scroll` (5 selector), `@keyframes gomesin-fade-up` → `@keyframes mesinku-fade-up` + `.animate-fade-up` animation reference.
+  * Semua component usages `gomesin-scroll` → `mesinku-scroll`: chat-widget.tsx, header.tsx, views/listings.tsx, views/admin.tsx (4x), views/profile.tsx (2x), views/dashboard.tsx.
+  * use-chat-bg.ts: localStorage key `gomesin-chat-bg` → `mesinku-chat-bg` + migration logic (read old key → write new key → delete old key) agar preferensi background chat user tidak hilang.
+  * notification-sound.ts: localStorage key `gomesin-chat-sound` → `mesinku-chat-sound` + migration logic (migrateLegacySoundKey) agar preferensi sound chat user tidak hilang. Dipakai di isSoundEnabled() (read) + setChatSoundEnabled() (write).
+- LEGACY_KEY constants (`gomesin-chat-bg`, `gomesin-chat-sound`) dipertahankan sebagai referensi migration saja — bukan teks visible, hanya untuk migrate data lama.
+- Lint: 6 errors + 10 warnings — SEMUA pre-existing (start-chat.cjs require imports, unused eslint-disable directives). TIDAK ada error/warning baru dari perubahan ini.
+- Dev log: server running normal, semua API 200, no compilation errors.
+
+Verification (Agent Browser + VLM):
+- Login sebagai admin → klik "Chat" header → masuk Pesan view.
+- eval document.body.innerText: hasGoMesin=false, hasGomesin=false, hasMesinKU=true, gomesinMatches=[] (empty).
+- VLM screenshot analysis: "No, there is no text containing 'gomesin', 'GoMesin', 'Gomesin', or 'GOMESIN' anywhere in the image. The brand name shown is mesinKU."
+- Wordmark header panel kiri: "mesinKU" (sebelumnya "GoMesin").
+- Wordmark header panel kanan: "mesinKU Chat" (sebelumnya "GoMesin Chat").
+- Layout 3-kolom verified: sidebar (Admin mesinKU), middle (green header mesinKU + tabs Chat/Panggilan), right (mesinKU Chat empty state).
+
+Stage Summary:
+- Halaman chat (Pesan/messages view) sekarang 100% bebas "gomesin"/"GoMesin" — semua teks visible menampilkan "mesinKU".
+- 2 wordmark "GoMesin" yang terlewat Task 46 sekarang fixed → "mesinKU" (dua-tone style dipertahankan).
+- Teks settings "Go mesin!" → "mesinKU!".
+- CSS class `gomesin-scroll` → `mesinku-scroll` (global, semua 11 usage di 7 file).
+- Keyframe `gomesin-fade-up` → `mesinku-fade-up` (dipakai animate-fade-up di chat context menu).
+- localStorage keys `gomesin-chat-bg`/`gomesin-chat-sound` → `mesinku-chat-bg`/`mesinku-chat-sound` dengan migration (preferensi user lama dipertahankan).
+- Sisa "gomesin" di codebase: hanya identifier global non-chat (store name `gomesin-store`, i18n keys `footerGomesin`/`commonGomesinUser`, history state `{gomesin:true}`, folder `src/components/gomesin/`, localStorage `gomesin-lang`/`gomesin-pwa-*`/`gomesin-post-ad-draft`/`gomesin-new-listings-seen-at`) + LEGACY_KEY migration constants — SEMUA internal, tidak visible di halaman chat.

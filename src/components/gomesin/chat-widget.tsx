@@ -442,7 +442,7 @@ export function ChatInner({
       <div
         ref={scrollRef}
         className={cn(
-          "gomesin-scroll min-h-0 flex-1 space-y-1 overflow-y-auto p-3",
+          "mesinku-scroll min-h-0 flex-1 space-y-1 overflow-y-auto p-3",
           bgIsDark && "text-white",
           isPage ? "sm:max-h-none" : "max-h-[40vh] min-h-[180px]"
         )}

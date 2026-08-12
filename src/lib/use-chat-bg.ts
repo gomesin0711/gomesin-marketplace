@@ -22,11 +22,18 @@ export const CHAT_BG_PRESETS: ChatBgPreset[] = [
   { key: "white", label: "Putih", color: "#ffffff" },
 ];
 
-const STORAGE_KEY = "gomesin-chat-bg";
+const STORAGE_KEY = "mesinku-chat-bg";
+const LEGACY_KEY = "gomesin-chat-bg";
 
 function readStoredBg(): string {
   if (typeof window === "undefined") return "default";
   try {
+    // Migrate legacy key → new key once, so existing users keep their preference.
+    const legacy = localStorage.getItem(LEGACY_KEY);
+    if (legacy && !localStorage.getItem(STORAGE_KEY)) {
+      localStorage.setItem(STORAGE_KEY, legacy);
+      localStorage.removeItem(LEGACY_KEY);
+    }
     return localStorage.getItem(STORAGE_KEY) || "default";
   } catch {
     return "default";

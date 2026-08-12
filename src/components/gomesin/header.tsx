@@ -265,7 +265,7 @@ export function Header() {
           </div>
         )}
         {!searchLoading && hasSearchResults && searchResults && (
-          <div className="max-h-80 overflow-y-auto gomesin-scroll">
+          <div className="max-h-80 overflow-y-auto mesinku-scroll">
             {/* Listings */}
             {searchResults.listings.length > 0 && (
               <div>
@@ -346,7 +346,7 @@ export function Header() {
   };
 
   const renderLocations = () => (
-    <div className="max-h-80 overflow-y-auto gomesin-scroll py-1">
+    <div className="max-h-80 overflow-y-auto mesinku-scroll py-1">
       <button
         onClick={() => setProvince("Indonesia")}
         className={cn(

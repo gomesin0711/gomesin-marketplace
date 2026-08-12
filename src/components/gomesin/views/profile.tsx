@@ -1505,7 +1505,7 @@ export function ProfileView() {
                           </svg>
                         </div>
                         <h2 className="flex-1 text-lg font-bold tracking-tight md:text-xl">
-                          Go<span className="font-extrabold">Mesin</span>
+                          mesin<span className="font-extrabold">KU</span>
                         </h2>
                         <button
                           onClick={() => setChatTab("chat")}
@@ -1595,7 +1595,7 @@ export function ProfileView() {
                         </div>
 
                         {/* Conversation list — loading skeleton / empty / list */}
-                        <div className="flex-1 overflow-y-auto gomesin-scroll bg-[#FFFFFF]">
+                        <div className="flex-1 overflow-y-auto mesinku-scroll bg-[#FFFFFF]">
                           {messagesLoading ? (
                             // Skeleton — gray pulsing bars mimicking conversation rows
                             <div className="space-y-0">
@@ -2443,7 +2443,7 @@ export function ProfileView() {
                             </svg>
                           </div>
                           <p className="mt-5 text-2xl font-bold tracking-tight text-[#17202A]">
-                            Go<span className="text-[#16A34A]">Mesin</span> Chat
+                            mesin<span className="text-[#16A34A]">KU</span> Chat
                           </p>
                           <p className="mx-auto mt-2 max-w-xs text-sm text-[#6B7280]">
                             Pilih chat di sebelah kiri untuk mulai pesan dengan penjual atau pembeli.
@@ -3327,7 +3327,7 @@ export function ProfileView() {
                         <Volume2 className="size-4 text-primary" />
                         <div>
                           <p className="font-medium">Bunyi Notifikasi Chat</p>
-                          <p className="text-xs text-muted-foreground">Bunyi "Go mesin!" saat pesan masuk (seperti WhatsApp)</p>
+                          <p className="text-xs text-muted-foreground">Bunyi "mesinKU!" saat pesan masuk (seperti WhatsApp)</p>
                         </div>
                       </div>
                       <Switch
@@ -3515,7 +3515,7 @@ export function ProfileView() {
                         </div>
                       </div>
                       {/* messages */}
-                      <div className="gomesin-scroll flex-1 space-y-2.5 overflow-y-auto bg-muted/30 p-3" style={{ maxHeight: 260 }}>
+                      <div className="mesinku-scroll flex-1 space-y-2.5 overflow-y-auto bg-muted/30 p-3" style={{ maxHeight: 260 }}>
                         {supportMessages.map((m, i) => (
                           <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
                             <div

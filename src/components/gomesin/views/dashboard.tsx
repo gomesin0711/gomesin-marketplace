@@ -608,7 +608,7 @@ export function DashboardView() {
       </div>
 
       {/* ===== TABS ===== */}
-      <div className="mb-4 overflow-x-auto gomesin-scroll">
+      <div className="mb-4 overflow-x-auto mesinku-scroll">
         <div className="flex gap-1 rounded-xl border border-border bg-card p-1">
           {TABS.map((tab) => {
             const isActive = activeTab === tab.key;

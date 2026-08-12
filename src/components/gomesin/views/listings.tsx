@@ -307,7 +307,7 @@ export function ListingsView() {
                 </span>
               )}
             </div>
-            <div className="max-h-[70vh] overflow-y-auto p-4 gomesin-scroll">
+            <div className="max-h-[70vh] overflow-y-auto p-4 mesinku-scroll">
               <FilterPanel filters={filters} setFilters={setFilters} cats={cats} />
             </div>
           </div>

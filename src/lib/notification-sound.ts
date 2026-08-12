@@ -134,10 +134,27 @@ export function unlockNotificationSound() {
   }
 }
 
+const CHAT_SOUND_KEY = "mesinku-chat-sound";
+const LEGACY_SOUND_KEY = "gomesin-chat-sound";
+
+function migrateLegacySoundKey() {
+  if (typeof window === "undefined") return;
+  try {
+    const legacy = window.localStorage.getItem(LEGACY_SOUND_KEY);
+    if (legacy !== null && window.localStorage.getItem(CHAT_SOUND_KEY) === null) {
+      window.localStorage.setItem(CHAT_SOUND_KEY, legacy);
+      window.localStorage.removeItem(LEGACY_SOUND_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
 function isSoundEnabled(): boolean {
   if (typeof window === "undefined") return true;
   try {
-    return window.localStorage.getItem("gomesin-chat-sound") !== "off";
+    migrateLegacySoundKey();
+    return window.localStorage.getItem(CHAT_SOUND_KEY) !== "off";
   } catch {
     return true;
   }
@@ -147,7 +164,7 @@ function isSoundEnabled(): boolean {
  * Play the "Go mesin!" notification sound instantly.
  * Must be called after the user has interacted with the page at least once
  * (unlockNotificationSound handles that automatically on first gesture).
- * Respects the user's chat sound preference (localStorage "gomesin-chat-sound").
+ * Respects the user's chat sound preference (localStorage "mesinku-chat-sound").
  */
 export function playNotificationSound() {
   if (!isSoundEnabled()) return;
@@ -239,7 +256,7 @@ export function isChatSoundEnabled(): boolean {
 export function setChatSoundEnabled(enabled: boolean) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem("gomesin-chat-sound", enabled ? "on" : "off");
+    window.localStorage.setItem(CHAT_SOUND_KEY, enabled ? "on" : "off");
   } catch {
     // ignore
   }

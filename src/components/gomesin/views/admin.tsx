@@ -631,7 +631,7 @@ function IklanTab() {
       <h2 className="text-base font-bold">Iklan Aktif ({allListings.length})</h2>
 
       {/* Package Tabs */}
-      <div className="overflow-x-auto gomesin-scroll">
+      <div className="overflow-x-auto mesinku-scroll">
         <div className="flex gap-1 rounded-xl border border-border bg-card p-1">
           {ADMIN_PKG_TABS.map((tab) => {
             const isActive = activeTab === tab.key;
@@ -1008,7 +1008,7 @@ function IklanBaruTab() {
       <h2 className="text-base font-bold">Iklan Baru — Perlu Verifikasi ({newListings.length})</h2>
 
       {/* Package Tabs */}
-      <div className="overflow-x-auto gomesin-scroll">
+      <div className="overflow-x-auto mesinku-scroll">
         <div className="flex gap-1 rounded-xl border border-border bg-card p-1">
           {ADMIN_PKG_TABS.map((tab) => {
             const isActive = activeTab === tab.key;
@@ -1310,7 +1310,7 @@ function IklanExpiredTab() {
       <h2 className="text-base font-bold">Iklan Expired — Perlu Perpanjangan ({expiredListings.length})</h2>
 
       {/* Package Tabs */}
-      <div className="overflow-x-auto gomesin-scroll">
+      <div className="overflow-x-auto mesinku-scroll">
         <div className="flex gap-1 rounded-xl border border-border bg-card p-1">
           {ADMIN_PKG_TABS.map((tab) => {
             const isActive = activeTab === tab.key;
@@ -1615,7 +1615,7 @@ function IklanDitolakTab() {
       <h2 className="text-base font-bold">Iklan Ditolak ({rejectedListings.length})</h2>
 
       {/* Package Tabs */}
-      <div className="overflow-x-auto gomesin-scroll">
+      <div className="overflow-x-auto mesinku-scroll">
         <div className="flex gap-1 rounded-xl border border-border bg-card p-1">
           {ADMIN_PKG_TABS.map((tab) => {
             const isActive = activeTab === tab.key;
