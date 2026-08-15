@@ -3861,3 +3861,112 @@ Stage Summary:
 - Bonus: admin's IklanBaruTab now also refreshes instantly when a user posts + pays (was 3s polling).
 - All lint checks pass on modified files. No runtime errors, no hydration mismatches in dev.log.
 - Files modified: mini-services/chat-service/index.ts, src/lib/broadcast.ts (NEW), src/lib/use-chat-socket.ts, src/lib/use-new-listings-notif.ts, src/app/api/listings/route.ts, src/app/api/admin/listings/route.ts, src/components/gomesin/views/home.tsx, src/components/gomesin/views/admin.tsx.
+
+---
+Task ID: register-duplicate-check
+Agent: Main (Z.ai Code)
+Task: "dihalaman daftar apabila nama, email dan no. whatsapp sudah tedaftar di aplikasi, maka tidak bisa masuk daftar login. check and fix." — On the register (daftar) page, if name, email, or WhatsApp number is already registered, block the registration. Previously only email was checked; now name and phone are checked too.
+
+Work Log:
+- Investigated the existing registration flow:
+  - `/api/auth/register` POST only checked email uniqueness (case-insensitive via COLLATE NOCASE). Did NOT check name or phone.
+  - `/api/auth/check-email` GET only checked email.
+  - Frontend `login.tsx` only had `rEmailStatus` (debounced email availability check). No checks for name or phone.
+  - `phonesMatch()` helper in `@/lib/otp-store` already handles format-agnostic phone comparison (normalizes "0812-xxx" / "62812xxx" / "+62812xxx" to canonical form).
+- Created NEW endpoint `/api/auth/check-availability` (GET):
+  - Accepts optional `name`, `email`, `phone` query params.
+  - Returns `{ nameTaken, emailTaken, phoneTaken }` booleans.
+  - Email: case-insensitive via `COLLATE NOCASE` (same pattern as check-email).
+  - Name: case-insensitive via `COLLATE NOCASE`, trimmed comparison.
+  - Phone: format-agnostic via `phonesMatch()` — fetches all users with a phone, compares normalized forms.
+  - Falls back to raw Supabase on Vercel (ilike for email/name, client-side phonesMatch for phone).
+- Updated `/api/auth/register` POST (Path A — Prisma/SQLite, and Path B — Supabase):
+  - Added name uniqueness check → 409 "Nama sudah terdaftar. Silakan masuk atau gunakan nama lain." with `field: "name"`.
+  - Added phone uniqueness check (format-agnostic via phonesMatch) → 409 "Nomor WhatsApp sudah terdaftar. Silakan masuk atau gunakan nomor lain." with `field: "phone"`.
+  - Updated existing email error message to include "atau gunakan email lain" for consistency.
+  - All 409 responses now include a `field` property so the frontend can highlight the right input.
+- Updated `src/lib/auth-fallback.ts` `fallbackRegisterUser()` (Path C — in-memory last resort):
+  - Added name uniqueness check (case-insensitive, trimmed).
+  - Added phone uniqueness check (format-agnostic via phonesMatch).
+- Updated `src/components/gomesin/views/login.tsx`:
+  - Added `rNameStatus` and `rPhoneStatus` state ("idle" | "checking" | "available" | "taken").
+  - Added two new debounced useEffect hooks (500ms) that call `/api/auth/check-availability?name=...` and `?phone=...` respectively.
+  - Name check fires after 2+ chars; phone check fires after 9+ digits.
+  - Updated `sendRegOtp()` to block OTP send if phone is taken or still checking.
+  - Updated `doRegister()` to block submission if name or phone is taken/checking (in addition to existing email check).
+  - Updated RegisterForm props (both mobile + desktop instances) to pass `rNameStatus` and `rPhoneStatus`.
+  - Updated RegisterForm TypeScript prop types to include the new status fields.
+  - Updated the name field UI: added status icon (spinner/check/X) + colored border + helper text (checking/available/taken).
+  - Updated the phone field UI: same status icon + border + helper text pattern.
+  - Updated OTP "Kirim OTP" button to be disabled when phone is taken/checking.
+  - Updated submit "Daftar Sekarang" button `disabled` to include name/phone taken/checking states.
+- Added i18n strings for all 3 languages (id, en, zh):
+  - `nameChecking`, `nameAvailable`, `nameTaken`, `errNameTaken`
+  - `phoneChecking`, `phoneAvailable`, `phoneTaken`, `errPhoneTaken`
+
+Verification (curl-based):
+- `/api/auth/check-availability?name=aming2` → `{nameTaken:true}` ✓
+- `/api/auth/check-availability?name=AMING2` → `{nameTaken:true}` ✓ (case-insensitive)
+- `/api/auth/check-availability?email=rajabowl711@gmail.com` → `{emailTaken:true}` ✓
+- `/api/auth/check-availability?email=RAJABOWL711@GMAIL.COM` → `{emailTaken:true}` ✓ (case-insensitive)
+- `/api/auth/check-availability?phone=085888082208` → `{phoneTaken:true}` ✓
+- `/api/auth/check-availability?phone=6285888082208` → `{phoneTaken:true}` ✓ (format-agnostic)
+- `/api/auth/register` POST with existing name → 409 `{error:"Nama sudah terdaftar...", field:"name"}` ✓
+- `/api/auth/register` POST with existing email → 409 `{error:"Email sudah terdaftar...", field:"email"}` ✓
+- `/api/auth/register` POST with existing phone → 409 `{error:"Nomor WhatsApp sudah terdaftar...", field:"phone"}` ✓
+- `/api/auth/register` POST with existing phone in different format → 409 (format-agnostic) ✓
+- `/api/auth/register` POST with all-unique values → 201 success ✓ (test user cleaned up afterward)
+- Dev log shows the frontend is already calling the new endpoints: `GET /api/auth/check-availability?name=...` and `?phone=...` returning 200.
+
+Stage Summary:
+- Registration now blocks duplicates on ALL THREE fields: name, email, and WhatsApp number.
+- Both client-side (debounced real-time check with visual feedback) and server-side (POST returns 409 with field-specific error) validation implemented.
+- Phone matching is format-agnostic (handles "0812-xxx", "62812xxx", "+62812xxx" equivalently) via the existing `phonesMatch()` helper.
+- Name matching is case-insensitive and trimmed.
+- Email matching is case-insensitive (pre-existing behavior, now joined by name + phone checks).
+- All error messages guide the user to "Silakan masuk atau gunakan [field] lain" (please log in or use a different [field]).
+- i18n strings added for Indonesian, English, and Chinese.
+- Files modified: src/app/api/auth/check-availability/route.ts (NEW), src/app/api/auth/register/route.ts, src/lib/auth-fallback.ts, src/lib/i18n.ts, src/components/gomesin/views/login.tsx.
+
+---
+Task ID: register-duplicate-check-verify
+Agent: Browser Verifier
+Task: Verify the register duplicate-check fix (name, email, phone) end-to-end using Playwright (browser) + curl (server-side).
+
+Work Log:
+- Read prior worklog section (Task ID: register-duplicate-check) to understand the implemented changes: new `/api/auth/check-availability` endpoint, updated `/api/auth/register` POST to check name + phone (in addition to email), and frontend `login.tsx` register tab now shows real-time availability indicators for Name, Email, and Phone with debounced checks + visual feedback (spinner/check/X icon + colored border + helper text) and disabled Kirim OTP / Daftar Sekarang buttons when fields are taken.
+- Confirmed dev server running at http://localhost:3000 (HTTP 200 on `/`).
+- Wrote `/home/z/my-project/tests/verify-register-duplicate-check.py` — a Playwright script (headless Chromium) that:
+  - Pre-seeds `localStorage` (`gomesin-pwa-dismissed`, `gomesin-pwa-installed`) to suppress the auto-shown PWA install prompt that was blocking clicks on the header login button.
+  - Uses `locator(...).filter(visible=True)` throughout to disambiguate between the mobile (`md:hidden`) and desktop (`hidden md:grid`) instances of the register form (the first attempt picked the hidden mobile instance and timed out at .fill()).
+  - Replaces `page.wait_for_selector(text=..., state="visible")` with `page.locator(text).filter(visible=True).first.wait_for(state="visible", timeout=5000)` for the same reason (each status `<p>` exists in both mobile+desktop DOM trees).
+  - For the footer check, clears the persisted zustand store (`localStorage.removeItem('gomesin-store')`) before reloading so the SPA returns to the home view (the footer is hidden on the `login` view).
+- Ran the script — all 22 sub-checks PASS.
+- Ran the 4 server-side curl commands from the task description against `/api/auth/register` — all return HTTP 409 with the expected `error` + `field` JSON.
+- Sanity-checked the `/api/auth/check-availability` GET endpoint with 6 representative inputs (existing name, unique name, existing email, existing phone, existing phone in alt format, unique phone) — all return the correct `{nameTaken, emailTaken, phoneTaken}` shape, including format-agnostic phone matching (both `085888082208` and `6285888082208` → `phoneTaken:true`).
+- Inspected `/home/z/my-project/dev.log` (900 lines) — no runtime errors, no hydration mismatches, no uncaught exceptions. Only the pre-existing `metadataBase` warning (unrelated to this task).
+- Captured footer placement screenshot at `/home/z/my-project/tool-results/verify-register-footer.png`.
+- Console messages captured by Playwright: only `info`/`log` (HMR connected, SW registered, React DevTools promo) and 2 preload warnings for an unused woff2 + remote image — no `error` level console messages and no `pageerror` events during the entire run.
+
+Stage Summary:
+- Check 1 (page loads cleanly): PASS — HTTP 200, title `mesinKU — Jual baru/bekas Mesin Cetak, Mesin Industri & Jasa Teknisi Berkualitas`, no error boundary, dev.log clean (no runtime errors, no hydration mismatches).
+- Check 2 (register tab UI): PASS — `r-name`, `r-email`, `r-phone` fields all found & visible after switching to the Daftar tab; OTP section label `Kode OTP WhatsApp (6 digit)` present; `r-pass` + `r-pass2` password fields present.
+- Check 3 (NAME real-time detection): PASS — typing `aming2` shows red X icon, `border-destructive` red border, and helper text `Nama sudah terdaftar. Silakan masuk atau gunakan nama lain.`; typing `NewTestUserVerify123` shows green check icon, `border-green-500` border, `Nama tersedia`.
+- Check 4 (EMAIL real-time detection): PASS — `rajabowl711@gmail.com` → red border + `Email sudah terdaftar...`; `newverify999@test.com` → green border + `Email tersedia`.
+- Check 5 (PHONE real-time detection): PASS — `085888082208` → red border + `Nomor WhatsApp sudah terdaftar...`; `6285888082208` (alt format of same number) STILL shows taken (format-agnostic); `0899-7777-8888` → green border + `Nomor tersedia`.
+- Check 6 (OTP send blocked when phone taken): PASS — with phone=`085888082208`, the `Kirim OTP` button is `disabled=True`.
+- Check 7 (submit button states): PASS —
+    - 7a: name taken → submit disabled ✓
+    - 7b: name unique, email taken → submit disabled ✓
+    - 7c: email unique, phone taken → submit disabled ✓
+    - 7d: all 3 unique → no taken/checking helper texts remain visible, all 3 "tersedia" texts visible (available_count=3, taken_visible=False); submit still disabled=True because OTP-verified + password + terms checkbox are also required (expected — duplicate-check is no longer the blocker).
+- Check 8 (server-side enforcement via curl): PASS — all 4 scenarios return HTTP 409 with the correct `field` property:
+    - Duplicate name → 409 `{"error":"Nama sudah terdaftar. Silakan masuk atau gunakan nama lain.","field":"name"}`
+    - Duplicate email → 409 `{"error":"Email sudah terdaftar. Silakan masuk atau gunakan email lain.","field":"email"}`
+    - Duplicate phone → 409 `{"error":"Nomor WhatsApp sudah terdaftar. Silakan masuk atau gunakan nomor lain.","field":"phone"}`
+    - Duplicate phone (alt format `6285888082208`) → 409 with `field:"phone"` (format-agnostic confirmed server-side too).
+- Check 9 (responsive + footer): PASS —
+    - 9a: at 375x700 mobile viewport, name/email/phone fields + submit button remain visible (after scroll-into-view). No clipping.
+    - 9b: at 1366x900 desktop viewport, `<footer>` element is present and visible; footer_bottom=900 matches viewport height=900 (i.e. footer sits flush at the bottom of the viewport on initial load, with the rest of the page content scrollable below via doc_scroll_h=5603). No floating gap, no overlap.
+- Final verdict: PASS — all 9 checks (and 22 sub-checks) PASS. The register duplicate-check fix works end-to-end: real-time UI feedback on the client (name/email/phone), Kirim OTP + Daftar Sekarang buttons correctly disabled when duplicates are detected, server-side `/api/auth/register` returns 409 with `field` for all three fields (including format-agnostic phone matching), and the page renders cleanly with no console errors or hydration mismatches.
+- Files produced by this verification: `/home/z/my-project/tests/verify-register-duplicate-check.py` (Playwright script), `/home/z/my-project/tool-results/verify-register-footer.png` (screenshot evidence).

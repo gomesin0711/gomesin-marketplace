@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, isDbAvailable } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
 import { fallbackRegisterUser } from "@/lib/auth-fallback";
+import { phonesMatch, normalizePhone } from "@/lib/otp-store";
 
 // ---------------------------------------------------------------------------
 // Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
@@ -66,14 +67,44 @@ export async function POST(req: NextRequest) {
       // SQLite is case-sensitive by default. Use COLLATE NOCASE so that a
       // legacy mixed-case email (e.g. seeded admin) cannot be re-registered
       // by typing the lowercased variant.
-      const existing = await db.$queryRaw<Array<{ id: string }>>`
+      const existingEmail = await db.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM User WHERE email = ${emailNorm} COLLATE NOCASE LIMIT 1
       `;
-      if (existing && existing.length > 0) {
+      if (existingEmail && existingEmail.length > 0) {
         return NextResponse.json(
-          { error: "Email sudah terdaftar. Silakan masuk." },
+          { error: "Email sudah terdaftar. Silakan masuk atau gunakan email lain.", field: "email" },
           { status: 409 }
         );
+      }
+
+      // Name uniqueness — case-insensitive, trimmed comparison.
+      if (nameTrim) {
+        const existingName = await db.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM User WHERE name = ${nameTrim} COLLATE NOCASE LIMIT 1
+        `;
+        if (existingName && existingName.length > 0) {
+          return NextResponse.json(
+            { error: "Nama sudah terdaftar. Silakan masuk atau gunakan nama lain.", field: "name" },
+            { status: 409 }
+          );
+        }
+      }
+
+      // WhatsApp number uniqueness — format-agnostic comparison via phonesMatch
+      // so that "0812-3456-7890" and "6281234567890" are treated as the same.
+      const phoneTrim = phone?.trim() || "";
+      if (phoneTrim) {
+        const usersWithPhone = await db.user.findMany({
+          where: { phone: { not: null } },
+          select: { id: true, phone: true },
+        });
+        const phoneClash = usersWithPhone.some((u) => phonesMatch(u.phone, phoneTrim));
+        if (phoneClash) {
+          return NextResponse.json(
+            { error: "Nomor WhatsApp sudah terdaftar. Silakan masuk atau gunakan nomor lain.", field: "phone" },
+            { status: 409 }
+          );
+        }
       }
 
       const user = await db.user.create({
@@ -128,9 +159,50 @@ export async function POST(req: NextRequest) {
     }
     if (existing) {
       return NextResponse.json(
-        { error: "Email sudah terdaftar. Silakan masuk." },
+        { error: "Email sudah terdaftar. Silakan masuk atau gunakan email lain.", field: "email" },
         { status: 409 }
       );
+    }
+
+    // Name uniqueness (case-insensitive)
+    if (nameTrim) {
+      const escapedName = nameTrim.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+      const { data: existingName } = await supabase
+        .from("User")
+        .select("id")
+        .ilike("name", escapedName)
+        .limit(1)
+        .maybeSingle();
+      if (existingName) {
+        return NextResponse.json(
+          { error: "Nama sudah terdaftar. Silakan masuk atau gunakan nama lain.", field: "name" },
+          { status: 409 }
+        );
+      }
+    }
+
+    // WhatsApp number uniqueness (format-agnostic, client-side phonesMatch)
+    const phoneTrim = phone?.trim() || "";
+    if (phoneTrim) {
+      const inputNorm = normalizePhone(phoneTrim);
+      const last10 = inputNorm.slice(-10);
+      const { data: rows } = await supabase
+        .from("User")
+        .select("phone")
+        .not("phone", "is", null);
+      if (rows && rows.length > 0) {
+        const clash = rows.some((r: { phone: string | null }) => {
+          if (!r.phone) return false;
+          const dbNorm = normalizePhone(r.phone);
+          return dbNorm === inputNorm || dbNorm.slice(-10) === last10;
+        });
+        if (clash) {
+          return NextResponse.json(
+            { error: "Nomor WhatsApp sudah terdaftar. Silakan masuk atau gunakan nomor lain.", field: "phone" },
+            { status: 409 }
+          );
+        }
+      }
     }
 
     // Insert new user with role="user" (default, but explicit for clarity).

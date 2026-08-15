@@ -73,6 +73,10 @@ export function LoginView() {
   // Status: "idle" | "checking" | "available" | "taken" | "invalid"
   const [rEmailStatus, setREmailStatus] = useState<"idle" | "checking" | "available" | "taken" | "invalid">("idle");
 
+  // --- Register name & phone availability checks ---
+  const [rNameStatus, setRNameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [rPhoneStatus, setRPhoneStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+
   useEffect(() => {
     if (rOtpCooldown <= 0) return;
     const id = setTimeout(() => setROtpCooldown((c) => c - 1), 1000);
@@ -109,6 +113,59 @@ export function LoginView() {
       clearTimeout(timer);
     };
   }, [rEmail]);
+
+  // Debounced NAME availability check — fires 500ms after the user stops typing.
+  // Blocks registration if the name is already taken (case-insensitive).
+  useEffect(() => {
+    const name = rName.trim();
+    if (name.length < 2) {
+      setRNameStatus("idle");
+      return;
+    }
+    setRNameStatus("checking");
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/check-availability?name=${encodeURIComponent(name)}`);
+        const data = await res.json();
+        if (cancelled) return;
+        setRNameStatus(data?.nameTaken ? "taken" : "available");
+      } catch {
+        if (!cancelled) setRNameStatus("idle");
+      }
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [rName]);
+
+  // Debounced PHONE (WhatsApp) availability check — fires 500ms after the user
+  // stops typing. Only checks once the number has at least 9 digits.
+  useEffect(() => {
+    const phone = rPhone.trim();
+    const digits = phone.replace(/[^0-9]/g, "");
+    if (digits.length < 9) {
+      setRPhoneStatus("idle");
+      return;
+    }
+    setRPhoneStatus("checking");
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/check-availability?phone=${encodeURIComponent(phone)}`);
+        const data = await res.json();
+        if (cancelled) return;
+        setRPhoneStatus(data?.phoneTaken ? "taken" : "available");
+      } catch {
+        if (!cancelled) setRPhoneStatus("idle");
+      }
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [rPhone]);
 
   // --- Login method toggle (Email vs No. WhatsApp) ---
   const [loginMethod, setLoginMethod] = useState<"email" | "wa">("email");
@@ -276,6 +333,14 @@ export function LoginView() {
       toast.error(tr("regOtpPhoneFirst"));
       return;
     }
+    if (rPhoneStatus === "taken") {
+      toast.error(tr("errPhoneTaken"));
+      return;
+    }
+    if (rPhoneStatus === "checking") {
+      toast.error(tr("phoneChecking"));
+      return;
+    }
     setROtpSending(true);
     setROtpDevCode(null);
     try {
@@ -354,6 +419,22 @@ export function LoginView() {
     // so we never submit a duplicate even in a race.
     if (rEmailStatus === "checking") {
       toast.error(tr("emailChecking"));
+      return;
+    }
+    if (rNameStatus === "taken") {
+      toast.error(tr("errNameTaken"));
+      return;
+    }
+    if (rNameStatus === "checking") {
+      toast.error(tr("nameChecking"));
+      return;
+    }
+    if (rPhoneStatus === "taken") {
+      toast.error(tr("errPhoneTaken"));
+      return;
+    }
+    if (rPhoneStatus === "checking") {
+      toast.error(tr("phoneChecking"));
       return;
     }
     if (!rOtpVerified) {
@@ -455,9 +536,11 @@ export function LoginView() {
             sendLoginOtp={sendLoginOtp}
             verifyLoginOtp={verifyLoginOtp}
             rName={rName} setRName={setRName}
+            rNameStatus={rNameStatus}
             rEmail={rEmail} setREmail={setREmail}
             rEmailStatus={rEmailStatus}
             rPhone={rPhone} setRPhone={setRPhone}
+            rPhoneStatus={rPhoneStatus}
             rPass={rPass} setRPass={setRPass}
             rPass2={rPass2} setRPass2={setRPass2}
             agree={agree} setAgree={setAgree}
@@ -554,9 +637,11 @@ export function LoginView() {
               sendLoginOtp={sendLoginOtp}
               verifyLoginOtp={verifyLoginOtp}
               rName={rName} setRName={setRName}
+              rNameStatus={rNameStatus}
               rEmail={rEmail} setREmail={setREmail}
               rEmailStatus={rEmailStatus}
               rPhone={rPhone} setRPhone={setRPhone}
+              rPhoneStatus={rPhoneStatus}
               rPass={rPass} setRPass={setRPass}
               rPass2={rPass2} setRPass2={setRPass2}
               agree={agree} setAgree={setAgree}
@@ -593,7 +678,7 @@ function FormSection({
   lWaPhone, setLWaPhone, lWaOtp, setLWaOtp,
   lWaOtpSending, lWaOtpVerifying, lWaOtpVerified, lWaOtpDevCode, lWaCooldown,
   sendLoginOtp, verifyLoginOtp,
-  rName, setRName, rEmail, setREmail, rEmailStatus, rPhone, setRPhone,
+  rName, setRName, rNameStatus, rEmail, setREmail, rEmailStatus, rPhone, setRPhone, rPhoneStatus,
   rPass, setRPass, rPass2, setRPass2, agree, setAgree,
   rOtp, setROtp, rOtpSending, rOtpVerifying, rOtpVerified, rOtpDevCode, rOtpCooldown,
   sendRegOtp, verifyRegOtp,
@@ -615,9 +700,11 @@ function FormSection({
   sendLoginOtp: () => void;
   verifyLoginOtp: () => void;
   rName: string; setRName: (v: string) => void;
+  rNameStatus: "idle" | "checking" | "available" | "taken";
   rEmail: string; setREmail: (v: string) => void;
   rEmailStatus: "idle" | "checking" | "available" | "taken" | "invalid";
   rPhone: string; setRPhone: (v: string) => void;
+  rPhoneStatus: "idle" | "checking" | "available" | "taken";
   rPass: string; setRPass: (v: string) => void;
   rPass2: string; setRPass2: (v: string) => void;
   agree: boolean; setAgree: (v: boolean) => void;
@@ -831,8 +918,37 @@ function FormSection({
             <Label htmlFor="r-name">{`${tr("fullName")} *`}</Label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="r-name" value={rName} onChange={(e) => setRName(e.target.value)} placeholder={tr("fullNamePlaceholder")} className="pl-9" />
+              <Input
+                id="r-name"
+                value={rName}
+                onChange={(e) => setRName(e.target.value)}
+                placeholder={tr("fullNamePlaceholder")}
+                className={cn(
+                  "pl-9",
+                  rNameStatus === "available" && "pr-9 border-green-500 focus-visible:ring-green-500/30",
+                  rNameStatus === "taken" && "pr-9 border-destructive focus-visible:ring-destructive/30",
+                )}
+                aria-invalid={rNameStatus === "taken"}
+              />
+              {rNameStatus === "checking" && (
+                <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+              )}
+              {rNameStatus === "available" && (
+                <CheckCircle2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-green-600 dark:text-green-400" />
+              )}
+              {rNameStatus === "taken" && (
+                <XCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-destructive" />
+              )}
             </div>
+            {rNameStatus === "checking" && (
+              <p className="text-xs text-muted-foreground">{tr("nameChecking")}</p>
+            )}
+            {rNameStatus === "available" && (
+              <p className="text-xs font-medium text-green-600 dark:text-green-400">{tr("nameAvailable")}</p>
+            )}
+            {rNameStatus === "taken" && (
+              <p className="text-xs font-medium text-destructive">{tr("nameTaken")}</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="r-email">{`${tr("email")} *`}</Label>
@@ -883,8 +999,37 @@ function FormSection({
             <Label htmlFor="r-phone">{tr("whatsapp")}</Label>
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="r-phone" value={rPhone} onChange={(e) => setRPhone(e.target.value)} placeholder={tr("whatsappPlaceholder")} className="pl-9" />
+              <Input
+                id="r-phone"
+                value={rPhone}
+                onChange={(e) => setRPhone(e.target.value)}
+                placeholder={tr("whatsappPlaceholder")}
+                className={cn(
+                  "pl-9",
+                  rPhoneStatus === "available" && "pr-9 border-green-500 focus-visible:ring-green-500/30",
+                  rPhoneStatus === "taken" && "pr-9 border-destructive focus-visible:ring-destructive/30",
+                )}
+                aria-invalid={rPhoneStatus === "taken"}
+              />
+              {rPhoneStatus === "checking" && (
+                <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+              )}
+              {rPhoneStatus === "available" && (
+                <CheckCircle2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-green-600 dark:text-green-400" />
+              )}
+              {rPhoneStatus === "taken" && (
+                <XCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-destructive" />
+              )}
             </div>
+            {rPhoneStatus === "checking" && (
+              <p className="text-xs text-muted-foreground">{tr("phoneChecking")}</p>
+            )}
+            {rPhoneStatus === "available" && (
+              <p className="text-xs font-medium text-green-600 dark:text-green-400">{tr("phoneAvailable")}</p>
+            )}
+            {rPhoneStatus === "taken" && (
+              <p className="text-xs font-medium text-destructive">{tr("phoneTaken")}</p>
+            )}
           </div>
 
           {/* ===== Register OTP step ===== */}
@@ -955,7 +1100,7 @@ function FormSection({
                   <button
                     type="button"
                     onClick={sendRegOtp}
-                    disabled={rOtpSending}
+                    disabled={rOtpSending || rPhoneStatus === "taken" || rPhoneStatus === "checking"}
                     className="inline-flex items-center gap-1 font-medium text-primary hover:underline disabled:opacity-50"
                   >
                     {rOtpSending ? <Loader2 className="size-3 animate-spin" /> : <KeyRound className="size-3" />}
@@ -996,7 +1141,7 @@ function FormSection({
             <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 accent-primary" />
             <span>{tr("agreeTerms")}</span>
           </label>
-          <Button type="submit" disabled={loading || !rOtpVerified || rEmailStatus === "taken" || rEmailStatus === "invalid" || rEmailStatus === "checking"} className="w-full gap-2 bg-primary font-semibold" size="lg">
+          <Button type="submit" disabled={loading || !rOtpVerified || rEmailStatus === "taken" || rEmailStatus === "invalid" || rEmailStatus === "checking" || rNameStatus === "taken" || rNameStatus === "checking" || rPhoneStatus === "taken" || rPhoneStatus === "checking"} className="w-full gap-2 bg-primary font-semibold" size="lg">
             {loading ? <Loader2 className="size-4 animate-spin" /> : null}
             {loading ? tr("processing") : tr("registerBtn")}
           </Button>

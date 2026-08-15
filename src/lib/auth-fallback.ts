@@ -122,13 +122,39 @@ export async function fallbackRegisterUser(data: {
 > {
   const store = await getAuthStore();
   const emailKey = data.email.toLowerCase().trim();
+  const nameTrim = data.name.trim();
+  const phoneTrim = data.phone?.trim() || "";
 
   if (store.has(emailKey)) {
     return {
       ok: false,
-      error: "Email sudah terdaftar. Silakan masuk.",
+      error: "Email sudah terdaftar. Silakan masuk atau gunakan email lain.",
       status: 409,
     };
+  }
+
+  // Name uniqueness (case-insensitive)
+  for (const u of store.values()) {
+    if (u.name && u.name.trim().toLowerCase() === nameTrim.toLowerCase()) {
+      return {
+        ok: false,
+        error: "Nama sudah terdaftar. Silakan masuk atau gunakan nama lain.",
+        status: 409,
+      };
+    }
+  }
+
+  // WhatsApp number uniqueness (format-agnostic)
+  if (phoneTrim) {
+    for (const u of store.values()) {
+      if (phonesMatch(u.phone, phoneTrim)) {
+        return {
+          ok: false,
+          error: "Nomor WhatsApp sudah terdaftar. Silakan masuk atau gunakan nomor lain.",
+          status: 409,
+        };
+      }
+    }
   }
 
   const newUser: StoredUser = {
