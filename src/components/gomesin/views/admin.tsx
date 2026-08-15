@@ -805,7 +805,7 @@ function IklanBaruTab() {
   const mounted = useMounted();
   const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
   const qc = useQueryClient();
-  const { broadcastListings } = useChatSocket();
+  const { broadcastListings, subscribe } = useChatSocket();
   const { data, isLoading } = useQuery({ queryKey: ["admin-listings"], queryFn: () => fetchJson("/api/admin/listings"), ...RT });
   const [previewListing, setPreviewListing] = useState<any>(null);
   const [activeImg, setActiveImg] = useState(0);
@@ -814,6 +814,15 @@ function IklanBaruTab() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteCallback, setDeleteCallback] = useState<(() => void) | null>(null);
   const [search, setSearch] = useState("");
+  // ── Realtime: when a user posts + pays, /api/listings POST broadcasts
+  // "listing:pending" server-side. Subscribe here so the admin's pending
+  // list refreshes INSTANTLY (no need to wait for the 3-second poll).
+  useEffect(() => {
+    const off = subscribe("listing:pending", () => {
+      qc.invalidateQueries({ queryKey: ["admin-listings"] });
+    });
+    return off;
+  }, [qc, subscribe]);
   // Helper — invalidate BOTH admin-listings AND public ["listings"] (Beranda),
   // then fire a socket broadcast so any open homepage refetches in realtime.
   const invalidateAllListings = () => {

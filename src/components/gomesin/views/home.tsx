@@ -30,21 +30,22 @@ async function fetchJson(url: string) {
 
 /**
  * useListingsRealtime — keeps the Beranda (homepage) in sync with admin
- * changes (delete / publish / violation toggle) in NEAR-REALTIME.
+ * changes (delete / publish / violation toggle) in REALTIME.
  *
  * Two mechanisms work together:
  *
- * 1. Socket.io push (instant, when available): subscribes to the
- *    "listings:invalidate" event emitted by the admin's broadcastListings()
- *    helper. When received, ALL ["listings", ...] queries are invalidated
- *    and refetched immediately. This requires the chat-service mini-service
- *    to be running.
+ * 1. Socket.io push (instant, when available): subscribes to BOTH
+ *    "listings:invalidate" (admin's broadcastListings() helper) AND
+ *    "listing:new" (server-side broadcast from /api/admin/listings PATCH
+ *    when admin publishes a listing). When received, ALL ["listings", ...]
+ *    queries are invalidated and refetched immediately. This requires the
+ *    chat-service mini-service to be running.
  *
- * 2. Polling fallback (2-second interval): every homepage listing query has
- *    refetchInterval: 2000. This catches changes even if the socket is not
+ * 2. Polling fallback (3-second interval): every homepage listing query has
+ *    refetchInterval: 3000. This catches changes even if the socket is not
  *    connected (e.g. chat-service temporarily down, or the visitor is on a
  *    network that blocks WebSocket). This guarantees the homepage never stays
- *    stale for more than 2 seconds.
+ *    stale for more than 3 seconds.
  *
  * Works for anonymous visitors too — the socket connects without requiring
  * a user:join (it just won't join a user room, which is fine for global
@@ -55,10 +56,20 @@ function useListingsRealtime() {
   const { subscribe } = useChatSocket();
   useEffect(() => {
     // Socket.io push — instant invalidation when the admin broadcasts.
-    const off = subscribe("listings:invalidate", () => {
+    const off1 = subscribe("listings:invalidate", () => {
       qc.invalidateQueries({ queryKey: ["listings"] });
     });
-    return off;
+    // Also subscribe to "listing:new" — emitted server-side by the
+    // /api/admin/listings PATCH route when admin publishes a listing.
+    // This fires the moment a new ad goes live, so the homepage's "Iklan
+    // Baru" section refreshes INSTANTLY (no 3s polling delay).
+    const off2 = subscribe("listing:new", () => {
+      qc.invalidateQueries({ queryKey: ["listings"] });
+    });
+    return () => {
+      off1();
+      off2();
+    };
   }, [qc, subscribe]);
 }
 

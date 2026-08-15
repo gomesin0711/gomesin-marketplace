@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, isDbAvailable } from "@/lib/db";
 import { parseListing } from "@/lib/types";
 import { getPaketMap } from "@/lib/paket";
+import { broadcastListingNew, broadcastListingPending } from "@/lib/broadcast";
 
 export const dynamic = "force-dynamic";
 
@@ -165,6 +166,35 @@ export async function PATCH(req: NextRequest) {
     if (isDbAvailable()) {
       try {
         await db.listing.update({ where: { id }, data });
+        // ── Realtime broadcast ────────────────────────────────────────────
+        // When the admin publishes a listing (status=active), fan out a
+        // `listing:new` event to ALL connected clients so the homepage's
+        // "Iklan Baru" section AND the notification bell update instantly
+        // (no polling delay). For other status changes (reject, sold, etc.)
+        // we still broadcast `listings:invalidate` so any open homepage
+        // refetches its queries.
+        try {
+          if (status === "active" || (violationFlag === false && !status)) {
+            // Fetch the freshly updated listing with relations so clients
+            // get the full payload (matching the GET /api/listings shape).
+            const fresh = await db.listing.findUnique({
+              where: { id },
+              include: {
+                category: true,
+                seller: true,
+                user: { select: { id: true, name: true, phone: true, email: true, city: true, logoImage: true, bannerImage: true } },
+              },
+            });
+            if (fresh) {
+              broadcastListingNew(parseListing(fresh));
+            }
+          } else {
+            // Reject / sold / etc. — just signal clients to refetch.
+            broadcastListingPending({ id, status });
+          }
+        } catch (bcErr: any) {
+          console.warn("[admin/listings] broadcast error:", bcErr?.message);
+        }
         return NextResponse.json({ success: true });
       } catch (prismaErr) {
         console.error("[admin/listings] Prisma PATCH error, trying Supabase:", prismaErr);

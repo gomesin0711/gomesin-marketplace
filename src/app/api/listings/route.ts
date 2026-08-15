@@ -5,6 +5,7 @@ import { getPaketMap } from "@/lib/paket";
 import { saveImagesToLocal } from "@/lib/save-image";
 import { getFallbackListings } from "@/lib/fallback-data";
 import type { ListingFilters } from "@/lib/fallback-data";
+import { broadcastListingPending } from "@/lib/broadcast";
 
 // ---------------------------------------------------------------------------
 // Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
@@ -467,6 +468,19 @@ export async function POST(req: NextRequest) {
           },
           include: { category: true, seller: true, user: { select: { id: true, name: true, phone: true, email: true, city: true, logoImage: true, bannerImage: true } } },
         });
+
+        // ── Realtime broadcast ────────────────────────────────────────────
+        // Notify the admin's "Iklan Baru" tab that a new pending listing just
+        // landed (so they can review it instantly, no need to wait for the
+        // 3-second poll). Drafts are skipped — they're invisible to admin
+        // until the user actually submits/pays.
+        if (!isDraft) {
+          try {
+            broadcastListingPending(parseListing(created));
+          } catch (bcErr: any) {
+            console.warn("[listings] POST broadcast error:", bcErr?.message);
+          }
+        }
 
         return NextResponse.json({ listing: parseListing(created) }, { status: 201 });
       } catch (prismaErr) {

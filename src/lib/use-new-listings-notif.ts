@@ -1,24 +1,37 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { playListingNotificationSound } from "@/lib/notification-sound";
+import { useChatSocket } from "@/lib/use-chat-socket";
 
 /**
  * Tracks "new listings" notifications for the user.
  *
- * - Polls the latest listings every 60 seconds.
- * - Stores `lastSeenAt` (ISO timestamp) in localStorage.
- * - Returns the count of listings whose `createdAt` is newer than `lastSeenAt`.
- * - `markAllSeen()` updates `lastSeenAt` to "now" — which clears the badge.
- * - Plays the "Iklan baru nih" ringtone when NEW listings are detected
- *   (count increases beyond the previous known count).
+ * THREE mechanisms work together so the badge + ringtone fire INSTANTLY
+ * when a new listing is published (no more 60-second wait):
  *
- * The list of new listings itself is also returned so the bell dropdown can
- * display them. Once the user opens the dropdown, `markAllSeen()` is called
- * and the badge count drops to 0 (the dropdown content becomes empty on next
- * render — matching the user requirement: "apabila sudah dilihat maka isi
- * notif kosong").
+ * 1. Socket.io push (instant, primary):
+ *    - Subscribes to `listing:new` (emitted by /api/admin/listings PATCH
+ *      when admin publishes a listing).
+ *    - Also subscribes to `listings:invalidate` (emitted by admin's
+ *      broadcastListings() helper after delete/publish/violation toggle).
+ *    On either event, the `["new-listings-notif"]` query is invalidated
+ *    immediately → refetches → new listing shows up in the bell + the
+ *    "Iklan baru nih" ringtone plays.
+ *
+ * 2. Polling fallback (10-second interval):
+ *    If the socket is disconnected (chat-service down, network blocks
+ *    WebSocket), we still poll every 10 seconds so the badge stays
+ *    reasonably fresh.
+ *
+ * 3. localStorage `seenAt`:
+ *    - Stores `lastSeenAt` (epoch ms) in localStorage so the badge persists
+ *      across tabs/sessions.
+ *    - `markAllSeen()` updates `seenAt` to "now" — clears the badge.
+ *
+ * The list of new listings itself is returned so the bell dropdown and the
+ * profile "notifikasi" panel can display them.
  */
 
 const STORAGE_KEY = "gomesin-new-listings-seen-at";
@@ -48,15 +61,42 @@ async function fetchNewest(): Promise<{ listings: any[] }> {
 }
 
 export function useNewListingsNotif() {
+  const qc = useQueryClient();
   const [seenAt, setSeenAtState] = useState<number>(() => getSeenAt());
+  const { subscribe } = useChatSocket();
 
   const { data } = useQuery({
     queryKey: ["new-listings-notif"],
     queryFn: fetchNewest,
-    refetchInterval: 60_000, // poll every minute
+    // Poll every 10 seconds as a fallback when socket.io is unavailable.
+    // (Was 60s — caused the "iklan baru tidak masuk notifikasi sampai
+    // di-refresh" complaint. Now realtime via socket + 10s poll backup.)
+    refetchInterval: 10_000,
     refetchOnWindowFocus: true,
-    staleTime: 30_000,
+    staleTime: 5_000,
   });
+
+  // ── Socket.io subscriptions — INSTANT invalidation when a new listing
+  // is published. Bypasses the 10s poll entirely.
+  useEffect(() => {
+    const off1 = subscribe("listing:new", () => {
+      // A new listing was just published by the admin. Invalidate the
+      // query → TanStack refetches immediately → the new listing shows
+      // up in the bell + ringtone plays (via the count-increase effect
+      // below).
+      qc.invalidateQueries({ queryKey: ["new-listings-notif"] });
+      // Also invalidate the homepage's listing queries so any open
+      // Beranda refreshes instantly.
+      qc.invalidateQueries({ queryKey: ["listings"] });
+    });
+    const off2 = subscribe("listings:invalidate", () => {
+      qc.invalidateQueries({ queryKey: ["new-listings-notif"] });
+    });
+    return () => {
+      off1();
+      off2();
+    };
+  }, [qc, subscribe]);
 
   // Keep seenAt in sync if it changes in another tab.
   useEffect(() => {

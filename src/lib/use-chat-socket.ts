@@ -102,6 +102,8 @@ function getSocket(): Socket {
   socket.on("message:read-update", (p: ReadUpdate) => dispatch("message:read-update", p));
   socket.on("typing:update", (p: TypingUpdate) => dispatch("typing:update", p));
   socket.on("listings:invalidate", (p: any) => dispatch("listings:invalidate", p));
+  socket.on("listing:new", (p: any) => dispatch("listing:new", p));
+  socket.on("listing:pending", (p: any) => dispatch("listing:pending", p));
   // In-app call signaling events (WebRTC relay).
   socket.on("call:incoming", (p: any) => dispatch("call:incoming", p));
   socket.on("call:accepted", (p: any) => dispatch("call:accepted", p));
@@ -219,6 +221,8 @@ export function useChatSocket() {
         | "message:read-update"
         | "typing:update"
         | "listings:invalidate"
+        | "listing:new"
+        | "listing:pending"
         | "call:incoming"
         | "call:accepted"
         | "call:rejected"
@@ -300,6 +304,30 @@ export function useChatSocket() {
     [socket]
   );
 
+  // Broadcast a freshly published listing to ALL connected clients.
+  // Used by the admin's "Publikasi" action so the homepage's "Iklan Baru"
+  // section AND the notification bell update instantly (no polling delay).
+  // (Server-side /api/admin/listings PATCH also fires this via the
+  // chat-service's /internal/broadcast HTTP endpoint — this client-side
+  // emit is a redundancy for when the server-side call fails but the
+  // admin's socket is still connected.)
+  const broadcastListingNew = useCallback(
+    (listing: any): Promise<{ ok: boolean; error?: string }> => {
+      return new Promise((resolve) => {
+        if (!socket || !socket.connected) {
+          resolve({ ok: false, error: "Socket not connected" });
+          return;
+        }
+        socket.emit(
+          "listing:broadcast-new",
+          { listing },
+          (ack: any) => resolve(ack || { ok: false, error: "No ack" })
+        );
+      });
+    },
+    [socket]
+  );
+
   return {
     socket,
     connected,
@@ -309,6 +337,7 @@ export function useChatSocket() {
     stopTyping,
     subscribe,
     broadcastListings,
+    broadcastListingNew,
     callRequest,
     callAccept,
     callReject,
