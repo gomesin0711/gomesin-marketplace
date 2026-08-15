@@ -4028,3 +4028,101 @@ Stage Summary:
 - dev.log clean — no errors, no hydration mismatches.
 - Backup at _backup_pre_1786799304/ available if rollback needed.
 - PASS — project fully operational with snapshot (12) content.
+
+---
+Task ID: admin-content-sync
+Agent: Main (Z.ai Code)
+Task: "akun admin mesinKu harusnya isinya sama dengan admin gomesin check and fix" — The mesinKU admin account should have the same content as the gomesin admin account. Check and fix.
+
+Work Log:
+- Investigated the discrepancy between the local mesinKU admin and the production gomesin admin:
+  - The project was rebranded from "gomesin" → "mesinKU" (worklog Task ID: rebrand). The admin user id stayed the same (cms1trinv0000pzao4vy44or8), but name/email/company were rebranded.
+  - Queried Supabase production DB (still has the original "Admin Gomesin" account with full content):
+    - User: name="Admin Gomesin", email=gomesin0711@gmail.com, phone=085888082208, city=Jakarta, company=gomesin, address=tangerang, bannerImage=266999-char base64 JPEG, logoImage=255150-char base64.
+    - 2 listings owned: "Tes" (active/paid/featured, sellerId=cms1trfeo000cpza336e61po9) and "Test Draft Invalid Cat" (draft/unpaid, same sellerId).
+    - 1 seller profile linked: "Admin mesinKU" (cms1trfeo000cpza336e61po9) — Surabaya, Jawa Timur, verified=true, rating=4.7, reviewCount=234.
+  - Queried local SQLite DB (after extract-and-replace-12 re-seed):
+    - User: name="Admin mesinKU", email=mesinKU0711@gmail.com, phone=0812-0000-0000 (PLACEHOLDER), city=Jakarta, company=mesinKU, address=Tangerang, bannerImage=null, logoImage=null.
+    - 0 listings owned, 0 seller profiles, 0 messages.
+  - Root cause: The re-seed (during extract-and-replace-12) ran seed.ts + seed-users.ts which only create sample users + sample listings linked to SAMPLE users (Budi, Siti, etc.), NOT to the admin. The admin's phone was also reset to the placeholder "0812-0000-0000". The banner/logo images were never seeded.
+- Created migration script `scripts/sync-admin-from-supabase.ts`:
+  - Fetches the gomesin admin user (full profile incl. bannerImage + logoImage) from Supabase REST API.
+  - Fetches the 2 listings owned by the admin (with all fields: title, description, price, images, specs, status, paymentStatus, etc.).
+  - Fetches the seller profile(s) linked to those listings.
+  - Fetches the categories referenced by the listings.
+  - Updates the local mesinKU admin user: copies phone, bannerImage, logoImage, city, address from gomesin admin. KEEPS name="Admin mesinKU", email=mesinKU0711@gmail.com, company=mesinKU, role=admin (the correct rebrand).
+  - Resolves categories locally: if a local category with the same slug already exists (collision), remaps the listing's categoryId to the local id instead of creating a duplicate. If no collision, creates the category with its Supabase id.
+  - Upserts sellers locally (rebrands any "gomesin" text → "mesinKU" just in case — the target seller was already "Admin mesinKU").
+  - Upserts listings locally (links to admin userId + sellerId + remapped categoryId).
+- Ran the migration script — SUCCESS:
+  - Admin user updated: phone 0812-0000-0000 → 085888082208, bannerImage null → set (266999 chars), logoImage null → set (255150 chars).
+  - Categories resolved: "mesin-cetak" slug → remapped to local cmsue71310000o9cjlfj4t9am ("Mesin Cetak"); "mesin-makanan" slug → remapped to local cmsue71380007o9cj0x2ev8ah ("Mesin Makanan & Minuman").
+  - Seller upserted: "Admin mesinKU" (cms1trfeo000cpza336e61po9) — Surabaya, verified, rating 4.7.
+  - 2 listings upserted: "Tes" (active/paid/featured) + "Test Draft Invalid Cat" (draft/unpaid), both linked to admin userId + sellerId.
+- Updated seed files to preserve the correct phone on future re-seeds:
+  - `prisma/seed-users.ts`: ADMIN.phone "0812-0000-0000" → "085888082208", address "Tangerang" → "tangerang".
+  - `prisma/seed-admin.ts`: phone "0812-0000-0000" → "085888082208".
+  - (`src/lib/auth-fallback.ts` already had the correct phone "085888082208" — no change needed.)
+- Verified via curl (API):
+  - POST /api/auth/login (mesinKU0711@gmail.com / admin123) → 200 with full user object: phone=085888082208, bannerImage=266999 chars, logoImage=255150 chars, name="Admin mesinKU", email=mesinKU0711@gmail.com, company=mesinKU, role=admin. ✓
+  - GET /api/auth/profile?userId=cms1trinv0000pzao4vy44or8 → 200: phone=085888082208, bannerImage=set, logoImage=set. ✓
+  - GET /api/my-listings?userId=cms1trinv0000pzao4vy44or8 → 200: 2 listings ("Tes" active/paid/featured + "Test Draft Invalid Cat" draft/unpaid), both with seller="Admin mesinKU". ✓
+- dev.log inspection: no errors, no hydration mismatches. All API calls returning 200.
+
+Stage Summary:
+- The local mesinKU admin account now has the SAME content as the production gomesin admin:
+  - phone: 085888082208 (was 0812-0000-0000 placeholder)
+  - bannerImage: 266999-char base64 JPEG (was null)
+  - logoImage: 255150-char base64 (was null)
+  - address: "tangerang" (was "Tangerang" — minor casing)
+  - 2 listings: "Tes" (active/paid/featured) + "Test Draft Invalid Cat" (draft/unpaid)
+  - 1 seller profile: "Admin mesinKU" (Surabaya, verified, rating 4.7, 234 reviews)
+- KEPT the mesinKU rebrand: name="Admin mesinKU", email=mesinKU0711@gmail.com, company=mesinKU (NOT reverted to gomesin — those are the correct rebranded values).
+- Category slug collisions handled by remapping to existing local categories (no duplicate categories created).
+- Seed files updated so future re-seeds preserve the correct phone number (085888082208). The banner/logo images are too large to hardcode in seed files; re-run `bun run scripts/sync-admin-from-supabase.ts` after any re-seed to restore them.
+- Files created/modified: scripts/sync-admin-from-supabase.ts (NEW), prisma/seed-users.ts, prisma/seed-admin.ts.
+- PASS (pending browser verification) — API confirms all content is now present and correct.
+
+---
+Task ID: admin-content-sync-verify
+Agent: Browser Verifier
+Task: Browser-verify the admin content sync fix — login as mesinKU admin, confirm profile shows phone 085888082208 + banner image + logo image, and Iklan Saya shows 2 listings (Tes + Test Draft Invalid Cat).
+
+Work Log:
+- Read the prior worklog section (Task ID: admin-content-sync) to understand what was done: migration script `scripts/sync-admin-from-supabase.ts` copied the gomesin admin's phone (085888082208), bannerImage (266999-char base64 JPEG), logoImage (255150-char base64) into the local mesinKU admin user; created the "Admin mesinKU" seller profile; created 2 listings ("Tes" + "Test Draft Invalid Cat") linked to the admin userId. Seed files (prisma/seed-users.ts, prisma/seed-admin.ts) were also updated so future re-seeds preserve the correct phone.
+- Inspected the relevant source files to understand the UI structure before scripting:
+  - `src/components/gomesin/header.tsx`: DESKTOP header (hidden md:flex) renders the avatar button with `aria-label="Akun"` when logged in (or `aria-label="Masuk atau Daftar"` when not). MOBILE header (md:hidden) uses `aria-label="Akun Saya"`. At 1366×900 desktop viewport, only the desktop variant is visible.
+  - `src/components/gomesin/views/login.tsx`: login form uses `input#l-email` + `input#l-pass`; submit button text is `tr("tabLogin")` = "Masuk" (id). Two instances (mobile + desktop) — only the desktop instance is visible at 1366×900.
+  - `src/components/gomesin/views/admin.tsx` (lines 132-169): the admin dashboard view (auto-shown after admin login via `goToAdmin()`) renders the synced banner + logo directly: `<img src={user.bannerImage} alt="Banner">` and `<img src={user.logoImage} alt="Logo">` — perfect for verifying the synced images without navigating further.
+  - `src/components/gomesin/views/profile.tsx`: the overview (panel===null) shows the phone in the "Nomor Telepon" contact card (line 1430). The "Pengaturan" panel (line 2953+) renders banner + logo images again (lines 2967, 3078) AND the "No. HP" row in the Profil sub-section (line 3257). The "Iklan Saya" panel (line 1456) renders the DashboardView inline.
+  - `src/lib/store.ts`: login as admin triggers `goToAdmin()` (sets view="admin") after 900ms, NOT `goHome()`. To reach the user profile view from the admin view, click the admin view's "Kembali" button (`aria-label="Kembali"`) which calls `goHome()`, then click the header avatar button which calls `goToProfile()`.
+  - `src/components/gomesin/views/dashboard.tsx` (line 325): each listing card has an `<h3>` element with the listing title — used for exact-match counting of listings (avoiding "Tes" being a substring of "Test Draft Invalid Cat").
+- Wrote `/home/z/my-project/tests/verify-admin-content.py` — a Playwright script (headless Chromium, viewport 1366×900, locale id-ID) that:
+  - Pre-seeds `localStorage` (`gomesin-pwa-dismissed=1`, `gomesin-pwa-installed=1`) via `add_init_script` to suppress the auto-shown PWA install prompt.
+  - Uses `.filter(visible=True)` throughout to disambiguate between mobile (`md:hidden`) and desktop (`hidden md:flex/hidden md:grid`) instances of the header buttons + login form.
+  - After login (which auto-redirects to the admin view), verifies the synced banner + logo images are rendered in the ADMIN view itself (where they're already shown via `user.bannerImage`/`user.logoImage` props).
+  - Then clicks "Kembali" → home → clicks the header avatar button → profile overview → checks the phone is shown.
+  - Then clicks the "Pengaturan" sidebar item → checks the banner image, logo image, and the "No. HP" row.
+  - Then clicks the "Iklan Saya" sidebar item → counts visible `<h3>` elements (each listing card has exactly one) and asserts both expected titles ("Tes" and "Test Draft Invalid Cat") are present as exact text matches.
+  - Captures `console` + `pageerror` events throughout for the no-errors assertion.
+- First run revealed two issues that were fixed in the script:
+  1. The header avatar button on DESKTOP uses `aria-label="Akun"` (not "Akun Saya" which is the mobile aria-label). Fixed by checking both aria-labels and accepting either.
+  2. The listing-title substring check was a false positive ("Tes" is a prefix of "Test Draft Invalid Cat"). Fixed by collecting the text of all visible `<h3>` elements and doing an exact-match check, plus counting the `<h3>` elements (each card has exactly one).
+- Second run: ALL 18 CHECKS PASS.
+- Sanity cross-check via API: `GET /api/my-listings?userId=cms1trinv0000pzao4vy44or8` → 2 listings returned ("Test Draft Invalid Cat" draft + "Tes" active, both with seller="Admin mesinKU"). Also `POST /api/auth/login` returns the full user object with phone=085888082208, bannerImage length=266999, logoImage length=255150 — confirming the DB state matches the UI.
+- Screenshots captured: `/home/z/my-project/tool-results/verify-admin-profile.png` (564K, profile Pengaturan view with banner + logo + No. HP row visible) and `/home/z/my-project/tool-results/verify-admin-listings.png` (604K, Iklan Saya panel showing 2 listing cards).
+- Inspected `/home/z/my-project/dev.log` (last ~80 lines): all API calls during the verification run returned 200 — `POST /api/auth/login 200`, `GET /api/admin/stats 200`, `GET /api/admin/banner 200`, `GET /api/my-listings?userId=... 200` (called twice), `GET /api/messages?userId=... 200`. No 500 errors, no runtime exceptions, no hydration mismatches. (grep for `error|warning|exception|hydration|mismatch` excluding the pre-existing `metadataBase` warning returned ZERO matches.)
+- Browser console: ZERO `error`-level console messages and ZERO `pageerror` events during the entire run.
+
+Stage Summary:
+- Check 1 (page loads cleanly): PASS — HTTP 200, title `mesinKU — Jual baru/bekas Mesin Cetak, Mesin Industri & Jasa Teknisi Berkualitas`, no error boundary, dev.log clean.
+- Check 2 (PWA prompt suppressed): PASS — `gomesin-pwa-dismissed=1`, `gomesin-pwa-installed=1`, zero PWA install dialogs visible.
+- Check 3 (login flow): PASS — clicked header "Masuk atau Daftar" button → Masuk tab active → filled email `mesinKU0711@gmail.com` + password `admin123` (visible form) → clicked visible "Masuk" submit button → admin view loaded ("Panel Administrator" heading visible, user.name "Admin mesinKU" + user.email present in DOM).
+- Check 4 (synced banner + logo in admin view): PASS — `<img alt="Banner" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABA...">` visible (matches the 266999-char base64 JPEG); `<img alt="Logo" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAP...">` visible.
+- Check 5 (header avatar visible after Kembali): PASS — clicked admin view's "Kembali" button → home view loaded → desktop header shows avatar button with `aria-label="Akun"` (1 visible); `aria-label="Masuk atau Daftar"` is GONE (0 visible).
+- Check 6 (profile overview shows synced phone): PASS — clicked avatar → profile overview loaded; phone `085888082208` is in the body text; the old placeholder `0812-0000-0000` is NOT present anywhere.
+- Check 7 (Pengaturan → banner + logo + No. HP): PASS — navigated to Pengaturan panel; banner `<img alt="Banner">` with `data:image/jpeg;base64,...` src visible (NOT the "Belum ada banner" placeholder); logo `<img alt="Logo">` with `data:image/png;base64,...` src visible; "No. HP" row contains `085888082208`; old placeholder NOT present.
+- Check 8 (Iklan Saya shows 2 listings): PASS — navigated to Iklan Saya panel; exactly 2 `<h3>` elements visible; their text matches exactly "Tes" and "Test Draft Invalid Cat" (exact match, not substring); no empty-state text. Server-side cross-check confirms 2 listings in `/api/my-listings` response (active "Tes" + draft "Test Draft Invalid Cat", both with seller="Admin mesinKU").
+- Check 9 (no console/page errors): PASS — ZERO error-level console messages, ZERO pageerror events; dev.log shows only successful 200 API responses with no errors/warnings/hydration mismatches (excluding pre-existing cosmetic metadataBase warning).
+- Final verdict: PASS — all 18 sub-checks PASS. The admin content sync fix is verified end-to-end through the browser. The mesinKU admin account (`mesinKU0711@gmail.com` / `admin123`) now has the SAME content as the production gomesin admin: phone `085888082208` (not the old `0812-0000-0000` placeholder), a 266999-char base64 JPEG banner image, a 255150-char base64 logo image, and 2 listings ("Tes" active/paid/featured + "Test Draft Invalid Cat" draft/unpaid). The rebrand is preserved (name="Admin mesinKU", email=mesinKU0711@gmail.com, company=mesinKU) and the seller profile is "Admin mesinKU" (Surabaya, verified, rating 4.7). No regressions, no console errors, no hydration mismatches.
+- Files produced by this verification: `/home/z/my-project/tests/verify-admin-content.py` (Playwright script), `/home/z/my-project/tool-results/verify-admin-profile.png` (screenshot evidence — profile Pengaturan view), `/home/z/my-project/tool-results/verify-admin-listings.png` (screenshot evidence — Iklan Saya panel with 2 listings).

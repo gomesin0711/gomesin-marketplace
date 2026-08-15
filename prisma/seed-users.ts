@@ -15,10 +15,10 @@ const ADMIN = {
   // DB path or the auth-fallback path.
   password:
     "0b1dd31e55556886306717e8dbb2ba9c:b52c0fb71b1f3d98dbf8668c24597d6ea63a21f81757d623c13a08fbb79e69482ee7586e34ab004b3e97840dc9e855fba2ef63be7b36e799112a1dedf1dcc9b1",
-  phone: "0812-0000-0000",
+  phone: "085888082208",
   city: "Jakarta",
   company: "mesinKU",
-  address: "Tangerang",
+  address: "tangerang",
   role: "admin",
   createdAt: new Date("2026-07-26T13:19:34.460Z"),
 };
