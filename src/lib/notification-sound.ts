@@ -32,7 +32,8 @@ let unlocked = false;
 let chatOpen = false;
 
 // --- Preloaded HTMLAudioElement for the "iklan masuk" (new listing) ringtone ---
-// Uses the user-supplied mp3 file instead of the synthesized coin drop.
+// Uses the user-supplied mp3 file (the-sound-of-a-coin-on-a-hard-surface-3.mp3)
+// instead of the synthesized coin drop.
 let listingAudioEl: HTMLAudioElement | null = null;
 function getListingAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
@@ -203,7 +204,8 @@ export function playNotificationSound() {
 /**
  * Play the "iklan masuk" ringtone when a NEW listing is detected.
  *
- * Uses the user-supplied mp3 file (`/public/sounds/iklan-masuk.mp3`) —
+ * Uses the user-supplied mp3 file (`/public/sounds/iklan-masuk.mp3`,
+ * sourced from "the-sound-of-a-coin-on-a-hard-surface-3.mp3") —
  * a real coin-on-hard-surface recording — instead of the synthesized
  * coin drop. Falls back to the synthesized "listing" variant if the
  * audio element fails to load/play.

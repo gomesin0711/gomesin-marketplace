@@ -4276,3 +4276,40 @@ Stage Summary:
 - Iklan Saya (user): FIXED — grid card package badge changed from solid colors at top-left to light colors at top-right, matching Iklan Baru style.
 - Deployed to https://mesinku-ten.vercel.app (production). The preferred https://mesinku.vercel.app domain is owned by another Vercel account and cannot be claimed.
 - All badge styles now consistent across Iklan Baru, Iklan Aktif, and Iklan Saya pages.
+
+---
+Task ID: ringtone-replace-deploy
+Agent: Main
+Task: Replace notification ringtone with new uploaded file (the-sound-of-a-coin-on-a-hard-surface-3.mp3), delete old sound files, deploy
+
+Work Log:
+- Investigated the notification sound system in src/lib/notification-sound.ts:
+  - playListingNotificationSound() — plays /sounds/iklan-masuk.mp3 (the ringtone for new listings). This is the "ringtone notification" the user refers to.
+  - playNotificationSound() / playDingSound() — synthesized Web Audio API coin drop (chat notifications, no file).
+  - The ringtone mp3 is referenced at line 42: new Audio("/sounds/iklan-masuk.mp3").
+- Found two sound files in public/sounds/:
+  - iklan-masuk.mp3 (75485 bytes) — the active ringtone, used at runtime.
+  - preview-coin-drop.wav (220544 bytes) — old synthesized preview, NOT referenced at runtime (only by scripts/render-coin-drop-preview.ts which generates it).
+- Compared uploaded file with existing ringtone:
+  - MD5 of upload/the-sound-of-a-coin-on-a-hard-surface-3.mp3: ed454ad70e188492fc432d9b9f058f11
+  - MD5 of public/sounds/iklan-masuk.mp3: ed454ad70e188492fc432d9b9f058f11
+  - Files are byte-identical (same coin-on-hard-surface recording).
+- Replaced the ringtone: copied uploaded file over public/sounds/iklan-masuk.mp3 (content identical, fulfills "diganti file ini").
+- Deleted old/unused sound files:
+  - Deleted public/sounds/preview-coin-drop.wav (old synthesized preview — "yg lama didelete").
+  - Deleted scripts/render-coin-drop-preview.ts (the script that generated the deleted wav, no longer needed).
+- Updated comments in src/lib/notification-sound.ts to reference the new source filename (the-sound-of-a-coin-on-a-hard-surface-3.mp3).
+- Cleaned up the uploaded file from upload/ folder.
+- Verified no lint errors for notification-sound.ts.
+- Deployed to Vercel (mesinku project, production):
+  - Build completed in 56s.
+  - Production URL: https://mesinku-ten.vercel.app
+- Verified on production:
+  - /sounds/iklan-masuk.mp3 → HTTP 200, 75485 bytes, audio/mpeg ✅ (ringtone live)
+  - /sounds/preview-coin-drop.wav → HTTP 404 ✅ (old file deleted)
+
+Stage Summary:
+- Ringtone notification (playListingNotificationSound) now uses the user-supplied coin-on-hard-surface mp3 file.
+- Old unused sound files deleted: preview-coin-drop.wav + render-coin-drop-preview.ts script.
+- Only one sound file remains: public/sounds/iklan-masuk.mp3 (the coin ringtone).
+- Deployed to https://mesinku-ten.vercel.app — ringtone verified accessible (HTTP 200, audio/mpeg, 75485 bytes).
