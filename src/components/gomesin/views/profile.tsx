@@ -738,8 +738,8 @@ export function ProfileView() {
 
   // Track whether a chat conversation is currently open & visible.
   // The global Header reads this (via isChatOpen()) to decide which sound to
-  // play on incoming messages: a soft "ding" when chat is open, the full
-  // "Go mesin!" ringtone when chat is closed.
+  // play on incoming messages: a soft "clink" when chat is open, the full
+  // "coin drop" ringtone when chat is closed.
   useEffect(() => {
     setChatOpen(activeChatId !== null && panel === "pesan");
     return () => {
@@ -3327,7 +3327,7 @@ export function ProfileView() {
                         <Volume2 className="size-4 text-primary" />
                         <div>
                           <p className="font-medium">Bunyi Notifikasi Chat</p>
-                          <p className="text-xs text-muted-foreground">Bunyi "mesinKU!" saat pesan masuk (seperti WhatsApp)</p>
+                          <p className="text-xs text-muted-foreground">Bunyi "koin jatuh" saat pesan masuk (seperti WhatsApp)</p>
                         </div>
                       </div>
                       <Switch

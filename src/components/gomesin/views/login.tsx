@@ -30,6 +30,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   KeyRound,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -68,14 +69,224 @@ export function LoginView() {
   const [rOtpDevCode, setROtpDevCode] = useState<string | null>(null);
   const [rOtpCooldown, setROtpCooldown] = useState(0);
 
+  // --- Register email availability check ---
+  // Status: "idle" | "checking" | "available" | "taken" | "invalid" | "domainInvalid" | "disposable"
+  //   - invalid       → format error (regex mismatch)
+  //   - domainInvalid → domain has no MX records (can't receive email)
+  //   - disposable    → known temporary-email provider (mailinator, etc.)
+  const [rEmailStatus, setREmailStatus] = useState<"idle" | "checking" | "available" | "taken" | "invalid" | "domainInvalid" | "disposable">("idle");
+
+  // --- Register phone availability check ---
+  // Mirrors rEmailStatus — gives immediate feedback if the phone is already
+  // registered, so the user doesn't waste time requesting/verifying an OTP
+  // only to be rejected at the final register step.
+  const [rPhoneStatus, setRPhoneStatus] = useState<"idle" | "checking" | "available" | "taken" | "invalid">("idle");
+
   useEffect(() => {
     if (rOtpCooldown <= 0) return;
     const id = setTimeout(() => setROtpCooldown((c) => c - 1), 1000);
     return () => clearTimeout(id);
   }, [rOtpCooldown]);
 
+  // Debounced phone availability check — fires 500ms after the user stops typing.
+  // Only checks phones with 9–15 digits to avoid pointless API calls.
+  useEffect(() => {
+    const phone = rPhone.trim();
+    const digits = phone.replace(/[^0-9]/g, "");
+    if (!phone) {
+      setRPhoneStatus("idle");
+      return;
+    }
+    if (digits.length < 9 || digits.length > 15) {
+      setRPhoneStatus("invalid");
+      return;
+    }
+    setRPhoneStatus("checking");
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/check-phone?phone=${encodeURIComponent(phone)}`);
+        const data = await res.json();
+        if (cancelled) return;
+        setRPhoneStatus(data?.exists ? "taken" : "available");
+      } catch {
+        if (!cancelled) setRPhoneStatus("idle");
+      }
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [rPhone]);
+
+  // Debounced email availability check — fires 500ms after the user stops typing.
+  // Only checks well-formed emails to avoid pointless API calls.
+  useEffect(() => {
+    const email = rEmail.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email) {
+      setREmailStatus("idle");
+      return;
+    }
+    if (!emailRegex.test(email)) {
+      setREmailStatus("invalid");
+      return;
+    }
+    setREmailStatus("checking");
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/check-email?email=${encodeURIComponent(email)}`);
+        const data = await res.json();
+        if (cancelled) return;
+        // Map the API's single `status` field to the UI state.
+        // API returns: "available" | "taken" | "invalidFormat" | "domainInvalid" | "disposable"
+        const s = data?.status as string | undefined;
+        if (s === "taken") setREmailStatus("taken");
+        else if (s === "domainInvalid") setREmailStatus("domainInvalid");
+        else if (s === "disposable") setREmailStatus("disposable");
+        else if (s === "invalidFormat") setREmailStatus("invalid");
+        else setREmailStatus("available");
+      } catch {
+        if (!cancelled) setREmailStatus("idle");
+      }
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [rEmail]);
+
+  // --- Login method toggle (Email vs No. WhatsApp) ---
+  const [loginMethod, setLoginMethod] = useState<"email" | "wa">("email");
+
+  // --- WhatsApp login OTP state (login tab) ---
+  const [lWaPhone, setLWaPhone] = useState("");
+  const [lWaOtp, setLWaOtp] = useState("");
+  const [lWaOtpSending, setLWaOtpSending] = useState(false);
+  const [lWaOtpVerifying, setLWaOtpVerifying] = useState(false);
+  const [lWaOtpVerified, setLWaOtpVerified] = useState(false);
+  const [lWaOtpDevCode, setLWaOtpDevCode] = useState<string | null>(null);
+  const [lWaCooldown, setLWaCooldown] = useState(0);
+
+  useEffect(() => {
+    if (lWaCooldown <= 0) return;
+    const id = setTimeout(() => setLWaCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [lWaCooldown]);
+
+  // When phone changes after verification, reset verified state so user must re-verify.
+  const prevLWaPhoneRef = useRef<string>("");
+  useEffect(() => {
+    if (prevLWaPhoneRef.current !== lWaPhone) {
+      prevLWaPhoneRef.current = lWaPhone;
+      if (lWaOtpVerified) setLWaOtpVerified(false);
+    }
+  }, [lWaPhone, lWaOtpVerified]);
+
+  const sendLoginOtp = async () => {
+    if (!lWaPhone.trim()) {
+      toast.error(tr("errPhoneRequired"));
+      return;
+    }
+    setLWaOtpSending(true);
+    setLWaOtpDevCode(null);
+    try {
+      const res = await fetch("/api/auth/otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "send", phone: lWaPhone }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        // If the number is not registered, show a specific helpful error.
+        const isNotFound = /tidak ditemukan|not found|not registered|tidak terdaftar/i.test(
+          data.error || ""
+        );
+        toast.error(isNotFound ? tr("loginWaNotFound") : (data.error || tr("errConnection")));
+        return;
+      }
+      toast.success(data.message || tr("loginWaOtpSentEmail"));
+      if (data._devCode) {
+        setLWaOtpDevCode(data._devCode);
+      }
+      setLWaCooldown(60);
+    } catch {
+      toast.error(tr("errConnection"));
+    } finally {
+      setLWaOtpSending(false);
+    }
+  };
+
+  const verifyLoginOtp = async () => {
+    if (lWaOtp.length < 6) {
+      toast.error(tr("regOtpRequired"));
+      return;
+    }
+    setLWaOtpVerifying(true);
+    try {
+      const res = await fetch("/api/auth/otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify", phone: lWaPhone, code: lWaOtp }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || tr("regOtpInvalid"));
+        return;
+      }
+      toast.success(tr("loginWaVerified"));
+      setLWaOtpVerified(true);
+    } catch {
+      toast.error(tr("errConnection"));
+    } finally {
+      setLWaOtpVerifying(false);
+    }
+  };
+
   const doLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // ===== WhatsApp OTP login path =====
+    if (loginMethod === "wa") {
+      if (!lWaPhone.trim()) {
+        toast.error(tr("errPhoneRequired"));
+        return;
+      }
+      if (!lWaOtpVerified) {
+        toast.error(tr("loginWaOtpFirst"));
+        return;
+      }
+      setLoading(true);
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: lWaPhone }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          const isNotFound = /tidak terdaftar|not registered|not found/i.test(data.error || "");
+          toast.error(isNotFound ? tr("loginWaNotFound") : (data.error || tr("errLogin")));
+          return;
+        }
+        const setUser = useStore.getState().setUser;
+        const goHome = useStore.getState().goHome;
+        const goToAdmin = useStore.getState().goToAdmin;
+        setUser(data.user);
+        setSuccess(true);
+        toast.success(formatT(tr("welcomeBack"), { name: data.user.name }));
+        const isAdmin = data.user.role === "admin" || data.user.role === "superadmin";
+        setTimeout(() => isAdmin ? goToAdmin() : goHome(), 900);
+      } catch {
+        toast.error(tr("errConnection"));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // ===== Email + password login path (default) =====
     if (!lEmail.trim() || !lPass) {
       toast.error(tr("errEmailPass"));
       return;
@@ -112,6 +323,17 @@ export function LoginView() {
       toast.error(tr("regOtpPhoneFirst"));
       return;
     }
+    // Block OTP send if the phone is known to be taken — the backend also
+    // enforces this, but checking here gives instant feedback and avoids
+    // a wasted API call.
+    if (rPhoneStatus === "taken") {
+      toast.error(tr("errPhoneTaken"));
+      return;
+    }
+    if (rPhoneStatus === "invalid") {
+      toast.error(tr("phoneInvalid"));
+      return;
+    }
     setROtpSending(true);
     setROtpDevCode(null);
     try {
@@ -122,6 +344,9 @@ export function LoginView() {
       });
       const data = await res.json();
       if (!res.ok) {
+        // If the server says the phone is taken, refresh local status so the
+        // input border/message reflects it immediately.
+        if (res.status === 409) setRPhoneStatus("taken");
         toast.error(data.error || tr("errConnection"));
         return;
       }
@@ -178,6 +403,41 @@ export function LoginView() {
       toast.error(tr("errRequired"));
       return;
     }
+    if (rEmailStatus === "invalid") {
+      toast.error(tr("emailInvalid"));
+      return;
+    }
+    if (rEmailStatus === "domainInvalid") {
+      toast.error(tr("emailDomainInvalid"));
+      return;
+    }
+    if (rEmailStatus === "disposable") {
+      toast.error(tr("emailDisposable"));
+      return;
+    }
+    if (rEmailStatus === "taken") {
+      toast.error(tr("errEmailTaken"));
+      return;
+    }
+    // If still checking, wait for it to resolve before allowing registration
+    // so we never submit a duplicate even in a race.
+    if (rEmailStatus === "checking") {
+      toast.error(tr("emailChecking"));
+      return;
+    }
+    // Phone duplicate guard — mirrors the email guard above.
+    if (rPhoneStatus === "taken") {
+      toast.error(tr("errPhoneTaken"));
+      return;
+    }
+    if (rPhoneStatus === "invalid") {
+      toast.error(tr("phoneInvalid"));
+      return;
+    }
+    if (rPhoneStatus === "checking") {
+      toast.error(tr("phoneChecking"));
+      return;
+    }
     if (!rOtpVerified) {
       toast.error(tr("errPhoneNotVerified"));
       return;
@@ -208,6 +468,27 @@ export function LoginView() {
       });
       const data = await res.json();
       if (!res.ok) {
+        // Refresh status indicators based on server response, so the form
+        // visually reflects which field caused the conflict.
+        if (res.status === 409) {
+          const msg = (data.error || "").toLowerCase();
+          if (msg.includes("whatsapp") || msg.includes("nomor")) {
+            setRPhoneStatus("taken");
+          } else if (msg.includes("email")) {
+            setREmailStatus("taken");
+          }
+        } else if (res.status === 400 && data.error) {
+          // Server-side domain/format guard rejected the email — reflect it
+          // in the UI so the user sees which field is the problem.
+          const msg = (data.error || "").toLowerCase();
+          if (msg.includes("domain") || msg.includes("menerima") || msg.includes("ditemukan")) {
+            setREmailStatus("domainInvalid");
+          } else if (msg.includes("disposable") || msg.includes("sementara")) {
+            setREmailStatus("disposable");
+          } else if (msg.includes("format") && msg.includes("email")) {
+            setREmailStatus("invalid");
+          }
+        }
         toast.error(data.error || tr("errRegister"));
         return;
       }
@@ -266,9 +547,21 @@ export function LoginView() {
             loading={loading}
             lEmail={lEmail} setLEmail={setLEmail}
             lPass={lPass} setLPass={setLPass}
+            loginMethod={loginMethod} setLoginMethod={setLoginMethod}
+            lWaPhone={lWaPhone} setLWaPhone={setLWaPhone}
+            lWaOtp={lWaOtp} setLWaOtp={setLWaOtp}
+            lWaOtpSending={lWaOtpSending}
+            lWaOtpVerifying={lWaOtpVerifying}
+            lWaOtpVerified={lWaOtpVerified}
+            lWaOtpDevCode={lWaOtpDevCode}
+            lWaCooldown={lWaCooldown}
+            sendLoginOtp={sendLoginOtp}
+            verifyLoginOtp={verifyLoginOtp}
             rName={rName} setRName={setRName}
             rEmail={rEmail} setREmail={setREmail}
+            rEmailStatus={rEmailStatus}
             rPhone={rPhone} setRPhone={setRPhone}
+            rPhoneStatus={rPhoneStatus}
             rPass={rPass} setRPass={setRPass}
             rPass2={rPass2} setRPass2={setRPass2}
             agree={agree} setAgree={setAgree}
@@ -354,9 +647,21 @@ export function LoginView() {
               loading={loading}
               lEmail={lEmail} setLEmail={setLEmail}
               lPass={lPass} setLPass={setLPass}
+              loginMethod={loginMethod} setLoginMethod={setLoginMethod}
+              lWaPhone={lWaPhone} setLWaPhone={setLWaPhone}
+              lWaOtp={lWaOtp} setLWaOtp={setLWaOtp}
+              lWaOtpSending={lWaOtpSending}
+              lWaOtpVerifying={lWaOtpVerifying}
+              lWaOtpVerified={lWaOtpVerified}
+              lWaOtpDevCode={lWaOtpDevCode}
+              lWaCooldown={lWaCooldown}
+              sendLoginOtp={sendLoginOtp}
+              verifyLoginOtp={verifyLoginOtp}
               rName={rName} setRName={setRName}
               rEmail={rEmail} setREmail={setREmail}
+              rEmailStatus={rEmailStatus}
               rPhone={rPhone} setRPhone={setRPhone}
+              rPhoneStatus={rPhoneStatus}
               rPass={rPass} setRPass={setRPass}
               rPass2={rPass2} setRPass2={setRPass2}
               agree={agree} setAgree={setAgree}
@@ -389,7 +694,11 @@ export function LoginView() {
 function FormSection({
   tab, setTab, showPass, setShowPass, loading,
   lEmail, setLEmail, lPass, setLPass,
-  rName, setRName, rEmail, setREmail, rPhone, setRPhone,
+  loginMethod, setLoginMethod,
+  lWaPhone, setLWaPhone, lWaOtp, setLWaOtp,
+  lWaOtpSending, lWaOtpVerifying, lWaOtpVerified, lWaOtpDevCode, lWaCooldown,
+  sendLoginOtp, verifyLoginOtp,
+  rName, setRName, rEmail, setREmail, rEmailStatus, rPhone, setRPhone, rPhoneStatus,
   rPass, setRPass, rPass2, setRPass2, agree, setAgree,
   rOtp, setROtp, rOtpSending, rOtpVerifying, rOtpVerified, rOtpDevCode, rOtpCooldown,
   sendRegOtp, verifyRegOtp,
@@ -400,9 +709,21 @@ function FormSection({
   loading: boolean;
   lEmail: string; setLEmail: (v: string) => void;
   lPass: string; setLPass: (v: string) => void;
+  loginMethod: "email" | "wa"; setLoginMethod: (v: "email" | "wa") => void;
+  lWaPhone: string; setLWaPhone: (v: string) => void;
+  lWaOtp: string; setLWaOtp: (v: string) => void;
+  lWaOtpSending: boolean;
+  lWaOtpVerifying: boolean;
+  lWaOtpVerified: boolean;
+  lWaOtpDevCode: string | null;
+  lWaCooldown: number;
+  sendLoginOtp: () => void;
+  verifyLoginOtp: () => void;
   rName: string; setRName: (v: string) => void;
   rEmail: string; setREmail: (v: string) => void;
+  rEmailStatus: "idle" | "checking" | "available" | "taken" | "invalid" | "domainInvalid" | "disposable";
   rPhone: string; setRPhone: (v: string) => void;
+  rPhoneStatus: "idle" | "checking" | "available" | "taken" | "invalid";
   rPass: string; setRPass: (v: string) => void;
   rPass2: string; setRPass2: (v: string) => void;
   agree: boolean; setAgree: (v: boolean) => void;
@@ -428,32 +749,176 @@ function FormSection({
 
       <TabsContent value="login">
         <form onSubmit={doLogin} className="space-y-4 rounded-xl border border-border bg-card p-5">
-          <div className="space-y-1.5">
-            <Label htmlFor="l-email">{tr("email")}</Label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="l-email" type="email" autoComplete="email" value={lEmail} onChange={(e) => setLEmail(e.target.value)} placeholder="nama@email.com" className="pl-9" />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="l-pass">{tr("password")}</Label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="l-pass" type={showPass ? "text" : "password"} autoComplete="current-password" value={lPass} onChange={(e) => setLPass(e.target.value)} placeholder="••••••••" className="px-9" />
-              <button type="button" onClick={() => setShowPass((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label={showPass ? tr("hidePass") : tr("showPass")}>
-                {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-              </button>
-            </div>
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <label className="flex items-center gap-1.5 text-muted-foreground">
-              <input type="checkbox" className="accent-primary" /> {tr("rememberMe")}
-            </label>
-            <button type="button" onClick={onForgotPassword} className="font-medium text-primary hover:underline">
-              {tr("forgotPassword")}
+          {/* ===== Login method toggle: Email / No. WhatsApp ===== */}
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+            <button
+              type="button"
+              onClick={() => setLoginMethod("email")}
+              className={cn(
+                "inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                loginMethod === "email"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Mail className="size-4" />
+              {tr("loginMethodEmail")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setLoginMethod("wa")}
+              className={cn(
+                "inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                loginMethod === "wa"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Phone className="size-4" />
+              {tr("loginMethodWa")}
             </button>
           </div>
-          <Button type="submit" disabled={loading} className="w-full gap-2 bg-primary font-semibold" size="lg">
+
+          {/* ===== Email + password fields ===== */}
+          {loginMethod === "email" && (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="l-email">{tr("email")}</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input id="l-email" type="email" autoComplete="email" value={lEmail} onChange={(e) => setLEmail(e.target.value)} placeholder="nama@email.com" className="pl-9" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="l-pass">{tr("password")}</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input id="l-pass" type={showPass ? "text" : "password"} autoComplete="current-password" value={lPass} onChange={(e) => setLPass(e.target.value)} placeholder="••••••••" className="px-9" />
+                  <button type="button" onClick={() => setShowPass((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label={showPass ? tr("hidePass") : tr("showPass")}>
+                    {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <label className="flex items-center gap-1.5 text-muted-foreground">
+                  <input type="checkbox" className="accent-primary" /> {tr("rememberMe")}
+                </label>
+                <button type="button" onClick={onForgotPassword} className="font-medium text-primary hover:underline">
+                  {tr("forgotPassword")}
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* ===== WhatsApp number + OTP fields ===== */}
+          {loginMethod === "wa" && (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="l-wa-phone">{tr("loginWaNumberLabel")}</Label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="l-wa-phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={lWaPhone}
+                    onChange={(e) => setLWaPhone(e.target.value)}
+                    placeholder="0812-xxxx-xxxx"
+                    className="pl-9"
+                    disabled={lWaOtpVerified}
+                  />
+                </div>
+              </div>
+
+              {/* ===== Login OTP step ===== */}
+              <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="l-wa-otp" className="text-xs font-medium">
+                    {tr("loginWaOtpLabel")}
+                  </Label>
+                  {lWaOtpVerified && (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-600 dark:text-green-400">
+                      <CheckCircle2 className="size-3.5" /> {tr("regOtpVerified")}
+                    </span>
+                  )}
+                </div>
+
+                {/* OTP input + verify button */}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <InputOTP
+                    maxLength={6}
+                    value={lWaOtp}
+                    onChange={(v) => setLWaOtp(v)}
+                    disabled={lWaOtpVerified}
+                  >
+                    <InputOTPGroup>
+                      <InputOTPSlot index={0} className="size-9 text-sm" />
+                      <InputOTPSlot index={1} className="size-9 text-sm" />
+                      <InputOTPSlot index={2} className="size-9 text-sm" />
+                      <InputOTPSlot index={3} className="size-9 text-sm" />
+                      <InputOTPSlot index={4} className="size-9 text-sm" />
+                      <InputOTPSlot index={5} className="size-9 text-sm" />
+                    </InputOTPGroup>
+                  </InputOTP>
+
+                  {!lWaOtpVerified && (
+                    <Button
+                      type="button"
+                      onClick={verifyLoginOtp}
+                      disabled={lWaOtpVerifying || lWaOtp.length < 6}
+                      size="sm"
+                      className="gap-1.5 bg-primary font-semibold sm:ml-auto"
+                    >
+                      {lWaOtpVerifying ? <Loader2 className="size-3.5 animate-spin" /> : <ShieldCheck className="size-3.5" />}
+                      {lWaOtpVerifying ? tr("regOtpVerifying") : tr("regOtpVerify")}
+                    </Button>
+                  )}
+                </div>
+
+                {/* Dev-mode code box (OTP sent to email — shown here in dev) */}
+                {lWaOtpDevCode && !lWaOtpVerified && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 text-center dark:border-amber-700 dark:bg-amber-950/40">
+                    <p className="text-[10px] text-amber-700 dark:text-amber-300">
+                      {tr("loginWaOtpSentEmail")} {tr("regOtpDevCode")}
+                    </p>
+                    <p className="mt-0.5 text-xl font-black tracking-widest text-amber-900 dark:text-amber-100">
+                      {lWaOtpDevCode}
+                    </p>
+                  </div>
+                )}
+
+                {/* Send / resend button + cooldown */}
+                {!lWaOtpVerified && (
+                  <div className="flex items-center justify-between text-xs">
+                    {lWaCooldown > 0 ? (
+                      <span className="text-muted-foreground">
+                        {formatT(tr("regOtpResendIn"), { sec: String(lWaCooldown) })}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={sendLoginOtp}
+                        disabled={lWaOtpSending}
+                        className="inline-flex items-center gap-1 font-medium text-primary hover:underline disabled:opacity-50"
+                      >
+                        {lWaOtpSending ? <Loader2 className="size-3 animate-spin" /> : <KeyRound className="size-3" />}
+                        {lWaOtpSending ? tr("regOtpSending") : tr("regOtpSend")}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {!lWaOtpVerified && (
+                  <p className="text-[10px] text-muted-foreground">
+                    {tr("loginWaOtpFirst")}
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+
+          <Button type="submit" disabled={loading || (loginMethod === "wa" && !lWaOtpVerified)} className="w-full gap-2 bg-primary font-semibold" size="lg">
             {loading ? <Loader2 className="size-4 animate-spin" /> : null}
             {loading ? tr("processing") : tr("tabLogin")}
           </Button>
@@ -479,15 +944,103 @@ function FormSection({
             <Label htmlFor="r-email">{`${tr("email")} *`}</Label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="r-email" type="email" autoComplete="email" value={rEmail} onChange={(e) => setREmail(e.target.value)} placeholder="nama@email.com" className="pl-9" />
+              <Input
+                id="r-email"
+                type="email"
+                autoComplete="email"
+                value={rEmail}
+                onChange={(e) => setREmail(e.target.value)}
+                placeholder="nama@email.com"
+                className={cn(
+                  "pl-9",
+                  rEmailStatus === "available" && "pr-9 border-green-500 focus-visible:ring-green-500/30",
+                  rEmailStatus === "taken" && "pr-9 border-destructive focus-visible:ring-destructive/30",
+                  rEmailStatus === "invalid" && "pr-9 border-destructive focus-visible:ring-destructive/30",
+                  rEmailStatus === "domainInvalid" && "pr-9 border-destructive focus-visible:ring-destructive/30",
+                  rEmailStatus === "disposable" && "pr-9 border-destructive focus-visible:ring-destructive/30",
+                )}
+                aria-invalid={rEmailStatus === "taken" || rEmailStatus === "invalid" || rEmailStatus === "domainInvalid" || rEmailStatus === "disposable"}
+              />
+              {rEmailStatus === "checking" && (
+                <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+              )}
+              {rEmailStatus === "available" && (
+                <CheckCircle2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-green-600 dark:text-green-400" />
+              )}
+              {rEmailStatus === "taken" && (
+                <XCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-destructive" />
+              )}
+              {rEmailStatus === "invalid" && (
+                <XCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-destructive" />
+              )}
+              {rEmailStatus === "domainInvalid" && (
+                <XCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-destructive" />
+              )}
+              {rEmailStatus === "disposable" && (
+                <XCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-destructive" />
+              )}
             </div>
+            {rEmailStatus === "checking" && (
+              <p className="text-xs text-muted-foreground">{tr("emailChecking")}</p>
+            )}
+            {rEmailStatus === "available" && (
+              <p className="text-xs font-medium text-green-600 dark:text-green-400">{tr("emailAvailable")}</p>
+            )}
+            {rEmailStatus === "taken" && (
+              <p className="text-xs font-medium text-destructive">{tr("emailTaken")}</p>
+            )}
+            {rEmailStatus === "invalid" && (
+              <p className="text-xs font-medium text-destructive">{tr("emailInvalid")}</p>
+            )}
+            {rEmailStatus === "domainInvalid" && (
+              <p className="text-xs font-medium text-destructive">{tr("emailDomainInvalid")}</p>
+            )}
+            {rEmailStatus === "disposable" && (
+              <p className="text-xs font-medium text-destructive">{tr("emailDisposable")}</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="r-phone">{tr("whatsapp")}</Label>
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="r-phone" value={rPhone} onChange={(e) => setRPhone(e.target.value)} placeholder={tr("whatsappPlaceholder")} className="pl-9" />
+              <Input
+                id="r-phone"
+                value={rPhone}
+                onChange={(e) => setRPhone(e.target.value)}
+                placeholder={tr("whatsappPlaceholder")}
+                className={cn(
+                  "pl-9",
+                  rPhoneStatus === "available" && "pr-9 border-green-500 focus-visible:ring-green-500/30",
+                  rPhoneStatus === "taken" && "pr-9 border-destructive focus-visible:ring-destructive/30",
+                  rPhoneStatus === "invalid" && "pr-9 border-destructive focus-visible:ring-destructive/30",
+                )}
+                aria-invalid={rPhoneStatus === "taken" || rPhoneStatus === "invalid"}
+              />
+              {rPhoneStatus === "checking" && (
+                <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+              )}
+              {rPhoneStatus === "available" && (
+                <CheckCircle2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-green-600 dark:text-green-400" />
+              )}
+              {rPhoneStatus === "taken" && (
+                <XCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-destructive" />
+              )}
+              {rPhoneStatus === "invalid" && (
+                <XCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-destructive" />
+              )}
             </div>
+            {rPhoneStatus === "checking" && (
+              <p className="text-xs text-muted-foreground">{tr("phoneChecking")}</p>
+            )}
+            {rPhoneStatus === "available" && (
+              <p className="text-xs font-medium text-green-600 dark:text-green-400">{tr("phoneAvailable")}</p>
+            )}
+            {rPhoneStatus === "taken" && (
+              <p className="text-xs font-medium text-destructive">{tr("phoneTaken")}</p>
+            )}
+            {rPhoneStatus === "invalid" && (
+              <p className="text-xs font-medium text-destructive">{tr("phoneInvalid")}</p>
+            )}
           </div>
 
           {/* ===== Register OTP step ===== */}
@@ -599,7 +1152,7 @@ function FormSection({
             <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 accent-primary" />
             <span>{tr("agreeTerms")}</span>
           </label>
-          <Button type="submit" disabled={loading || !rOtpVerified} className="w-full gap-2 bg-primary font-semibold" size="lg">
+          <Button type="submit" disabled={loading || !rOtpVerified || rEmailStatus === "taken" || rEmailStatus === "invalid" || rEmailStatus === "domainInvalid" || rEmailStatus === "disposable" || rEmailStatus === "checking"} className="w-full gap-2 bg-primary font-semibold" size="lg">
             {loading ? <Loader2 className="size-4 animate-spin" /> : null}
             {loading ? tr("processing") : tr("registerBtn")}
           </Button>

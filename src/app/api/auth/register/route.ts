@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, isDbAvailable } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
-import { fallbackRegisterUser } from "@/lib/auth-fallback";
+import { fallbackRegisterUser, isPhoneTaken, isEmailTaken } from "@/lib/auth-fallback";
+import { domainHasMx, isDisposableDomain } from "@/lib/email-validate";
 
 // ---------------------------------------------------------------------------
 // Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
@@ -60,11 +61,55 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // --- Email reality check (server-side guard) ---
+  // Reject emails whose domain doesn't really exist (no MX records) or is a
+  // known disposable/temporary provider. This is the final safety net in case
+  // the client-side /check-email feedback was bypassed (e.g. a direct API
+  // call). Verifies that the email can actually receive mail — fake domains
+  // like "test@fakedomain123.xyz" are rejected here.
+  const domain = emailNorm.split("@")[1] ?? "";
+  if (isDisposableDomain(domain)) {
+    return NextResponse.json(
+      { error: "Email sementara (disposable) tidak diperbolehkan. Gunakan email asli." },
+      { status: 400 }
+    );
+  }
+  const mxValid = await domainHasMx(domain);
+  if (!mxValid) {
+    return NextResponse.json(
+      { error: "Domain email tidak ditemukan atau tidak dapat menerima email. Periksa kembali email Anda." },
+      { status: 400 }
+    );
+  }
+
+  // --- Cross-store duplicate checks (DB + fallback in-memory store) ---
+  // We check BOTH email and phone across BOTH stores before any insert, so
+  // that a user registered via the fallback path (or the seed admin in the
+  // fallback store) cannot be re-registered with a different email but the
+  // same phone (or vice-versa).
+  if (await isEmailTaken(emailNorm)) {
+    return NextResponse.json(
+      { error: "Email sudah terdaftar. Silakan masuk." },
+      { status: 409 }
+    );
+  }
+  if (phone && (await isPhoneTaken(phone))) {
+    return NextResponse.json(
+      { error: "Nomor WhatsApp sudah terdaftar. Silakan masuk." },
+      { status: 409 }
+    );
+  }
+
   // --- Path A: local dev (Prisma + SQLite) ---
   if (isDbAvailable()) {
     try {
-      const existing = await db.user.findUnique({ where: { email: emailNorm } });
-      if (existing) {
+      // SQLite is case-sensitive by default. Use COLLATE NOCASE so that a
+      // legacy mixed-case email (e.g. seeded admin) cannot be re-registered
+      // by typing the lowercased variant.
+      const existing = await db.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM User WHERE email = ${emailNorm} COLLATE NOCASE LIMIT 1
+      `;
+      if (existing && existing.length > 0) {
         return NextResponse.json(
           { error: "Email sudah terdaftar. Silakan masuk." },
           { status: 409 }
@@ -109,11 +154,12 @@ export async function POST(req: NextRequest) {
   try {
     const supabase = await getSupabase();
 
-    // Check if email already exists in Supabase
+    // Check if email already exists in Supabase (case-insensitive)
+    const escaped = emailNorm.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
     const { data: existing, error: findErr } = await supabase
       .from("User")
       .select("id")
-      .eq("email", emailNorm)
+      .ilike("email", escaped)
       .limit(1)
       .maybeSingle();
 

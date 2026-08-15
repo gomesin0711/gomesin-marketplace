@@ -1,67 +1,35 @@
 /**
- * Notification sound utility — plays "Go mesin!" ringtone instantly when a
- * chat message arrives, like WhatsApp.
+ * Notification sound utility — plays a synthesized "coin drop" sound
+ * instantly when a chat message or new listing arrives.
+ *
+ * The sound is generated at runtime via the Web Audio API (no audio asset
+ * file needed). It mimics a metallic coin bouncing on a hard surface:
+ *   - Multiple inharmonic partials (metallic timbre)
+ *   - 3-4 successive "clinks" with decreasing volume (bounces)
+ *   - Fast exponential decay (bright, metallic character)
  *
  * Browser autoplay policy blocks audio.play() until the user has interacted
- * with the page. To work around this, we:
- *   1. Preload a SINGLE Audio element (reused, not recreated each time).
- *   2. "Unlock" it on the first user gesture (click/touch/keydown) by playing
- *      it muted briefly. After that, play() works instantly without gesture.
- *   3. On message arrival, reset currentTime to 0 and play — instant sound.
+ * with the page. To work around this, we "unlock" the AudioContext on the
+ * first user gesture (click/touch/keydown) by resuming it. After that,
+ * sounds play instantly without a gesture.
  *
  * Call `unlockNotificationSound()` once at app level (e.g. in a root effect),
  * and `playNotificationSound()` whenever a message arrives.
  *
  * --- Chat-open behavior ---
  * When the user is actively viewing a chat conversation (chat widget/panel
- * open), incoming messages should NOT play the full ringtone — only a soft
- * short "ding" (generated via Web Audio API, no asset file needed).
- * When the chat is NOT open, the full "Go mesin!" ringtone plays.
+ * open), incoming messages play a single soft "clink" (very short, quiet).
+ * When the chat is NOT open, the full multi-bounce "coin drop" sound plays.
  *
  * Call `setChatOpen(true)` whenever a chat conversation becomes visible, and
- * `setChatOpen(false)` when it closes. The header's global message handler
- * checks this flag to decide which sound to play.
+ * `setChatOpen(false)` when it closes.
  */
 
-let audioEl: HTMLAudioElement | null = null;
-let listingAudioEl: HTMLAudioElement | null = null;
-let unlocked = false;
-
-// --- Web Audio API context for the short "ding" sound ---
 let audioCtx: AudioContext | null = null;
+let unlocked = false;
 
 // --- Module-level flag: is the user currently viewing an open chat? ---
 let chatOpen = false;
-
-function getAudio(): HTMLAudioElement | null {
-  if (typeof window === "undefined") return null;
-  if (audioEl) return audioEl;
-  try {
-    audioEl = new Audio("/sounds/go-mesin.wav");
-    audioEl.preload = "auto";
-    audioEl.volume = 1;
-  } catch {
-    audioEl = null;
-  }
-  return audioEl;
-}
-
-/**
- * Separate Audio element for the "Iklan baru nih" new-listing ringtone.
- * Kept independent from the chat sound so volume/position don't clash.
- */
-function getListingAudio(): HTMLAudioElement | null {
-  if (typeof window === "undefined") return null;
-  if (listingAudioEl) return listingAudioEl;
-  try {
-    listingAudioEl = new Audio("/sounds/iklan-baru.wav");
-    listingAudioEl.preload = "auto";
-    listingAudioEl.volume = 1;
-  } catch {
-    listingAudioEl = null;
-  }
-  return listingAudioEl;
-}
 
 function getAudioCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -77,58 +45,17 @@ function getAudioCtx(): AudioContext | null {
 }
 
 /**
- * Unlock the audio element so it can play instantly later.
+ * Unlock the AudioContext so it can play sounds instantly later.
  * Call this on first user interaction (click/touch/keydown).
  */
 export function unlockNotificationSound() {
   if (unlocked) return;
-  const el = getAudio();
-  if (!el) return;
-  // Play muted briefly to satisfy autoplay policy, then mark as unlocked.
-  try {
-    el.muted = true;
-    const p = el.play();
-    if (p && typeof p.then === "function") {
-      p.then(() => {
-        el.pause();
-        el.currentTime = 0;
-        el.muted = false;
-        unlocked = true;
-      }).catch(() => {
-        el.muted = false;
-        // Still mark unlocked — the gesture was registered; next play may work.
-        unlocked = true;
-      });
-    } else {
-      el.muted = false;
-      unlocked = true;
-    }
-  } catch {
-    el.muted = false;
-    unlocked = true;
-  }
-  // Also unlock the "Iklan baru nih" listing audio element.
-  try {
-    const lEl = getListingAudio();
-    if (lEl) {
-      lEl.muted = true;
-      const lp = lEl.play();
-      if (lp && typeof lp.then === "function") {
-        lp.then(() => { lEl.pause(); lEl.currentTime = 0; lEl.muted = false; }).catch(() => { lEl.muted = false; });
-      } else {
-        lEl.muted = false;
-      }
-    }
-  } catch {
-    // ignore
-  }
-  // Also unlock the Web Audio API AudioContext (for the ding sound).
-  // A user gesture allows us to create & resume an AudioContext.
   try {
     const ctx = getAudioCtx();
     if (ctx && ctx.state === "suspended") {
       ctx.resume().catch(() => {});
     }
+    unlocked = true;
   } catch {
     // ignore
   }
@@ -161,85 +88,123 @@ function isSoundEnabled(): boolean {
 }
 
 /**
- * Play the "Go mesin!" notification sound instantly.
- * Must be called after the user has interacted with the page at least once
- * (unlockNotificationSound handles that automatically on first gesture).
+ * Synthesize a single metallic "clink" of a coin.
+ *
+ * Uses 3 oscillators at inharmonic frequency ratios (1, 1.42, 2.11) with
+ * triangle waves — the inharmonicity is what gives metallic objects their
+ * characteristic "ringing" timbre (unlike a bell which has harmonic partials).
+ *
+ * @param ctx      Web Audio API context
+ * @param startTime  When to start the clink (seconds, relative to ctx.currentTime)
+ * @param freq     Fundamental frequency in Hz (e.g. 2800)
+ * @param peakGain Peak volume (0-1). Lower for quieter bounces.
+ * @param duration Total decay time in seconds.
+ */
+function playClink(
+  ctx: AudioContext,
+  startTime: number,
+  freq: number,
+  peakGain: number,
+  duration: number
+) {
+  // Inharmonic partial ratios — give a metallic, bell-like timbre.
+  const partials = [1, 1.42, 2.11];
+  const partialGains = [1.0, 0.45, 0.22]; // higher partials are quieter
+
+  for (let i = 0; i < partials.length; i++) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(freq * partials[i], startTime);
+    // Slight downward pitch slide — mimics a coin settling (energy loss).
+    osc.frequency.exponentialRampToValueAtTime(
+      freq * partials[i] * 0.97,
+      startTime + duration
+    );
+
+    // Quick attack (1ms) then exponential decay to silence.
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.exponentialRampToValueAtTime(peakGain * partialGains[i], startTime + 0.001);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(startTime);
+    osc.stop(startTime + duration + 0.02);
+  }
+}
+
+/**
+ * Play the full "coin drop" notification sound — a coin bouncing on a hard
+ * surface, with 3-4 successive clinks of decreasing volume.
+ *
+ * @param variant "chat" (slightly higher, 4 bounces) or "listing" (lower, 3 bounces)
+ */
+function playCoinDropSound(variant: "chat" | "listing" = "chat") {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  try {
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+    const now = ctx.currentTime;
+
+    if (variant === "chat") {
+      // Chat coin drop: bright, 4 bounces, ~350ms total.
+      // Higher fundamental (~2900 Hz) for a lively, attention-grabbing feel.
+      playClink(ctx, now + 0.000, 2900, 0.32, 0.14);
+      playClink(ctx, now + 0.085, 2700, 0.22, 0.11);
+      playClink(ctx, now + 0.165, 2500, 0.14, 0.09);
+      playClink(ctx, now + 0.235, 2350, 0.08, 0.07);
+    } else {
+      // Listing coin drop: slightly lower, 3 bounces, ~300ms total.
+      // Lower fundamental (~2400 Hz) for a distinct, fuller feel.
+      playClink(ctx, now + 0.000, 2400, 0.34, 0.16);
+      playClink(ctx, now + 0.095, 2200, 0.20, 0.12);
+      playClink(ctx, now + 0.185, 2050, 0.11, 0.10);
+    }
+  } catch {
+    // ignore — audio is best-effort
+  }
+}
+
+/**
+ * Play the "coin drop" notification sound for incoming chat messages.
  * Respects the user's chat sound preference (localStorage "mesinku-chat-sound").
  */
 export function playNotificationSound() {
   if (!isSoundEnabled()) return;
-  const el = getAudio();
-  if (!el) return;
-  try {
-    el.currentTime = 0;
-    const p = el.play();
-    if (p && typeof p.then === "function") {
-      p.catch(() => {
-        // Autoplay still blocked (no interaction yet) — try unlocking on next gesture.
-      });
-    }
-  } catch {
-    // ignore
-  }
+  playCoinDropSound("chat");
 }
 
 /**
- * Play the "Iklan baru nih" ringtone when a NEW listing is detected.
- * Uses a separate audio element (/sounds/iklan-baru.wav) so it doesn't
- * interfere with the chat notification sound.
+ * Play the "coin drop" notification sound when a NEW listing is detected.
+ * Uses a slightly lower variant so it's distinguishable from the chat sound.
  * Respects the user's chat sound preference (same toggle).
  */
 export function playListingNotificationSound() {
   if (!isSoundEnabled()) return;
-  const el = getListingAudio();
-  if (!el) return;
-  try {
-    el.currentTime = 0;
-    const p = el.play();
-    if (p && typeof p.then === "function") {
-      p.catch(() => {
-        // Autoplay still blocked (no interaction yet) — try unlocking on next gesture.
-      });
-    }
-  } catch {
-    // ignore
-  }
+  playCoinDropSound("listing");
 }
 
 /**
- * Play a short soft "ding" notification sound (≈300ms) via the Web Audio API.
- * No audio file needed — synthesized as a descending sine-wave tone.
+ * Play a single soft "clink" sound (~120ms) via the Web Audio API.
  * Used when a chat is currently open (so the user is already looking at it)
- * and a new message arrives — a soft ding is less intrusive than the full
- * ringtone.
+ * and a new message arrives — a single soft clink is less intrusive than
+ * the full multi-bounce coin drop.
  */
 export function playDingSound() {
   if (!isSoundEnabled()) return;
   const ctx = getAudioCtx();
   if (!ctx) return;
   try {
-    // Resume if suspended (shouldn't happen after unlock, but just in case).
     if (ctx.state === "suspended") {
       ctx.resume().catch(() => {});
     }
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    // Start at E6 (1318.51 Hz) — a pleasant notification ding.
-    osc.frequency.setValueAtTime(1318.51, now);
-    // Slide down to A5 (880 Hz) over 150ms for a gentle "ding-dong" feel.
-    osc.frequency.exponentialRampToValueAtTime(880, now + 0.15);
-    // Quick attack (10ms) then exponential decay to silence over 350ms.
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.25, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.4);
+    // Single soft clink — low volume, short decay.
+    playClink(ctx, ctx.currentTime, 2600, 0.14, 0.12);
   } catch {
-    // ignore — audio is best-effort, not critical
+    // ignore — audio is best-effort
   }
 }
 
@@ -264,8 +229,8 @@ export function setChatSoundEnabled(enabled: boolean) {
 
 /**
  * Set whether the user is currently viewing an open chat conversation.
- * When true, incoming messages play a soft "ding" instead of the full
- * ringtone. When false (chat closed / not visible), the full ringtone plays.
+ * When true, incoming messages play a soft "clink" instead of the full
+ * coin drop. When false (chat closed / not visible), the full coin drop plays.
  *
  * Call this from:
  *   - profile.tsx Pesan panel (when activeChatId is set)

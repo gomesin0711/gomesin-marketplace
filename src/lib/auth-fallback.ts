@@ -1,4 +1,6 @@
 import { hashPassword, verifyPassword } from "@/lib/auth";
+import { phonesMatch } from "@/lib/otp-store";
+import { db } from "@/lib/db";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -130,6 +132,21 @@ export async function fallbackRegisterUser(data: {
     };
   }
 
+  // Also reject duplicate phone numbers in the fallback store.
+  // (The DB path checks phone separately via isPhoneTaken, but the fallback
+  // store must also enforce uniqueness for users registered via this path.)
+  if (data.phone) {
+    for (const u of store.values()) {
+      if (u.phone && phonesMatch(u.phone, data.phone)) {
+        return {
+          ok: false,
+          error: "Nomor WhatsApp sudah terdaftar. Silakan masuk.",
+          status: 409,
+        };
+      }
+    }
+  }
+
   const newUser: StoredUser = {
     id: generateId(),
     name: data.name.trim(),
@@ -214,14 +231,82 @@ export async function fallbackFindUserByPhone(phone: string): Promise<
   | { ok: false; error: string; status: number }
 > {
   const store = await getAuthStore();
-  const last10 = phone.replace(/[^0-9]/g, '').slice(-10);
   for (const u of store.values()) {
-    const uPhone = (u.phone || '').replace(/[^0-9]/g, '');
-    if (uPhone.slice(-10) === last10 || uPhone === phone) {
+    // Use the shared phonesMatch helper so DB phones stored as "0818666711"
+    // (10 digits, local format) still match input "62818666711" (normalized).
+    if (phonesMatch(u.phone, phone)) {
       return { ok: true, user: toSafe(u) };
     }
   }
   return { ok: false, error: 'Nomor WhatsApp tidak terdaftar.', status: 404 };
+}
+
+/**
+ * Check whether a phone number is already registered — searches BOTH the
+ * SQLite DB (primary) and the fallback in-memory store (secondary, which
+ * always has the seed admin + any users registered via the fallback path).
+ *
+ * Returns true if ANY user with this phone exists in either source.
+ *
+ * Used by /api/auth/register and /api/auth/register-otp to prevent duplicate
+ * phone registrations (even when the DB has been re-seeded and the user only
+ * exists in the fallback store).
+ */
+export async function isPhoneTaken(phone: string): Promise<boolean> {
+  // 1. Check Prisma/SQLite
+  try {
+    const users = await db.user.findMany({ where: { phone: { not: null } } });
+    const user = users.find((u) => phonesMatch(u.phone, phone));
+    if (user) return true;
+  } catch {
+    // SQLite unavailable — continue to fallback
+  }
+
+  // 2. Check fallback in-memory store
+  try {
+    const store = await getAuthStore();
+    for (const u of store.values()) {
+      if (u.phone && phonesMatch(u.phone, phone)) {
+        return true;
+      }
+    }
+  } catch {
+    // Fallback store unavailable
+  }
+
+  return false;
+}
+
+/**
+ * Check whether an email is already registered — searches BOTH the SQLite DB
+ * (primary) and the fallback in-memory store (secondary). Case-insensitive.
+ *
+ * Used by /api/auth/register to double-check email uniqueness across both
+ * stores (the register route already checks the DB, but this also covers the
+ * fallback store so a user registered via fallback can't be re-registered).
+ */
+export async function isEmailTaken(email: string): Promise<boolean> {
+  const emailKey = email.toLowerCase().trim();
+
+  // 1. Check Prisma/SQLite (case-insensitive)
+  try {
+    const matches = await db.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM User WHERE email = ${emailKey} COLLATE NOCASE LIMIT 1
+    `;
+    if (matches && matches.length > 0) return true;
+  } catch {
+    // SQLite unavailable — continue to fallback
+  }
+
+  // 2. Check fallback in-memory store
+  try {
+    const store = await getAuthStore();
+    if (store.has(emailKey)) return true;
+  } catch {
+    // Fallback store unavailable
+  }
+
+  return false;
 }
 
 export async function fallbackUpdateUser(

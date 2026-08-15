@@ -1,45 +1,63 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendOtpEmail } from "@/lib/email";
 import { db } from "@/lib/db";
+import { getAuthStore } from "@/lib/auth-fallback";
+import {
+  normalizePhone,
+  generateOtpCode,
+  setOtp,
+  getOtp,
+  deleteOtp,
+  isPhoneVerified,
+  markPhoneVerified,
+  phonesMatch,
+  OTP_TTL_MS,
+  OTP_LENGTH,
+  getOtpCooldownSec,
+} from "@/lib/otp-store";
 
 /* ------------------------------------------------------------------ */
-/*  In-memory OTP store (works on serverless / Vercel)                */
+/*  In-memory OTP store now lives in @/lib/otp-store so that the      */
+/*  login route can read verification status from the SAME Map.       */
+/*  (Previously the store was module-local here, which caused a       */
+/*  separate instance in the login bundle → login always saw          */
+/*  "not verified".)                                                   */
 /* ------------------------------------------------------------------ */
 
-type OtpEntry = {
-  code: string;
-  expiresAt: number;
-  verified: boolean;
-};
-
-const otpStore = new Map<string, OtpEntry>();
-const OTP_TTL_MS = 1 * 60 * 1000; // 1 menit
-const OTP_LENGTH = 6;
-
-function generateCode(): string {
-  const digits = "0123456789";
-  let code = "";
-  for (let i = 0; i < OTP_LENGTH; i++) {
-    code += digits[Math.floor(Math.random() * 10)];
-  }
-  return code;
-}
-
-function normalizePhone(phone: string): string {
-  let p = phone.replace(/[^0-9]/g, "");
-  if (p.startsWith("0")) p = "62" + p.slice(1);
-  if (p.startsWith("+")) p = p.slice(1);
-  return p;
-}
-
-/** Cari email user berdasarkan nomor WhatsApp */
+/** Cari email user berdasarkan nomor WhatsApp.
+ *  Phone numbers in the DB may be stored in various formats (with dashes,
+ *  with/without country code). We use `phonesMatch()` which normalizes BOTH
+ *  numbers before comparing — see otp-store.ts for why naive slice(-10) fails.
+ *
+ *  We check TWO sources:
+ *  1. Prisma/SQLite (primary) — works locally and has registered users.
+ *  2. Fallback in-memory store (secondary) — always has the seed admin and
+ *     any users registered via the fallback path. This ensures WA login
+ *     still works even if the SQLite DB is wiped/re-seeded.
+ */
 async function findEmailByPhone(phone: string): Promise<string | null> {
+  // 1. Try Prisma/SQLite first
   try {
-    const user = await db.user.findFirst({ where: { phone } });
-    return user?.email ?? null;
+    const users = await db.user.findMany({ where: { phone: { not: null } } });
+    const user = users.find((u) => phonesMatch(u.phone, phone));
+    if (user?.email) return user.email;
   } catch {
-    return null;
+    // SQLite unavailable — continue to fallback
   }
+
+  // 2. Fallback: in-memory + /tmp file store (always has seed admin)
+  try {
+    const store = await getAuthStore();
+    for (const u of store.values()) {
+      if (u.phone && phonesMatch(u.phone, phone)) {
+        return u.email;
+      }
+    }
+  } catch {
+    // Fallback store unavailable
+  }
+
+  return null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -65,10 +83,12 @@ export async function POST(req: NextRequest) {
 
     if (action === "send") {
       // Rate limit: max 1 OTP per 60 seconds
-      const existing = otpStore.get(phone);
-      if (existing && Date.now() - (existing.expiresAt - OTP_TTL_MS) < 60_000) {
-        const waitSec = Math.ceil(60 - (Date.now() - (existing.expiresAt - OTP_TTL_MS)) / 1000);
-        return NextResponse.json({ error: `Tunggu ${waitSec} detik sebelum mengirim ulang`, waitSec });
+      const waitSec = getOtpCooldownSec(phone);
+      if (waitSec > 0) {
+        return NextResponse.json(
+          { error: `Tunggu ${waitSec} detik sebelum mengirim ulang`, waitSec },
+          { status: 429 }
+        );
       }
 
       // Cari email: dari body (register) atau dari database (login)
@@ -77,12 +97,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Email tidak ditemukan untuk nomor ini" }, { status: 400 });
       }
 
-      const otpCode = generateCode();
-      otpStore.set(phone, {
-        code: otpCode,
-        expiresAt: Date.now() + OTP_TTL_MS,
-        verified: false,
-      });
+      const otpCode = generateOtpCode(OTP_LENGTH);
+      setOtp(phone, otpCode);
 
       console.log(`[OTP] Phone: ${phone}, Email: ${email}, Code: ${otpCode}`);
 
@@ -111,13 +127,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Kode OTP wajib diisi" }, { status: 400 });
       }
 
-      const entry = otpStore.get(phone);
+      const entry = getOtp(phone);
       if (!entry) {
         return NextResponse.json({ error: "OTP tidak ditemukan. Silakan kirim ulang." }, { status: 400 });
       }
 
       if (Date.now() > entry.expiresAt) {
-        otpStore.delete(phone);
+        deleteOtp(phone);
         return NextResponse.json({ error: "OTP sudah expired. Silakan kirim ulang." }, { status: 400 });
       }
 
@@ -125,7 +141,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Kode OTP salah" }, { status: 400 });
       }
 
-      entry.verified = true;
+      markPhoneVerified(phone);
       return NextResponse.json({ success: true, message: "OTP terverifikasi" });
     }
 
@@ -135,16 +151,5 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Check if a phone number has been verified (used by login/register)
-export function isPhoneVerified(phone: string): boolean {
-  const normalized = normalizePhone(phone);
-  const entry = otpStore.get(normalized);
-  return entry?.verified === true;
-}
-
-// Mark phone as verified (after successful login/register, keep for session)
-export function markPhoneVerified(phone: string) {
-  const normalized = normalizePhone(phone);
-  const entry = otpStore.get(normalized);
-  if (entry) entry.verified = true;
-}
+// Re-export for backward compatibility (login route imports from here).
+export { isPhoneVerified, markPhoneVerified } from "@/lib/otp-store";
