@@ -217,6 +217,9 @@ export function DashboardView() {
   ];
 
   // --- Render grid card ---
+  // Matches the home page <ListingCard> size/structure so cards look uniform
+  // across the app. Dashboard-specific extras (status badge, action buttons,
+  // payment-expiry badge) are added as compact overlays/footer.
   const renderGridCard = (l: Listing) => {
     const img = l.images?.[0];
     const imgs = l.images || [];
@@ -241,21 +244,22 @@ export function DashboardView() {
       : l.packageType === "sundul" ? "Boost"
       : l.packageType === "colek" ? "Gold"
       : "";
-    const pkgColor =
-      l.packageType === "spotlight" ? "bg-amber-100 text-amber-700"
-      : l.packageType === "highlight" ? "bg-orange-100 text-orange-700"
-      : l.packageType === "sundul" ? "bg-purple-100 text-purple-700"
-      : l.packageType === "colek" ? "bg-blue-100 text-blue-700"
+    const pkgBadgeColor =
+      l.packageType === "spotlight" ? "bg-amber-500"
+      : l.packageType === "highlight" ? "bg-orange-500"
+      : l.packageType === "sundul" ? "bg-purple-500"
+      : l.packageType === "colek" ? "bg-blue-500"
       : "";
 
     const { days: remainingDays, expired } = getRemainingDays(l.paymentExpiry);
 
-    // Line/ring color for package
-    const lineColor = l.packageType === "spotlight" ? "border-amber-300"
-      : l.packageType === "highlight" ? "border-orange-300"
-      : l.packageType === "sundul" ? "border-purple-300"
-      : l.packageType === "colek" ? "border-blue-300"
-      : "";
+    // Border/ring color for package (matches home ListingCard ring style)
+    const cardBorder =
+      l.packageType === "spotlight" ? "border-amber-400 bg-card ring-2 ring-amber-400/30 shadow-lg"
+      : l.packageType === "highlight" ? "border-orange-400 bg-card ring-1 ring-orange-400/30 shadow-md"
+      : l.packageType === "sundul" ? "border-purple-500 bg-purple-100 dark:bg-purple-950 ring-2 ring-purple-400/40 shadow-md"
+      : l.packageType === "colek" ? "border-blue-400 bg-card ring-1 ring-blue-400/30 shadow-sm"
+      : "border-border bg-card";
 
     return (
       <div
@@ -265,20 +269,20 @@ export function DashboardView() {
           if (l.status === "active" && !l.violationFlag && !isExpired) goToUpgrade(l.slug);
         }}
         className={cn(
-          "group flex flex-col overflow-hidden rounded-xl border bg-card transition sm:border-2",
-          lineColor || "border-border",
+          "group flex h-full flex-col overflow-hidden rounded-xl border transition",
+          cardBorder,
           (l.status === "active" && !l.violationFlag && !isExpired)
             ? "cursor-pointer hover:shadow-lg"
             : "cursor-not-allowed opacity-80"
         )}
       >
-        {/* image */}
+        {/* image — same aspect-[4/3] as home ListingCard */}
         <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
           {img ? (
-            <img src={img} alt={l.title} className="size-full object-cover transition group-hover:scale-105" />
+            <img src={img} alt={l.title} className="size-full object-cover transition-transform duration-500 ease-out group-hover:scale-105" />
           ) : (
             <div className="flex h-full items-center justify-center text-muted-foreground">
-              <ImageIcon className="size-8" />
+              <ImageIcon className="size-10" />
             </div>
           )}
           {/* SOLD overlay */}
@@ -289,121 +293,103 @@ export function DashboardView() {
               </span>
             </div>
           )}
-          {/* status badge */}
-          <span className={cn("absolute left-2 top-2 flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase text-white shadow", statusInfo.color)}>
-            <StatusIcon className="size-3" />
-            {statusInfo.text}
-          </span>
-          {/* package badge */}
-          {pkgName && (
-            <span className={cn("absolute right-2 top-2 rounded-md px-2 py-0.5 text-[10px] font-bold text-white shadow", pkgColor.replace("100", "500").replace("700", ""))}>
-              {pkgName}
+          {/* top-left badges: status + package (matches home card's top-left badge cluster) */}
+          <div className="pointer-events-none absolute left-2 top-2 flex flex-wrap gap-1">
+            <span className={cn("flex items-center gap-0.5 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow", statusInfo.color)}>
+              <StatusIcon className="size-2.5" />
+              {statusInfo.text}
             </span>
-          )}
-          {/* photo count */}
+            {pkgName && (
+              <span className={cn("rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow", pkgBadgeColor)}>
+                {pkgName}
+              </span>
+            )}
+          </div>
+          {/* views badge — bottom-left (matches home card) */}
+          <span className="pointer-events-none absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur">
+            <Eye className="size-3" />
+            {l.views?.toLocaleString("id-ID") || 0}
+          </span>
+          {/* photo count — bottom-right */}
           {imgs.length > 1 && (
-            <span className="absolute bottom-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
+            <span className="pointer-events-none absolute bottom-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur">
               📷 {imgs.length}
             </span>
           )}
         </div>
 
-        {/* content */}
-        <div className="flex flex-1 flex-col p-2.5">
-          {/* price */}
+        {/* content — matches home ListingCard: p-2.5, price text-base, title text-sm line-clamp-2 */}
+        <div className="flex flex-1 flex-col space-y-1 p-2.5">
+          {/* price + nego */}
           <div className="flex items-baseline justify-between gap-2">
-            <p className="text-base font-bold text-primary">
+            <p className="font-bold text-primary text-base">
               {formatRupiahFull(l.price)}
             </p>
             {l.priceType === "negotiable" && (
-              <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+              <span className="shrink-0 text-[11px] font-medium text-muted-foreground">
                 Nego
               </span>
             )}
           </div>
           {/* title */}
-          <h3 className="mt-1 line-clamp-2 text-sm font-medium leading-snug text-foreground">
+          <h3 className="line-clamp-2 font-medium leading-snug text-foreground text-sm">
             {listingTitle(l, mounted ? lang : "id")}
           </h3>
-          {/* viewer (moved to where location used to be) */}
-          <div className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-            <Eye className="size-3 shrink-0" /> {l.views?.toLocaleString("id-ID") || 0} dilihat
+          {/* location + year (matches home card) */}
+          <div className="flex items-center gap-1.5 pt-1 text-xs text-muted-foreground">
+            <MapPin className="size-3.5 shrink-0" />
+            <span className="truncate">{l.city || "-"}</span>
+            {l.yearProduced && (
+              <>
+                <span>•</span>
+                <span className="shrink-0">Th. {l.yearProduced}</span>
+              </>
+            )}
           </div>
-
-          {/* Masa Aktif — remaining days bar */}
+          {/* payment-expiry compact badge (replaces the old progress bar — saves vertical space) */}
           {l.paymentExpiry && l.paymentStatus === "paid" && (
-            <div className="mt-2">
-              {expired ? (
-                <div className="flex items-center gap-1.5 rounded-md bg-red-50 px-2 py-1">
-                  <AlertTriangle className="size-3 shrink-0 text-red-500" />
-                  <span className="text-[10px] font-bold text-red-600">
-                    Non Aktif — Expired {new Date(l.paymentExpiry).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
-                  </span>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                      <Timer className="size-3" />
-                      <span>Masa aktif</span>
-                    </div>
-                    <span className={cn(
-                      "text-[10px] font-bold",
-                      remainingDays <= 3 ? "text-red-600" : remainingDays <= 7 ? "text-amber-600" : "text-green-600"
-                    )}>
-                      {remainingDays === 0 ? "Berakhir hari ini" : `${remainingDays} hari lagi`}
-                    </span>
-                  </div>
-                  {/* Progress bar */}
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className={cn(
-                        "h-full rounded-full transition-all",
-                        remainingDays <= 3 ? "bg-red-500" : remainingDays <= 7 ? "bg-amber-500" : "bg-green-500"
-                      )}
-                      style={{ width: `${Math.max(0, Math.min(100, (remainingDays / 30) * 100))}%` }}
-                    />
-                  </div>
-                  <p className="text-[9px] text-muted-foreground">
-                    Berakhir: {new Date(l.paymentExpiry).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
-                  </p>
-                </div>
-              )}
+            <div className={cn(
+              "flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold",
+              expired ? "bg-red-50 text-red-600" : remainingDays <= 3 ? "bg-red-50 text-red-600" : remainingDays <= 7 ? "bg-amber-50 text-amber-600" : "bg-green-50 text-green-600"
+            )}>
+              <Timer className="size-2.5 shrink-0" />
+              {expired ? "Non Aktif" : remainingDays === 0 ? "Berakhir hari ini" : `${remainingDays} hari lagi`}
             </div>
           )}
-
-          {/* bottom: actions */}
-          <div className="mt-auto pt-2 border-t border-border">
-            <div className="flex items-center justify-end gap-1">
+          {/* bottom: timeAgo + action buttons (matches home card's bottom row height) */}
+          <div className="mt-auto flex items-center justify-between gap-1 pt-0.5">
+            <span className="text-[10px] text-muted-foreground shrink-0">
+              {timeAgo(l.createdAt, mounted ? lang : "id")}
+            </span>
+            <div className="flex items-center gap-0.5">
               {(l.status === "active" || isSold) && (
                 <button
                   onClick={(e) => { e.stopPropagation(); soldMutation.mutate({ slug: l.slug, isSold }); }}
                   disabled={soldMutation.isPending}
-                  title={isSold ? "Batal" : "Terjual"}
+                  title={isSold ? "Batal Terjual" : "Tandai Terjual"}
                   className={cn(
-                    "flex items-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-semibold transition sm:px-2",
+                    "grid size-6 place-items-center rounded-md border transition",
                     isSold
                       ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                       : "border-emerald-300 bg-background text-emerald-700 hover:bg-emerald-50"
                   )}
                 >
                   {soldMutation.isPending ? <Loader2 className="size-3 animate-spin" /> : <BadgeCheck className="size-3" />}
-                  <span className="hidden sm:inline">{isSold ? "Batal" : "Terjual"}</span>
                 </button>
               )}
               <button
                 onClick={(e) => { e.stopPropagation(); goToEdit(l.slug); }}
                 title="Edit"
-                className="flex items-center gap-1 rounded-md border border-blue-500 bg-blue-500 px-1.5 py-1 text-[10px] font-semibold text-white transition hover:bg-blue-600 hover:border-blue-600 sm:px-2"
+                className="grid size-6 place-items-center rounded-md border border-blue-500 bg-blue-500 text-white transition hover:bg-blue-600 hover:border-blue-600"
               >
-                <Edit className="size-3" /> <span className="hidden sm:inline">Edit</span>
+                <Edit className="size-3" />
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); handleDelete(l.slug); }}
                 title="Hapus"
-                className="flex items-center gap-1 rounded-md border border-orange-500 bg-orange-500 px-1.5 py-1 text-[10px] font-semibold text-white transition hover:bg-orange-600 hover:border-orange-600 sm:px-2"
+                className="grid size-6 place-items-center rounded-md border border-orange-500 bg-orange-500 text-white transition hover:bg-orange-600 hover:border-orange-600"
               >
-                <Trash2 className="size-3" /> <span className="hidden sm:inline">Hapus</span>
+                <Trash2 className="size-3" />
               </button>
             </div>
           </div>
@@ -687,7 +673,7 @@ export function DashboardView() {
         viewMode === "grid" ? (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="overflow-hidden rounded-xl border border-border bg-card sm:border-2">
+              <div key={i} className="overflow-hidden rounded-xl border border-border bg-card">
                 <div className="aspect-[4/3] w-full animate-pulse bg-muted" />
                 <div className="space-y-2 p-2.5">
                   <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />

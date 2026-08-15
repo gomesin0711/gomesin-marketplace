@@ -23,8 +23,8 @@ interface DeferredPrompt extends Event {
 
 const DISMISSED_KEY = "gomesin-pwa-dismissed";
 const INSTALLED_KEY = "gomesin-pwa-installed";
-const DISMISS_MS = 24 * 60 * 60 * 1000; // 1 day
-const SHOW_DELAY_MS = 1000; // 1 second
+const DISMISS_MS = 60 * 60 * 1000; // 1 hour (was 24h — user wants auto-install prompt to reappear sooner)
+const SHOW_DELAY_MS = 800; // 0.8 second (was 1s — show popup faster)
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
