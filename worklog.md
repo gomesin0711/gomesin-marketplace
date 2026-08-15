@@ -3970,3 +3970,61 @@ Stage Summary:
     - 9b: at 1366x900 desktop viewport, `<footer>` element is present and visible; footer_bottom=900 matches viewport height=900 (i.e. footer sits flush at the bottom of the viewport on initial load, with the rest of the page content scrollable below via doc_scroll_h=5603). No floating gap, no overlap.
 - Final verdict: PASS — all 9 checks (and 22 sub-checks) PASS. The register duplicate-check fix works end-to-end: real-time UI feedback on the client (name/email/phone), Kirim OTP + Daftar Sekarang buttons correctly disabled when duplicates are detected, server-side `/api/auth/register` returns 409 with `field` for all three fields (including format-agnostic phone matching), and the page renders cleanly with no console errors or hydration mismatches.
 - Files produced by this verification: `/home/z/my-project/tests/verify-register-duplicate-check.py` (Playwright script), `/home/z/my-project/tool-results/verify-register-footer.png` (screenshot evidence).
+
+---
+Task ID: extract-and-replace-12
+Agent: Main (Z.ai Code)
+Task: "extract file ini. ganti semua conten dengan file ini." — User uploaded tar snapshot (12) split into 3 parts. Extract, replace all project content, install deps, seed DB, verify working.
+
+Work Log:
+- Combined 3 tar parts: workspace-8d0e012a-...tar.001 + .002 + .003 → snapshot-12.tar (152,782,434 bytes, 748 entries).
+- Extracted to upload/extracted-12/ (excluded .git which was 78M).
+- Diffed snapshot (12) vs current project (post-register-duplicate-check fix):
+  - src/ — IDENTICAL (no diffs)
+  - prisma/ — IDENTICAL
+  - package.json — IDENTICAL
+  - public/ — IDENTICAL
+  - scripts/ — IDENTICAL
+  - examples/ — IDENTICAL
+  - All top-level config files — IDENTICAL
+  - worklog.md — IDENTICAL (same last entry: register-duplicate-check-verify PASS)
+  - Conclusion: snapshot (12) is the SAME as the current project state (the user re-uploaded the current state). Replacement is effectively a no-op but performed properly to honor the request.
+- Stopped dev server + chat-service (pkill next, next-server, chat-service, daemon.cjs).
+- Created backup at _backup_pre_1786799304/ (src, prisma, public, scripts, examples, mini-services, package.json, configs, db).
+- Replaced project content:
+  - Removed old src/, prisma/, public/, scripts/, examples/, mini-services/, .zscripts/, .vercel/ and top-level config files.
+  - Copied new content from extracted-12 (excluding .git, _backup_* dirs from snapshot).
+  - PRESERVED: db/custom.db (SQLite data), node_modules/, .next/ cache, _backup_pre_1786799304/.
+- Installed deps: `bun install` — no changes (882 installs across 951 packages, all already present). @supabase/supabase-js confirmed installed.
+- Pushed Prisma schema: `bun run db:push --accept-data-loss` — "database is already in sync".
+- Discovered DB was empty (0 users, 0 listings) — re-seeded:
+  - `bun run prisma/seed.ts` → 39 listings created.
+  - `bun run prisma/seed-users.ts` → admin + 11 sample users + 14 messages + linked 20 listings to users.
+  - Final DB state: 12 users, 39 listings, 12 categories, 8 sellers, 4 pakets, 14 messages, 1 admin.
+- Installed chat-service deps: `cd mini-services/chat-service && bun install` → 57 packages (socket.io, @prisma/client, prisma). The chat-service's node_modules was NOT in the snapshot so had to be reinstalled.
+- Cleared .next cache and restarted daemon (`node daemon.cjs`):
+  - Next.js dev server: port 3000, Ready in 6.2s.
+  - chat-service: port 3003 (socket.io path "/"), control HTTP server on port 3004 (localhost-only).
+- Verified end-to-end:
+  - Homepage: HTTP 200, 84,643 bytes, mesinKU branding visible.
+  - chat-service /health: {"ok":true,"uptime":67s,"clients":2}.
+  - /api/admin/users: returns 12 users (Budi, Siti, Ahmad, etc.).
+  - /api/listings?sort=newest: returns 39 listings.
+  - /api/categories: returns 12 categories.
+  - Admin login (mesinKU0711@gmail.com / admin123): returns user object with role=admin.
+  - Sample user login (budi.santoso@example.com / user123): returns user object.
+  - /api/auth/check-availability?name=Budi+Santoso: {nameTaken:true} ✓
+  - /api/auth/register POST with duplicate email: 409 {error:"Email sudah terdaftar...", field:"email"} ✓
+- dev.log inspection: ZERO errors, ZERO hydration mismatches, ZERO runtime exceptions. Only the pre-existing cosmetic `metadataBase` warning (allowed).
+- Cleaned up: removed upload/extracted-12/ and upload/snapshot-12.tar.
+
+Stage Summary:
+- Snapshot (12) was identical to the current project state (post-register-duplicate-check fix). Replacement performed properly anyway to honor user's explicit request.
+- All project content replaced from snapshot (12). db/ and node_modules/ preserved (not in snapshot).
+- chat-service node_modules had to be reinstalled (socket.io missing).
+- DB re-seeded: 12 users, 39 listings, 12 categories, 8 sellers, 4 pakets, 14 messages, 1 admin.
+- Dev server (port 3000) + chat-service (port 3003 + control 3004) both running cleanly.
+- All APIs verified working. Homepage loads. Login works for both admin and sample users. Register duplicate check (the previous task's fix) still works correctly.
+- dev.log clean — no errors, no hydration mismatches.
+- Backup at _backup_pre_1786799304/ available if rollback needed.
+- PASS — project fully operational with snapshot (12) content.
