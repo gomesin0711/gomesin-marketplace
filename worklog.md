@@ -3049,3 +3049,45 @@ Stage Summary:
 - Force-push ke GitHub sukses — repo di GitHub juga sudah ramping
 - Production tetap live, dev server normal, working tree intact
 - CATATAN: Siapa pun yang punya clone LAMA harus re-clone (clone lama masih punya file besar di history-nya). Vercel auto-deploy (jika aktif) akan tetap jalan dari kode terbaru.
+
+---
+Task ID: 58
+Agent: Main
+Task: Extract uploaded tar archive, replace all project content, then connect Supabase (admin panel was showing empty data)
+
+Work Log:
+- Combined 3-part tar archive: `cat "workspace-(9).tar.001" "(9).tar.002" "(9).tar.003" > /tmp/workspace-combined.tar` (149MB)
+- Listed tar contents: 325 files including .git/, src/, prisma/, public/, package.json, etc. (no node_modules, no .next, no db/)
+- Extracted to /tmp/workspace-extracted/
+- Backed up current state via git commit (working tree was clean)
+- Replaced project content via rsync with --delete, preserving: node_modules, .next, db/, upload/, dev.log
+- Ran `bun install` (no changes needed, 882 packages already in sync)
+- Ran `bun run db:push` (schema already in sync with DB)
+
+=== Connect Supabase ===
+- Problem: After extraction, admin APIs returned EMPTY data (0 users, 0 listings) because local SQLite DB was empty (only 4 pakets from a previous seed).
+- Root cause: `.env` had `DATABASE_URL=file:/home/z/my-project/db/custom.db` → `isDbAvailable()` returned true → all API routes used Prisma+SQLite (which was empty) instead of falling through to Supabase.
+- Tested Supabase connection directly: confirmed it has real production data (3 users, 5+ listings, 4 pakets, 5+ categories).
+- Fix 1: Commented out DATABASE_URL in `.env` so `isDbAvailable()` returns false → APIs fall through to Supabase path.
+- Fix 2: Shell environment had DATABASE_URL exported globally (inherited from system setup), overriding .env. Updated `package.json` dev script: `"dev": "unset DATABASE_URL; next dev -p 3000 2>&1 | tee dev.log"` to explicitly unset it before starting Next.js.
+- Fix 3: Started dev server via `bash .zscripts/dev.sh` (proper background detachment with disown) to keep it running persistently.
+
+=== Verification via Agent Browser (admin login gomesin0711@gmail.com) ===
+- Dashboard: Total User 3, Total Iklan 9, Total Omset Rp 1.050.000, Admin 1 ✓
+- Hari Ini: User 0, Iklan 0, Omset Rp 0
+- Minggu Ini: User 0, Iklan 9, Omset Rp 1.050.000
+- Bulan Ini: User 0, Iklan 9, Omset Rp 1.050.000
+- Iklan Baru: 2 ✓
+- Iklan Aktif: 5 (Gold 1, Platinum 3, Titanium 1, Colek 0) — listings: Tea, Tsr, Mesin jahit, tes, etc. ✓
+- Pengguna: 3 users (Michael, Test User Lokal, Admin Gomesin) ✓
+- Paket Premium: 4 pakets (Gold Rp 30k, Colek Rp 20k, Platinum Rp 50k, Titanium Rp 80k) ✓
+- Kelola Kategori: 13 categories (Mesin Cetak 1 iklan, Mesin CNC 2, Mesin Makanan 4, etc.) ✓
+- Home page: listings displayed (tes, Tea, Tsr, Mesin jahit, etc.) ✓
+- Dev server: PID 4786, HTTP 200, all API calls returning 200
+
+Stage Summary:
+- Project content fully replaced with uploaded archive (src, prisma, public, package.json, .git, config files).
+- Local SQLite disabled (DATABASE_URL unset) → all API routes now read from Supabase production data.
+- Admin panel now shows real data: 3 users, 9 listings, 13 categories, 4 pakets, omzet Rp 1.050.000.
+- Dev server running persistently via .zscripts/dev.sh.
+- Note: The archive reverted the previous "Colek" → "Boost" rename (Task 57). The paket display name is back to "Colek" in Supabase. If user wants "Boost" again, it would need to be re-applied to Supabase directly.

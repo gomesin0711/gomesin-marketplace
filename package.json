@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000 2>&1 | tee dev.log",
+    "dev": "unset DATABASE_URL; next dev -p 3000 2>&1 | tee dev.log",
     "build": "prisma generate && next build",
     "vercel-build": "prisma generate && next build",
     "postinstall": "prisma generate || echo skip",
