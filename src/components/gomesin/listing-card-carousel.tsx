@@ -62,8 +62,7 @@ export function ListingCardCarousel({ listing }: { listing: Listing }) {
       {/* image carousel */}
       <div
         className={cn(
-          "relative w-full overflow-hidden bg-muted",
-          listing.condition === "jasa" ? "aspect-square" : listing.condition === "sewa" ? "aspect-video" : "aspect-[4/3]"
+          "relative w-full overflow-hidden bg-muted aspect-[4/3]"
         )}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}

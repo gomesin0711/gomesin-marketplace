@@ -45,7 +45,7 @@ const PACKAGES: Array<{
   },
   {
     key: "sundul",
-    name: "Colek",
+    name: "Boost",
     price: 30000,
     originalPrice: 50000,
     duration: "10 hari",
@@ -210,7 +210,7 @@ export function PackageActivateDialog({
       : listing.packageType === "highlight"
       ? "Platinum"
       : listing.packageType === "sundul"
-      ? "Colek"
+      ? "Boost"
       : listing.packageType === "simpan"
       ? "Simpan (Draft)"
       : "Gold";

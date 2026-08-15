@@ -46,35 +46,36 @@ export async function POST(req: NextRequest) {
       });
       const user = users.find((u) => phonesMatch(u.phone, normalizedPhone));
 
-      if (user) {
-        return NextResponse.json({
-          user: {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            phone: user.phone,
-            city: user.city,
-            company: user.company,
-            address: user.address,
-            bannerImage: user.bannerImage,
-            logoImage: user.logoImage,
-            role: user.role,
-            createdAt:
-              user.createdAt instanceof Date
-                ? user.createdAt.toISOString()
-                : user.createdAt,
-          },
-        });
+      if (!user) {
+        return NextResponse.json(
+          { error: "Nomor WhatsApp tidak terdaftar." },
+          { status: 404 }
+        );
       }
-      // DB query succeeded but no matching user — fall through to fallback
-      // store (which always has the seed admin, so WA login still works
-      // even after a DB re-seed that wipes the User table).
+
+      return NextResponse.json({
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          city: user.city,
+          company: user.company,
+          address: user.address,
+          bannerImage: user.bannerImage,
+          logoImage: user.logoImage,
+          role: user.role,
+          createdAt:
+            user.createdAt instanceof Date
+              ? user.createdAt.toISOString()
+              : user.createdAt,
+        },
+      });
     } catch {
       // SQLite unavailable — use fallback
     }
 
     // Fallback: in-memory + /tmp file store
-    // (Only reached if DB had no match OR DB threw an error)
     const result = await fallbackFindUserByPhone(normalizedPhone);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });

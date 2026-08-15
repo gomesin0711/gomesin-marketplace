@@ -32,7 +32,7 @@ import {
 import { ListingCard } from "../listing-card";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { useLang, translations as i18nTranslations, formatT, categoryName, listingTitle, listingDesc, listingSpecs } from "@/lib/i18n";
+import { useLang, translations as i18nTranslations, formatT, listingTitle, listingDesc, listingSpecs } from "@/lib/i18n";
 import { useMounted } from "@/lib/use-mounted";
 import { proxyUrl } from "@/lib/image";
 
@@ -103,7 +103,7 @@ export function DetailView() {
   if (isLoading) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-6">
-        <div className="mb-4 aspect-[16/9] w-full animate-pulse rounded-xl bg-muted" />
+        <div className="mb-4 aspect-[4/3] w-full animate-pulse rounded-xl bg-muted" />
         <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
           <div className="space-y-4">
             <div className="h-6 w-2/3 animate-pulse rounded bg-muted" />
@@ -157,7 +157,7 @@ export function DetailView() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-4 animate-fade-up">
-      {/* back button + breadcrumb */}
+      {/* back button */}
       <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
         <button
           onClick={goBack}
@@ -166,15 +166,6 @@ export function DetailView() {
         >
           <ChevronLeft className="size-4" /> {tr("back")}
         </button>
-        <div className="flex min-w-0 items-center gap-1">
-          <button onClick={() => useStore.getState().goHome()} className="hover:text-primary">{tr("home2")}</button>
-          <ChevronRight className="size-3 shrink-0" />
-          <button onClick={() => goToListings({ category: l.category.slug })} className="hover:text-primary">
-            {categoryName(l.category.name, mounted ? lang : "id")}
-          </button>
-          <ChevronRight className="size-3 shrink-0" />
-          <span className="truncate text-foreground">{listingTitle(l, mounted ? lang : "id")}</span>
-        </div>
       </div>
 
       {/* TOP: gallery + title/price card side by side */}
@@ -182,7 +173,7 @@ export function DetailView() {
         {/* gallery — left */}
         <div className="overflow-hidden rounded-xl border border-border bg-card">
           <div
-            className="relative aspect-[16/9] w-full overflow-hidden bg-muted"
+            className="relative aspect-[4/3] w-full overflow-hidden bg-muted"
             onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
             onTouchEnd={(e) => {
               if (touchStartX.current === null) return;

@@ -403,8 +403,24 @@ export async function POST(req: NextRequest) {
         const pkgDays = paketMap[pkgKey]?.duration ?? 30;
 
         // For draft ("Simpan Dulu"), categoryId may be empty — fallback to first category.
+        // Also validate that the provided categoryId actually EXISTS in the DB.
+        // This guards against stale localStorage drafts that reference category IDs
+        // from a previous database seed (which would cause an FK constraint violation).
         let finalCategoryId = categoryId;
+        if (finalCategoryId) {
+          const catExists = await db.category.findUnique({ where: { id: finalCategoryId }, select: { id: true } });
+          if (!catExists) {
+            // Stale/invalid categoryId — discard it so we fall back to the first category.
+            finalCategoryId = null;
+          }
+        }
         if (!finalCategoryId) {
+          if (!isDraft) {
+            return NextResponse.json(
+              { error: "Kategori tidak valid. Silakan pilih kategori kembali di form." },
+              { status: 400 }
+            );
+          }
           const firstCat = await db.category.findFirst({ orderBy: { sortOrder: "asc" } });
           finalCategoryId = firstCat?.id;
         }
@@ -517,9 +533,26 @@ export async function POST(req: NextRequest) {
         .eq("id", sellerId);
     }
 
-    // Find-or-create Category: if categoryId provided, use it; else grab the first.
+    // Find-or-create Category: if categoryId provided, validate it exists;
+    // else grab the first. Guards against stale localStorage category IDs.
     let finalCategoryId = categoryId;
+    if (finalCategoryId) {
+      const { data: catExists } = await supabase
+        .from("Category")
+        .select("id")
+        .eq("id", finalCategoryId)
+        .limit(1);
+      if (!catExists || catExists.length === 0) {
+        finalCategoryId = null;
+      }
+    }
     if (!finalCategoryId) {
+      if (!isDraft) {
+        return NextResponse.json(
+          { error: "Kategori tidak valid. Silakan pilih kategori kembali di form." },
+          { status: 400 }
+        );
+      }
       const { data: firstCat } = await supabase
         .from("Category")
         .select("id")

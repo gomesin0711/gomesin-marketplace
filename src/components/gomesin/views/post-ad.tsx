@@ -221,6 +221,17 @@ export function PostAdView() {
     } catch {}
   }, [hydrated, step, title, categoryId, description, price, priceType, condition, availability, adType, brand, modelType, capacity, yearProduced, city, province, images, specs, selectedPackage]);
 
+  // --- Validate hydrated categoryId against fetched categories ---
+  // If the DB was re-seeded, a stale categoryId from localStorage may no
+  // longer exist. Clear it so the user re-selects a valid category instead
+  // of getting an FK constraint error on submit.
+  useEffect(() => {
+    if (!cats || cats.length === 0) return;
+    if (categoryId && !cats.some((c: any) => c.id === categoryId)) {
+      setCategoryId("");
+    }
+  }, [cats, categoryId]);
+
   // --- Reset all form data ---
   const handleReset = () => {
     setStep(1);
@@ -771,7 +782,7 @@ export function PostAdView() {
                   <button
                     type="button"
                     disabled={compressing}
-                    className="flex aspect-square flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-white transition hover:border-green-400 hover:bg-green-50/50"
+                    className="flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-white transition hover:border-green-400 hover:bg-green-50/50"
                   >
                     {compressing ? (
                       <Loader2 className="size-8 animate-spin text-green-500" />
@@ -811,7 +822,7 @@ export function PostAdView() {
 
               {/* Uploaded photos */}
               {images.map((img, i) => (
-                <div key={i} className="relative aspect-square overflow-hidden rounded-xl border border-border">
+                <div key={i} className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border">
                   <img src={img} alt={""} className="size-full object-cover" />
                   <button
                     type="button"
@@ -974,7 +985,7 @@ export function PostAdView() {
                             ? pkgSelectedColorMap[key] || "border-primary ring-2 ring-primary"
                             : (pkgColorMap[key] || "border-border") + " hover:shadow-md"
                       )}
-                      title={isUpgradeOnly ? "Paket Colek hanya untuk iklan yang sudah terbit (upgrade)" : undefined}
+                      title={isUpgradeOnly ? "Paket Boost hanya untuk iklan yang sudah terbit (upgrade)" : undefined}
                     >
                       {key === "highlight" && !isUpgradeOnly && (
                         <span className="absolute -top-2 left-2 rounded-full bg-primary px-1.5 py-0.5 text-[8px] font-bold uppercase text-primary-foreground">Populer</span>

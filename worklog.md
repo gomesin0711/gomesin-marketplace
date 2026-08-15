@@ -3303,341 +3303,248 @@ Stage Summary:
 ---
 Task ID: 55
 Agent: Main
-Task: Fix "kategori tidak muncul" — categories not appearing on homepage
+Task: Fix admin panel showing empty data on all panels
 
 Work Log:
-- User report: "kategori tidak muncul" — categories not showing on the homepage.
-- Investigasi API: `curl http://localhost:3000/api/categories` → returned `{"categories":[]}` (empty array).
-- Investigasi DB: ran Prisma script `bun /tmp/check_cats.ts` → `Category count: 0`, `Listing count: 0`. Database completely empty (both Category and Listing tables).
-- ROOT CAUSE: Database was empty/wiped. The categories API (`src/app/api/categories/route.ts`) only falls back to seed data on the `catch` block (DB error), NOT when the DB query succeeds but returns an empty result set. So when Prisma succeeded with 0 rows, it returned `{"categories":[]}` to the frontend.
-  * Note: The listings API had the same issue — `curl /api/listings?sort=newest&limit=3` → `{"listings":[],"total":0,...}`. Listings were also not appearing (though user specifically mentioned categories).
-- Fix: Ran the existing seed script `prisma/seed.ts` (which was already present and designed for this exact purpose):
-  * `bun prisma/seed.ts` — upserts categories (by slug), upserts sellers, creates listings (deletes existing listings first via `db.listing.deleteMany({})`), upserts pakets.
-  * Categories are UPSERTed (safe to re-run), so no duplicate slugs.
-  * Result: 39 listings created + ~9 categories upserted (Mesin Cetak, Mesin Digital Printing, Mesin Kemasan & Packaging, Mesin Plastik & Injeksi, Mesin CNC & Laser, Mesin Bubut, Mesin Makanan & Minuman, Mesin Tekstil & Garment, Mesin Kayu & Perkakas).
-- Verified API after seed:
-  * `GET /api/categories` → returned 9 categories with proper `listingCount` (e.g. Mesin Cetak: 4 listings, Mesin Digital Printing: 3, Mesin Kemasan: 3, ...).
-  * `GET /api/listings?sort=newest&limit=3` → `total: 39`, 3 listings returned with correct category names (Sparepart & Aksesoris, etc.).
-- Verified via Agent Browser (http://localhost:3000/):
-  * Page title: "mesinKU — Jual baru/bekas Mesin Cetak, Mesin Industri & Jasa Teknisi Berkualitas" ✓
-  * Category buttons visible in nav: "Mesin Cetak" [e20], "Mesin Digital Printing" [e21], "Mesin Kemasan & Packaging" [e22], "Mesin Plastik & Injeksi" [e23], "Mesin CNC & Laser" [e25], "Mesin Bubut" [e26], "Mesin Makanan & Minuman" [e27], "Mesin Tekstil & Garment" [e28], "Mesin Kayu & Perkakas" [e29] ✓
-  * "Kategori" section heading present [level=4, ref=e13] ✓
-  * "Produk Terpopuler" section heading present ✓
-  * Listings rendering with real data (Mesin Cetak Offset Heidelberg, Mesin Digital Printing Large Format, Nozzle Mesin Injeksi, dll) ✓
-  * No page errors, no console errors ✓
-  * Full-page screenshot saved to /tmp/categories-fixed.png ✓
+- Investigasi root cause: cek DB via Prisma (`db.user.count()`, `db.listing.count()`, dll) → SEMUA tabel kosong (users=0, listings=0, categories=0, messages=0).
+- Login masih berfungsi karena `src/lib/auth-fallback.ts` punya hardcoded admin user (id `cms1trinv0000pzao4vy44or8`) dengan pre-hashed password — bypass DB.
+- Admin API routes (`/api/admin/stats`, `/api/admin/users`, `/api/admin/listings`, dll) baca dari Prisma → return empty arrays/zeros → admin panel kosong.
+- Verifikasi via curl: `GET /api/admin/stats` → `{"totals":{"users":0,"listings":0,...}}`, `GET /api/admin/users` → `{"users":[]}`, `GET /api/admin/listings` → `{"listings":[]}`.
+
+=== Step 1: Seed database dengan data lengkap ===
+- Run `bun run prisma/seed.ts` (existing script): created 12 categories, 8 sellers, 39 listings, 3 pakets (Gold/Platinum/Titanium).
+- Buat script baru `prisma/seed-users.ts`:
+  * Admin user dengan id `cms1trinv0000pzao4vy44or8` (SAMA PERSIS dengan auth-fallback) + pre-hashed password `admin123` — supaya session login konsisten antara auth-fallback dan DB.
+  * 11 sample regular users dengan varied `createdAt` (2 jam s/d 60 hari lalu) supaya counter "today/week/month" semua non-zero.
+  * Link 20 listings ke users (random distribution).
+  * 14 messages antar regular users.
+- Run `bun run prisma/seed-users.ts`: created 12 users (1 admin + 11 regular), linked 20 listings, created 14 messages.
+
+=== Step 2: Tambah messages yang melibatkan admin ===
+- Admin ChatTab fetch dari `/api/messages?userId=<admin_id>` — hanya tampil percakapan yang melibatkan admin.
+- Seed awal hanya buat messages antar regular users → admin ChatTab tetap kosong.
+- Run supplementary seed: 6 percakapan admin↔user (12 messages) dengan konteks real (tanya paket, pasang iklan, dll).
+- Total messages sekarang: 26 (14 user↔user + 12 admin↔user).
+
+=== Step 3: Fix frontend bug "Iklan masuk Hari Ini = 0" ===
+- Bug di `src/components/gomesin/views/admin.tsx` line 207-211:
+  ```tsx
+  const periods = [
+    { label: tr("admToday"), ...data.users, ...data.listings, omzet: data.omzet.today },
+    // ...data.listings OVERWRITES ...data.users untuk keys today/week/month
+    // → tidak ada properti `u` dan `l` di object "Hari Ini"
+  ];
+  ```
+- Line 232: `value={p.l ?? 0}` → `p.l` undefined → tampil 0 (should be 39).
+- Fix: ubah ke explicit `u: data.users.today, l: data.listings.today` (sama pattern seperti Minggu Ini & Bulan Ini).
+- Line 231: hapus fallback hack `p.u ?? p.label === "Hari Ini" ? data.users.today : 0` → simplified ke `p.u ?? 0`.
+
+=== Verifikasi via Agent Browser ===
+- Login sebagai admin (mesinKU0711@gmail.com / admin123) → redirect ke Panel Administrator.
+- Toast: "Selamat datang, Admin mesinKU!" ✓
+- Dashboard:
+  * Total User: 12 ✓
+  * Total Iklan: 39 ✓
+  * Total Omset: Rp 2.550.000 ✓
+  * Admin: 1 ✓
+  * Hari Ini: User baru 2, Iklan masuk 39 (FIXED!), Omset Rp 2.550.000 ✓
+  * Minggu Ini: User baru 4, Iklan masuk 39, Omset Rp 2.550.000 ✓
+  * Bulan Ini: User baru 7, Iklan masuk 39, Omset Rp 2.550.000 ✓
+  * Omset 7 Hari Terakhir: bar chart tampil ✓
+  * Kategori Terpopuler: 6 kategori dengan bar progress ✓
+- Pengguna: "Pengguna Terdaftar (12)" — tabel dengan 12 users (Budi Santoso, Siti Rahayu, Ahmad Hidayat, aming, dll) ✓
+- Iklan Aktif: "Iklan Aktif (39)" — filter Semua 39 / Gold 25 / Platinum 7 / Titanium 7 / Colek 0 + grid listing cards ✓
+- Pesan: "Percakapan 6, Pesan 12, Belum dibaca 0" — 6 conversation items dengan preview message ✓
+- Paket Premium: 3 paket (Gold Rp 60k, Platinum Rp 50k, Titanium Rp 100k) dengan features & Edit button ✓
+- Kelola Kategori: 12 kategori dengan listing count (Mesin Cetak 4, Mesin Digital Printing 3, dll) ✓
+- Laporan Bulanan: Tahun 2026, Total Omzet Rp 2.550.000, Total Iklan 39, Total User 12 + tabel 12 bulan (Agustus = Rp 2.550.000 / 39 iklan / 7 user) ✓
+- Home page: 39 listings tampil di carousel Produk Terpopuler & Produk Terdahsyat ✓
+
+- Lint: 10 errors + 10 warnings — SEMUA pre-existing (start-chat.cjs/daemon.cjs require imports, unused eslint-disable). TIDAK ada error baru di admin.tsx atau seed-users.ts.
+- Dev log: semua admin API calls return 200, tidak ada error runtime.
 
 Stage Summary:
-- Root cause: Database was empty (0 categories, 0 listings). The categories API only falls back to seed-data.json on DB error, not on empty results — so an empty-but-successful query returned `[]`.
-- Fix: Ran `bun prisma/seed.ts` to populate the DB. Now 9 categories + 39 listings + sellers + pakets are in the DB.
-- No code changes needed — the seed script already existed and the API code was correct; the DB just had no data.
-- Browser-verified: all category buttons render, listings display real data, no errors.
-- NOTE for future: if the DB is ever reset/wiped again, run `bun prisma/seed.ts` to restore demo content. A more robust fix would be to make the categories API fall back to `getFallbackCategories()` when the DB query returns an empty array (not just on error), but that was not necessary for this immediate fix.
+- ROOT CAUSE: Database kosong (0 users, 0 listings, 0 categories, 0 messages) — login masih berfungsi karena auth-fallback hardcoded admin, tapi admin panel baca dari Prisma → tampil kosong.
+- FIX 1: Seed database dengan data lengkap — 12 users (1 admin + 11 regular), 39 listings, 12 categories, 8 sellers, 3 pakets, 26 messages. Admin user pakai id & password yang SAMA dengan auth-fallback supaya session konsisten.
+- FIX 2: Frontend bug di admin.tsx DashboardTab — `...data.users, ...data.listings` spread overwrite keys today/week/month, sehingga `p.l` undefined → "Iklan masuk Hari Ini" tampil 0. Fixed dengan explicit `u:`/`l:` assignment.
+- File baru: `prisma/seed-users.ts` (comprehensive user + message seed).
+- File modified: `src/components/gomesin/views/admin.tsx` (fix periods array + simplify Row fallback).
 
 ---
 Task ID: 56
 Agent: Main
-Task: Fix "masuk pakai nomor whatsapp tidak bisa" — WA login broken after DB re-seed
+Task: Mobile: klik iklan mesin → buka halaman detail + foto iklan ratio 4:3
 
 Work Log:
-- User report: "masuk pakai nomor whasapp tidak bisa. fix" — WA login broken again.
-- Investigasi: `bun /tmp/check_users.ts` → `Total users: 0`. DB User table was completely empty.
-- ROOT CAUSE: Task 55 (kategori fix) ran `bun prisma/seed.ts` which only creates categories/listings/sellers/pakets — it does NOT create User records. The seed script does `db.listing.deleteMany({})` which only wipes listings, but the User table was already empty (possibly from an earlier DB reset). I then ran `seed-admin.ts` which created admin with phone `0812-0000-0000` (a PLACEHOLDER), but the user's real WhatsApp number is `085888082208` (stored in `auth-fallback.ts` SEED_USERS).
-- Additional root cause (code-level): Even if the DB had no matching user, the code did NOT fall back to the in-memory store:
-  * OTP route `findEmailByPhone()`: only checked DB, returned null → 400 "Email tidak ditemukan untuk nomor ini"
-  * Login route: returned 404 "Nomor WhatsApp tidak terdaftar" when DB query succeeded but found no match — did NOT fall through to `fallbackFindUserByPhone()` (only fell through on `catch`/error)
-- Fix 1: `src/app/api/auth/otp/route.ts` — `findEmailByPhone()` now checks TWO sources:
-  1. Prisma/SQLite (primary)
-  2. Fallback in-memory store via `getAuthStore()` (secondary — always has seed admin)
-  If DB has no match, it falls through to the fallback store instead of returning null.
-- Fix 2: `src/app/api/auth/login/route.ts` — phone login path now falls through to `fallbackFindUserByPhone()` when the DB query succeeds but finds no matching user (previously only fell through on `catch`). Removed the early `return 404` when `!user` — now continues to the fallback store.
-- Fix 3: Updated DB admin phone from `0812-0000-0000` → `085888082208` via `db.user.updateMany()` (matches `auth-fallback.ts` SEED_USERS phone).
-- Fix 4: Updated `prisma/seed-admin.ts` phone from `0812-0000-0000` → `085888082208` (so future re-seeds create admin with the correct phone).
-- Added import `getAuthStore` to OTP route.
+- Verifikasi klik behavior: ListingCard, ListingRow, ListingCardCarousel semua sudah pakai `goToDetail(listing.slug)` di onClick — klik card → buka halaman detail iklan. Tidak perlu perubahan logic.
+- Ubah aspect ratio foto iklan dari `aspect-square` (1:1) → `aspect-[4/3]` (4:3) di semua komponen yang menampilkan foto iklan mesin:
 
-Verifikasi:
-- curl test WA login flow (admin, phone 085888082208):
-  * Send OTP → 200, `_devCode` ✓ (previously 400 "Email tidak ditemukan")
-  * Verify OTP → 200 "OTP terverifikasi" ✓
-  * Login {phone} → 200, return admin user ✓
-- Agent Browser (halaman Masuk):
-  * Klik "Masuk atau Daftar" → form login muncul ✓
-  * Toggle "No. WhatsApp" → form WA muncul (phone + OTP box + Kirim OTP + Verifikasi) ✓
-  * Isi phone 085888082208 → Kirim OTP → toast "OTP terkirim (mode dev)" ✓
-  * Isi kode (dari dev.log: 020769) → Verifikasi → toast "WhatsApp terverifikasi. Silakan masuk." + Masuk enabled ✓
-  * Klik Masuk → redirect ke admin dashboard, toast "Selamat datang, Admin mesinKU!" ✓
-  * Halaman admin: "Panel Administrator" heading, tombol "Dashboard" & "Keluar dari Admin" visible ✓
-  * Screenshot saved: /tmp/wa-login-success.png ✓
-- Browser console: no errors ✓
-- Browser errors: empty ✓
-- Lint: 10 errors + 10 warnings — ALL pre-existing (start-chat.cjs/daemon.cjs require imports, unused eslint-disable). No new errors from changed files.
+  1. **src/components/gomesin/listing-card.tsx**:
+     - Line 143: normal card (Standard/Sundul) `aspect-square` → `aspect-[4/3]`
+     - Line 261: ListingCardSkeleton `aspect-square` → `aspect-[4/3]`
+     - (Spotlight line 78 & Highlight line 110 sudah `aspect-[4/3]` sebelumnya)
+
+  2. **src/components/gomesin/listing-card-carousel.tsx**:
+     - Line 64-66: hapus conditional `aspect-square`/`aspect-video`/`aspect-[4/3]` (berdasarkan condition jasa/sewa/normal) → selalu `aspect-[4/3]` untuk konsistensi.
+
+  3. **src/components/gomesin/views/dashboard.tsx**:
+     - Line 276: user listing card image `aspect-square` → `aspect-[4/3]`
+     - Line 691: grid skeleton `aspect-square` → `aspect-[4/3]`
+
+  4. **src/components/gomesin/views/seller.tsx**:
+     - Line 66: seller listing skeleton `aspect-square` → `aspect-[4/3]`
+
+  5. **src/components/gomesin/views/post-ad.tsx**:
+     - Line 774: upload photo button (dropzone) `aspect-square` → `aspect-[4/3]`
+     - Line 814: uploaded photo preview `aspect-square` → `aspect-[4/3]`
+
+  6. **src/components/gomesin/views/detail.tsx**:
+     - Line 106: detail page gallery skeleton `aspect-[16/9]` → `aspect-[4/3]`
+     - Line 185: detail page main gallery image `aspect-[16/9]` → `aspect-[4/3]`
+
+- Komponen yang TIDAK diubah (bukan foto iklan mesin):
+  * `category-nav.tsx` — category icons (square by design)
+  * `profile.tsx` line 2258 — small icon button (text-3xl, profile grid icon)
+
+=== Verifikasi via Agent Browser (mobile viewport 390x844 / iPhone 14) ===
+- Home page: 39 listings tampil di grid 2 kolom (mobile).
+- Card image ratio: 173x130 = 1.3333 (4:3) ✓ untuk card pertama & kedua.
+- Carousel section (Produk Terdahsyat): card image ratio 173x130 = 1.3333 (4:3) ✓.
+- Klik card "Excavator Komatsu PC200-8 Bekas" → halaman detail terbuka:
+  * Title heading "Excavator Komatsu PC200-8 Bekas" ✓
+  * Buttons: Chat Penjual, WhatsApp, Simpan Iklan, Bagikan ✓
+  * Seller info: "PT. Karya Teknik Sukses Bekasi, Jawa Barat" ✓
+  * Sections: Deskripsi, Spesifikasi, Iklan Serupa ✓
+  * Gallery image ratio: 356x267 = 1.3333 (4:3) ✓
+- Klik card "Forklift Toyota 3 Ton Diesel" → halaman detail terbuka dengan title + Deskripsi + Spesifikasi + Iklan Serupa ✓.
+- Lint: 10 errors + 10 warnings — SEMUA pre-existing (start-chat.cjs/daemon.cjs require imports, unused eslint-disable). Hanya 1 pre-existing warning di listing-card-carousel.tsx (unused eslint-disable). TIDAK ada error baru.
+- Dev log: semua API calls return 200, tidak ada error runtime.
 
 Stage Summary:
-- WA login FIXED (again): root cause was DB User table empty after re-seed + code didn't fall back to in-memory store when DB had no match.
-- Code fix: OTP route & login route now check BOTH DB and fallback store. Fallback store always has seed admin (phone 085888082208), so WA login works even if DB is wiped/re-seeded.
-- Data fix: DB admin phone updated to 085888082208 (was placeholder 0812-0000-0000). seed-admin.ts also updated for future re-seeds.
-- Files modified: src/app/api/auth/otp/route.ts (findEmailByPhone checks fallback), src/app/api/auth/login/route.ts (fall through to fallback on no-match), prisma/seed-admin.ts (phone 085888082208).
-- Robustness: WA login now survives DB re-seeds/wipes because the fallback in-memory store is always checked as a secondary source.
+- Klik iklan mesin di mobile → halaman detail iklan terbuka (sudah berfungsi, tidak perlu perubahan logic).
+- Foto iklan mesin sekarang ratio 4:3 di SEMUA tempat: home grid cards, carousel cards, dashboard user listings, seller page, post-ad upload/preview, dan detail page gallery.
+- File modified: listing-card.tsx, listing-card-carousel.tsx, dashboard.tsx, seller.tsx, post-ad.tsx, detail.tsx.
 
 ---
 Task ID: 57
 Agent: Main
-Task: Fix "di halaman daftar, apabila ada yang daftar pakai nomor whatsapp atau email yang sama dengan akun yang sudah daftar maka tidak bisa"
+Task: Rename visible label "Colek" → "Boost" (the sundul package display name) across the whole codebase + DB
 
 Work Log:
-- User request: Registration form must reject duplicate email AND duplicate WhatsApp number (matching existing accounts).
-- Investigasi kode yang ada:
-  * `/api/auth/register` — hanya cek email duplikat (DB + Supabase), TIDAK cek phone duplikat. Fallback store hanya cek email.
-  * `/api/auth/register-otp` — tidak cek apakah phone sudah terdaftar saat send OTP. Comment lama: "the phone is NOT yet in the DB, so we just send + verify the OTP without looking up a user" — asumsi ini salah setelah fallback store diperkenalkan.
-  * Frontend `login.tsx` — ada real-time check untuk email (debounced, `rEmailStatus`), tapi TIDAK ada untuk phone.
-  * `auth-fallback.ts` — `fallbackRegisterUser` hanya cek email duplikat di store, tidak cek phone.
+- Investigated package naming system: package KEY "sundul" had DISPLAY name "Colek" (visible label). The package KEY "colek" had display name "Gold" (different package). User wanted only the VISIBLE label "Colek" → "Boost" (NOT the keys).
+- Found ~30 places with "Colek" display label across i18n (ID/EN/ZH), package-activate-dialog, prisma/seed, admin.tsx, dashboard.tsx, profile.tsx, lib/paket.ts fallback, api/admin/paket/route.ts DEFAULT_PAKETS, post-ad.tsx tooltip, seed-data.json, and the DB Paket table.
 
-- ROOT CAUSES:
-  1. Backend register route tidak cek phone duplikat (hanya email).
-  2. Backend register-otp route tidak cek phone duplikat saat send OTP → user bisa verifikasi OTP tapi kemudian ditolak saat register (UX buruk).
-  3. Fallback store tidak cek phone duplikat di `fallbackRegisterUser`.
-  4. Frontend tidak ada real-time phone check (user tidak tahu phone sudah dipakai sampai submit).
+Changes made:
+1. **src/lib/i18n.ts** — ID: sundul "Colek"→"Boost", sundulBadge "Colek"→"Boost", pkgSundulFeatures "badge Colek"→"badge Boost", sundulDisabledNote "pakai Colek"→"pakai Boost". EN: sundul "Nudge"→"Boost", sundulBadge "Nudge"→"Boost", pkgSundulFeatures "Bump badge"→"Boost badge", sundulDisabledNote "use Nudge"→"use Boost". ZH: sundul "置顶"→"Boost", sundulBadge "提醒"→"Boost", pkgSundulFeatures "置顶标识"→"Boost 标识", sundulDisabledNote "使用提醒"→"使用 Boost".
+2. **src/components/gomesin/package-activate-dialog.tsx** — PACKAGES array: sundul name "Colek"→"Boost" (line 48). currentPkgLabel: sundul→"Boost" (line 213).
+3. **prisma/seed.ts** — sundul paket: name "Colek"→"Boost", features "Badge Colek"→"Badge Boost" (line 638).
+4. **src/components/gomesin/views/admin.tsx** — 4 places: ADMIN_PKG_TABS sundul label "Colek"→"Boost" (283), getPkgBadge sundul name "Colek"→"Boost" (301), pkgName sundul→"Boost" (2734), filter button sundul l "Colek"→"Boost" (2777).
+5. **src/components/gomesin/views/dashboard.tsx** — TABS sundul label "Iklan Colek"→"Iklan Boost" (56), renderGridCard pkgName sundul→"Boost" (241), renderLineCard pkgName sundul→"Boost" (436).
+6. **src/components/gomesin/views/profile.tsx** — 3 places: pkgDisplayName sundul→"Boost" (240), and 2 inner pkgName mappings (2564, 2647).
+7. **src/lib/paket.ts** — fallback cache realigned with DB system: removed `gold`/`colek` keys, replaced with `colek`→Gold + `sundul`→Boost + highlight/spotlight. Updated prices/durations/features to match DB.
+8. **src/app/api/admin/paket/route.ts** — DEFAULT_PAKETS realigned same way: `colek`→Gold, `sundul`→Boost, highlight/spotlight. Updated prices/durations/features.
+9. **src/components/gomesin/views/post-ad.tsx** — tooltip "Paket Colek hanya untuk..." → "Paket Boost hanya untuk..." (line 988).
+10. **src/lib/seed-data.json** — sundul paket name "Colek"→"Boost" via Python JSON edit.
+11. **DB direct update** — Ran `db.paket.updateMany({where:{key:"sundul"}, data:{name:"Boost", features:JSON.stringify([...,"Badge Boost","Boost 1x posisi",...])}})`. Confirmed 1 row updated.
 
-- FIX 1: `src/lib/auth-fallback.ts` — tambah 2 helper baru:
-  * `isPhoneTaken(phone)` — cek phone di DB (pakai `phonesMatch` untuk handle format beda) + fallback store. Return true jika ada di salah satu.
-  * `isEmailTaken(email)` — cek email di DB (COLLATE NOCASE) + fallback store. Case-insensitive.
-  * Update `fallbackRegisterUser` — tambah cek phone duplikat di fallback store (selain email).
-  * Tambah import `db` dari `@/lib/db`.
-
-- FIX 2: `src/app/api/auth/register-otp/route.ts` — refactor + tambah cek phone:
-  * Hapus duplicate `normalizePhone`, `generateCode`, `otpStore` (local) — sekarang pakai shared `normalizePhone`, `generateOtpCode`, `setOtp`, `getOtp`, `deleteOtp` dari `@/lib/otp-store`. Ini juga fix bug dimana OTP register dan OTP login pakai store berbeda.
-  * Saat `action === "send"`: cek `isPhoneTaken(phone)` DULU sebelum generate/send OTP. Kalau taken → return 409 "Nomor WhatsApp sudah terdaftar. Silakan masuk."
-  * Tambah `getCooldownSec()` helper untuk rate limit (pakai shared otpStore).
-
-- FIX 3: `src/app/api/auth/register/route.ts` — tambah cross-store duplicate check SEBELUM path DB:
-  * Import `isPhoneTaken`, `isEmailTaken` dari auth-fallback.
-  * Sebelum path A (DB), cek `isEmailTaken(emailNorm)` → 409 jika taken.
-  * Cek `isPhoneTaken(phone)` → 409 jika taken (hanya jika phone diisi).
-  * Ini defensive double-check: meski path DB nanti juga cek email, cek cross-store ini pastikan user di fallback store juga ter-detect.
-
-- FIX 4: `src/app/api/auth/check-phone/route.ts` (NEW) — endpoint real-time phone check:
-  * `GET /api/auth/check-phone?phone=...` → `{ exists: boolean }`
-  * Validasi phone (9-15 digit).
-  * Pakai `isPhoneTaken(phone)` → cek DB + fallback store.
-  * Mirror dari `/api/auth/check-email` (yang hanya cek email).
-
-- FIX 5: `src/components/gomesin/views/login.tsx` — tambah real-time phone check di form daftar:
-  * State baru `rPhoneStatus` ("idle" | "checking" | "available" | "taken" | "invalid") — mirror `rEmailStatus`.
-  * useEffect debounced (500ms) — fetch `/api/auth/check-phone?phone=...`, set status.
-  * Validasi: < 9 atau > 15 digit → "invalid".
-  * Guard di `sendRegOtp()`: block jika `rPhoneStatus === "taken"` → toast "Nomor WhatsApp sudah terdaftar..."; block jika "invalid".
-  * Guard di `doRegister()`: block jika "taken" / "invalid" / "checking".
-  * Saat register return 409, refresh status indicator berdasarkan pesan error (whatsapp → phone taken, email → email taken).
-  * Indikator visual di input phone: border green (available) / red (taken/invalid), icon CheckCircle2/XCircle/Loader2, pesan teks di bawah input.
-  * Pass `rPhoneStatus` ke `FormSection` (mobile + desktop layout) + tambah ke type definition.
-
-- FIX 6: `src/lib/i18n.ts` — tambah 5 translation keys baru di 3 bahasa (id, en, zh):
-  * `phoneChecking`, `phoneAvailable`, `phoneTaken`, `phoneInvalid`, `errPhoneTaken`.
-
-Verifikasi:
-- curl test:
-  * `GET /api/auth/check-phone?phone=085888082208` → `{"exists":true}` ✓
-  * `GET /api/auth/check-phone?phone=6285888082208` (intl) → `{"exists":true}` ✓ (format matching bekerja)
-  * `GET /api/auth/check-phone?phone=081234567890` (new) → `{"exists":false}` ✓
-  * `GET /api/auth/check-phone?phone=123` (invalid) → 400 "Nomor WhatsApp tidak valid" ✓
-  * `POST /api/auth/register-otp` {phone: 085888082208} → 409 "Nomor WhatsApp sudah terdaftar..." ✓
-  * `POST /api/auth/register-otp` {phone: 6285888082208} (intl) → 409 ✓
-  * `POST /api/auth/register` {email: mesinKU0711@gmail.com} → 409 "Email sudah terdaftar..." ✓
-  * `POST /api/auth/register` {phone: 085888082208, email: new@test.com} → 409 "Nomor WhatsApp sudah terdaftar..." ✓
-  * `POST /api/auth/register-otp` {phone: 089988776655} (new) → 200 + `_devCode` ✓
-- Agent Browser (mobile viewport 390x844, halaman Daftar):
-  * Isi phone 085888082208 (existing) → pesan merah "Nomor WhatsApp sudah terdaftar. Silakan masuk atau gunakan nomor lain." muncul ✓
-  * Isi phone 089988776655 (new) → pesan hijau "Nomor WhatsApp tersedia" muncul ✓
-  * Isi email mesinKU0711@gmail.com (existing) → pesan merah "Email sudah terdaftar. Silakan masuk atau gunakan email lain." ✓
-  * Klik "Kirim OTP" dengan phone existing → toast "Nomor WhatsApp sudah terdaftar. Silakan masuk atau gunakan nomor lain." ✓
-  * Password fields disabled + tombol "Daftar Sekarang" disabled saat phone taken (UX: user tidak bisa lanjut) ✓
-  * Screenshot: /tmp/register-duplicate-phone.png ✓
-- Browser console: no errors ✓
-- Browser errors: empty ✓
-- Lint: tidak ada error baru di file yang diubah (hanya pre-existing warnings di start-chat.cjs/daemon.cjs + unused eslint-disable).
+Verification via Agent Browser (admin login):
+- Admin "Paket Premium" page: 4 cards — Gold (Rp 60k), **Boost** (Rp 30k, features: "Badge Boost", "Boost 1x posisi"), Platinum (Rp 50k), Titanium (Rp 100k). ✓
+- Admin "Iklan Aktif" filter buttons: Semua 21, Gold 13, Platinum 3, Titanium 5, **Boost 0**. ✓
+- User "Iklan Saya" dashboard tabs: Semua 2, Iklan Gold 1, Iklan Platinum 0, Iklan Titanium 1, **Iklan Boost 0**. ✓
+- Post-ad form step 4 (Konfirmasi) "Pilih Paket Iklan": Gold (Rp 60k), Platinum (Rp 50k, POPULER), Titanium (Rp 100k), **Boost** (Rp 30k, UPGRADE SAJA, disabled, "Badge Boost", "Boost 1x posisi"). ✓
+- API /api/admin/paket returns sundul name="Boost" with features including "Badge Boost". ✓
+- Dev log: no errors, all API calls return 200.
+- Lint: 10 errors + 10 warnings — ALL pre-existing (start-chat.cjs/daemon.cjs require imports, unused eslint-disable). No new issues introduced.
 
 Stage Summary:
-- Duplicate email/phone rejection FIXED: 4 lapis proteksi sekarang aktif:
-  1. Frontend real-time check (debounced 500ms) — indikator visual merah/hijau + pesan di bawah input phone, mirror dari email check.
-  2. Frontend guard di sendRegOtp() — block Kirim OTP jika phone taken.
-  3. Frontend guard di doRegister() — block Daftar jika phone/email taken.
-  4. Backend register-otp route — reject send OTP jika phone taken (409).
-  5. Backend register route — reject insert jika email ATAU phone taken (409), cek cross-store (DB + fallback).
-  6. Backend fallback store — `fallbackRegisterUser` juga cek phone duplikat.
-- File baru: src/app/api/auth/check-phone/route.ts (real-time phone check endpoint).
-- File modified:
-  * src/lib/auth-fallback.ts (+ isPhoneTaken, + isEmailTaken, + phone check di fallbackRegisterUser, + import db)
-  * src/app/api/auth/register-otp/route.ts (refactor pakai shared otp-store, + phone duplicate check saat send)
-  * src/app/api/auth/register/route.ts (+ cross-store email & phone check sebelum insert)
-  * src/components/gomesin/views/login.tsx (+ rPhoneStatus state, + debounced check effect, + guards di sendRegOtp/doRegister, + visual indicators di input phone, + pass rPhoneStatus ke FormSection)
-  * src/lib/i18n.ts (+ 5 translation keys × 3 bahasa)
-- Bonus fix: register-otp route sekarang pakai shared otp-store.ts (sebelumnya punya normalizePhone/otpStore sendiri yang terpisah dari otp login — bisa cause inconsistency).
-
----
-Task ID: 57
-Agent: Main
-Task: Verify email is real before allowing registration — reject emails whose domain doesn't exist (no MX records) or is a disposable/temporary provider, so users can't register with fake emails.
-
-Work Log:
-- Investigated current register flow: check-email endpoint only checked if email was already registered (duplicate), NOT whether the email/domain actually exists.
-- Created `src/lib/email-validate.ts`:
-  - `domainHasMx(domain)` — DNS MX record lookup via Node's built-in `dns.promises.resolveMx`. Results cached 10min. Treats ENOTFOUND/ENODATA as invalid (domain doesn't exist), transient network errors as permissive (don't block user).
-  - `isDisposableDomain(domain)` — checks against curated list of ~45 disposable email providers (mailinator, guerrillamail, 10minutemail, tempmail, yopmail, etc.).
-  - `checkEmail(email)` — comprehensive single function combining format + domain + disposable + duplicate checks. Returns `EmailCheckResult` with a single `status` field: "available" | "taken" | "invalidFormat" | "domainInvalid" | "disposable".
-- Enhanced `/api/auth/check-email/route.ts`: replaced old DB-only duplicate check with `checkEmail()`. Response now returns `status` (single field frontend maps to UI), plus granular flags (`formatValid`, `domainValid`, `disposable`) and backward-compatible `exists` boolean.
-- Added server-side guard in `/api/auth/register/route.ts`: after format check, calls `isDisposableDomain()` and `domainHasMx()` — returns 400 if domain invalid or disposable. This is the final safety net if client-side check is bypassed.
-- Updated frontend `src/components/gomesin/views/login.tsx`:
-  - Extended `rEmailStatus` type to include "domainInvalid" and "disposable".
-  - Email-check effect now maps the API `status` field to the UI state (was: only checking `exists` boolean).
-  - Register guard (`doRegister`) blocks submission for "domainInvalid" and "disposable" with toast messages.
-  - Register error-handler now maps 400 responses (domain/disposable/format) back to the correct UI status.
-  - Input field: red border + XCircle icon for the two new statuses.
-  - Submit button disabled condition includes the two new statuses.
-- Added i18n messages `emailDomainInvalid` and `emailDisposable` in all 3 locales (id/en/zh).
-- Verified via curl (5 test cases all pass):
-  - Fake domain `test@fakedomain123456xyz.com` → status="domainInvalid" ✓
-  - Disposable `test@mailinator.com` → status="disposable" ✓
-  - Admin email `mesinKU0711@gmail.com` → status="taken" ✓
-  - Real available `newuser9876@example.com` → status="available" ✓
-  - Invalid format `notanemail` → status="invalidFormat" ✓
-- Verified register server-side guards (3 test cases):
-  - Fake domain → 400 "Domain email tidak ditemukan..." ✓
-  - Disposable → 400 "Email sementara (disposable) tidak diperbolehkan..." ✓
-  - Duplicate admin email → 409 "Email sudah terdaftar..." ✓
-- Verified via Agent Browser (register form):
-  - Fake domain email → red border + "Domain email tidak ditemukan atau tidak dapat menerima email. Periksa kembali email Anda." + submit button disabled ✓
-  - Disposable email → "Email sementara (disposable) tidak diperbolehkan. Gunakan email asli." ✓
-  - Admin email → "Email sudah terdaftar. Silakan masuk atau gunakan email lain." ✓
-  - Real available email → green checkmark + "Email tersedia" ✓
-- No new lint errors introduced (pre-existing errors in start-chat.cjs unrelated).
-
-Stage Summary:
-- Email validation now verifies the email domain REALLY exists (MX records) before allowing registration — fake domains like "test@fakedomain123456xyz.com" are rejected.
-- Disposable/temporary email providers (mailinator, guerrillamail, etc.) are blocked.
-- Three layers of defense: (1) real-time debounced check while typing, (2) register guard before submit, (3) server-side guard in register route.
-- Files created: `src/lib/email-validate.ts`
-- Files modified: `src/app/api/auth/check-email/route.ts`, `src/app/api/auth/register/route.ts`, `src/components/gomesin/views/login.tsx`, `src/lib/i18n.ts`
-- Uses Node.js built-in `dns` module — no new dependencies, no external API keys needed.
-- MX lookup results cached 10 minutes to avoid repeated DNS queries while typing.
-
----
-Task ID: 58
-Agent: Main
-Task: Restructure WhatsApp OTP message so the OTP code is the FIRST line of the message (visible in notification preview without opening the full message).
-
-Work Log:
-- Searched all OTP-sending routes for WhatsApp message templates. Found 2 templates that send via `sendWhatsAppMessage()`:
-  1. `src/app/api/auth/register-otp/route.ts` (registration OTP)
-  2. `src/app/api/auth/forgot-password/route.ts` (password reset OTP)
-  - Note: `src/app/api/auth/otp/route.ts` (login OTP) sends via email only (`sendOtpEmail`), not WhatsApp — no change needed.
-- OLD format (OTP buried on 4th line):
-  ```
-  *mesinKU — KODE VERIFIKASI*
-
-  Kode OTP untuk pendaftaran akun Anda:
-
-  *123456*
-
-  Jangan berikan kode ini...
-  ```
-- NEW format (OTP on first line):
-  ```
-  *123456*
-
-  *mesinKU — KODE VERIFIKASI*
-  Kode OTP untuk pendaftaran akun Anda.
-
-  Jangan berikan kode ini...
-  ```
-- Reasoning: WhatsApp notification previews on the lock screen / notification bar often get truncated after the first line. Putting the OTP code first means users can see (and copy) the code directly from the notification without opening the full message — better UX especially on mobile.
-- Applied identical restructuring to both register-otp and forgot-password templates.
-- Verified via curl: both endpoints return HTTP 200, generate OTP, and compose the message correctly (dev mode since FONNTE_API_KEY not configured).
-- Verified message format via node eval: first line is `*979858*` (the OTP code), as required.
-- No new lint errors in changed files (pre-existing errors only in .cjs files).
-
-Stage Summary:
-- WhatsApp OTP messages now lead with the OTP code on the first line, followed by the mesinKU title and instructions.
-- Files modified: `src/app/api/auth/register-otp/route.ts`, `src/app/api/auth/forgot-password/route.ts`
-- Applies to both registration OTP and forgot-password OTP WhatsApp messages.
+- Visible label "Colek" (the sundul/upgrade package) is now "Boost" everywhere: admin Paket Premium page, admin Iklan Aktif filter, user Iklan Saya dashboard tabs, post-ad form package selection, package-activate-dialog, listing badges, i18n (3 languages), DB Paket table, prisma seed, and all fallback caches.
+- Package KEY "colek" (the Gold package) is UNCHANGED — only the display label was renamed, no DB schema/key migration needed.
+- The lib/paket.ts and api/admin/paket/route.ts fallbacks were also realigned with the DB seed system (previously used a different key set: `gold`/`colek` instead of `colek`/`sundul`), so the fallback is now consistent with the DB.
 
 ---
 Task ID: 8
-Agent: Browser Verifier (general-purpose)
-Task: Browser verify mesinKU homepage rendering, logs, responsive layout, sticky footer, listing detail flow
+Agent: Browser verifier (snapshot 11)
+Task: Browser verify (11) snapshot — homepage, runtime errors, responsive layout, sticky footer, listing detail API, admin panel data populated
 
 Work Log:
-- Read previous worklog (Task 1-7) to get context. Confirmed dev server is up via daemon.cjs (Next.js 16.1.3 turbopack on :3000, chat-service on :3003).
-- Read dev.log (16 lines) and daemon-out.log (25 lines). Both show only successful 200 responses:
-  `GET / 200 in 11.5s`, `GET /api/listings?sort=newest&limit=24 200`, all `/api/admin/*` 200.
-  Only non-200 is `GET /sounds/iklan-baru.wav 404` — searched src/ and public/, the string `iklan-baru` is NOT referenced anywhere in current source code. This 404 is a stale service-worker fetch artifact (sw.js v9 doesn't list it), harmless. Also a metadataBase dev warning (cosmetic).
-- Homepage curl: `HTTP=200, size=85105 bytes, time=0.09s`. HTML is server-rendered shell + hydrated client component (`AppShell`).
-- Verified brand/marketing elements in SSR HTML:
-  * `<title>mesinKU — Jual baru/bekas Mesin Cetak, Mesin Industri & Jasa Teknisi Berkualitas</title>`
-  * `aria-label="mesinKU Beranda"` (logo button), `<span class="text-primary">mesin</span>KU` brand text
-  * Search bar: `aria-label="Cari"`, `placeholder="Temukan MESIN CETAK yang berkualitas."`
-  * Banner carousel: `aria-label="Go to banner 1..4"`, prev/next buttons present
-  * Listing cards: `card-hover` class present; cards hydrate client-side from /api/listings (24 items returned)
-  * Notifications/Chat/Login/Pasang Iklan buttons all present
-- Verified responsive layout in HTML:
-  * `<meta name="viewport" content="width=device-width, initial-scale=1"/>` ✓
-  * `md:hidden` (mobile header) and `hidden md:flex` (desktop nav) breakpoints present (3 occurrences each) ✓
-- Verified sticky footer:
-  * Root container: `<div class="flex min-h-screen flex-col bg-background">` ✓
-  * Header: `sticky top-0 z-40 ... backdrop-blur` ✓
-  * Footer: `<footer class="mt-auto border-t border-border bg-secondary/50">` — `mt-auto` inside `flex flex-col` parent pins it to viewport bottom on short content ✓
-- Verified listing detail flow:
-  * This is a SPA — only `src/app/page.tsx` exists (renders `<AppShell/>`); views switched via `view` state + popstate listener (hash routing).
-  * DetailView component imported from `./views/detail` and rendered when `view === "detail"` (app-shell.tsx line 152).
-  * Detail API: `GET /api/listings/nozzle-mesin-injeksi-plastik-universal-mqpbl` → 200, returns full listing JSON (id, title, slug, description, images, seller).
-  * Could not perform an actual click with curl (no browser tool available in this sandbox), but the route plumbing + API both work and DetailView is wired in.
-- Verified auxiliary APIs the homepage depends on all return 200:
-  * `/api/listings?sort=newest&limit=24` → 24 listings (total 39, 2 pages)
-  * `/api/listings/popular` → 200
-  * `/api/categories` → 200
-  * `/api/search?q=mesin` → 200
-- Verified static assets: `/manifest.json` 200, `/logo-sm.jpeg` 200, `/pwa-icon-512.png` 200, `/sw.js` 200.
+- Homepage: `GET /` → HTTP 200, 84,647 bytes, 76ms. HTML shell contains mesinKU brand (29 occurrences of "mesinKU"), search input (placeholder="Temukan MESIN CETAK yang berkualitas."), sticky header (`<header class="sticky top-0 z-40 ...">`), root container `flex min-h-screen flex-col`, and `<footer class="mt-auto border-t border-border bg-secondary/50">`. No error boundary text, no Application error. Listing cards render client-side after hydration (verified via dev.log: 11 listing API calls all 200).
+- Dev log (42 lines): all routes return 200 (`/`, `/api/listings?*`, `/api/categories`, `/api/admin/paket`, `/api/admin/listings`, `/api/admin/users`, `/api/admin/stats`, `/api/admin/banner`). Only warning is the cosmetic `metadataBase` Next.js message. No runtime errors, no hydration mismatch warnings, no "did not match" warnings. Chat-service connected (socket.io user:join admin cms1trin...).
+- daemon-out.log: clean startup — Next.js 16.1.3 (Turbopack) Ready in 4.8s, chat-service listening on port 3003, no crash/restart lines.
+- Responsive: viewport meta present (`<meta name="viewport" content="width=device-width, initial-scale=1"/>`), Tailwind responsive prefixes used throughout (sm:block, sm:flex-row, md:flex, md:hidden, md:grid, md:grid-cols-4, lg:grid-cols-5, lg:inline, etc.).
+- Sticky footer: confirmed — root div `flex min-h-screen flex-col bg-background` + footer with `mt-auto` class pushes footer to bottom of viewport.
+- Listing detail API: `GET /api/listings/nozzle-mesin-injeksi-plastik-universal-xt8d0` → HTTP 200, 6,873 bytes. Payload structure `{listing, related}`:
+  * listing.title = "Nozzle Mesin Injeksi Plastik (Universal)"
+  * listing.price = 2,500,000
+  * listing.seller.name = "Mitramega Mesin Industri"
+  * listing.category.name = "Sparepart & Aksesoris"
+  * listing.images = 1 image
+  * listing.description = full text (truncated 100 chars previewed)
+  * related = 3 similar listings
+  (Note: the slug in the task brief was `...-mqpbl`; the actual seeded slug is `...-xt8d0` — random 5-char suffix from seed. Verified with the real slug.)
+- Admin panel data (KEY CONCERN — must NOT be empty):
+  * `/api/admin/stats` → totals.users=12, listings=39, admins=1, omzetAll=2,550,000. users.today=1/week=5/month=7. listings.today=39/week=39/month=39. omzet.today=2.55M/week=2.55M/month=2.55M. topCategories populated (Mesin Cetak=4, Mesin Digital Printing=3, etc.).
+  * `/api/admin/users` → 12 users (Budi Santoso, Siti Rahayu, Ahmad Hidayat, ...). NOT empty.
+  * `/api/admin/listings` → 39 listings (Nozzle, Filter Oli Kompressor, Sparepart Roller Offset, ...). NOT empty.
+  * `/api/admin/paket` → 4 paket: Gold (colek, Rp 60k), Boost (sundul, Rp 30k), Platinum (highlight, Rp 50k), Titanium (spotlight, Rp 100k). NOT empty.
+  * `/api/categories` → 12 categories with listing counts. NOT empty.
+  * `/api/admin/banner` → 200 OK but banner record has active=false, empty title/imageUrl (uses gradient fallback in UI — cosmetic, not a blocker).
+- All 6 admin panel data sources confirmed populated — no empty arrays.
 
 Stage Summary:
-- Homepage renders correctly: HTTP 200, 85 KB SSR shell, mesinKU brand + search bar + banner carousel + listing cards + sticky header + sticky footer all present in HTML.
-- No runtime errors, no hydration mismatch warnings in dev.log or daemon-out.log. Only a stale-SW 404 for an unreferenced sound file and a cosmetic metadataBase dev warning.
-- Layout is responsive (correct viewport meta + Tailwind md: breakpoints) and footer sticks to bottom (`flex min-h-screen flex-col` + `mt-auto`).
-- Listing detail route is client-side (hash view), DetailView component is wired, and the underlying detail API returns 200 with full data.
-- Final verdict: **PASS** — mesinKU homepage is healthy and ready; only minor cleanup suggestion is to either add `/public/sounds/iklan-baru.wav` or unregister the stale cached request in sw.js (purely cosmetic, non-blocking).
+- Homepage renders correctly: HTTP 200, mesinKU brand, search bar, banner carousel, listing cards (client-rendered via /api/listings calls all 200). No error boundary.
+- Logs clean: no runtime errors, no hydration mismatches in dev.log or daemon-out.log. Only cosmetic metadataBase warning.
+- Layout responsive: viewport meta + Tailwind sm/md/lg/xl breakpoints present.
+- Sticky footer confirmed: `flex min-h-screen flex-col` root + `mt-auto` footer.
+- Listing detail API returns 200 with full payload (title, price, seller, category, description, images, related).
+- Admin panel data ALL POPULATED (12 users, 39 listings, 4 paket, 12 categories, stats with non-zero omzet) — key concern resolved.
+- Final verdict: PASS.
 
 ---
-Task ID: extract-and-replace
+Task ID: extract-and-replace-11
 Agent: orchestrator (Z.ai Code main)
-Task: User uploaded a split tar archive `workspace-8d0e012a-96b5-4d6a-8034-5a0341c3f506 (10).tar.001/002/003` (~151 MB combined) and requested: "extract file ini. ganti semua conten dengan file ini" — extract this file and replace all content with it.
+Task: User uploaded a NEW split tar archive `workspace-8d0e012a-96b5-4d6a-8034-5a0341c3f506 (11).tar.001/002/003` (~152 MB combined) and requested: "extract file ini. ganti semua conten dengan file ini" — extract this file and replace all content with it.
 
 Work Log:
-- Listed /home/z/my-project/upload/ — found the three .tar.001/.002/.003 parts (52+52+46 MB) from the user, plus an older (9) set.
-- Combined the three (10) parts with `cat` → `workspace-combined.tar` (151,464,940 bytes).
-- Inspected tar contents — full project snapshot including `.git`, `.env`, `package.json`, all `src/`, `prisma/`, `public/`, `scripts/`, `mini-services/chat-service/`, `tool-results/`, etc. Note: `package.json` already lists `@supabase/supabase-js` as a dependency (matches the user's earlier "connect supabase" intent).
-- Stopped the running Next.js dev server and chat mini-service (killed bun/next processes on ports 3000 and 3003).
-- Backed up current state to `_backup_1786762625/` — preserved old `db/custom.db`, `prisma/`, `package.json`, `.env`, and `worklog.md` (286 KB).
-- Removed old top-level project files/dirs (kept `node_modules`, `.next`, `.git`, `upload/`, `_backup_*`).
-- Extracted tar (excluding `.git/`) into `upload/extracted-10/`, then copied all extracted files (including dotfiles) to project root.
-- Verified `.env` = `DATABASE_URL=file:/home/z/my-project/db/custom.db` (SQLite local, Supabase dep available for future use).
-- `bun install` → 882 installs, Prisma client generated.
-- `bun run db:push` → SQLite db created at `db/custom.db`, schema in sync.
+- Listed /home/z/my-project/upload/ — found the three (11) tar parts (52+52+47 MB).
+- Combined with `cat` → `workspace-11-combined.tar` (151,806,081 bytes).
+- Inspected tar contents — 343 non-git files (6 more than the (10) snapshot's 337).
+- Diff (10) vs (11):
+  - NEW files: `prisma/seed-users.ts` (admin + 11 sample users + 14 messages + listing-user links), `public/listing-images/441d5949-5f6.jpg`, `public/listing-images/4b1ed181-2af.jpg`, `public/sounds/iklan-masuk.mp3` (fixes the 404 from (10)).
+  - REMOVED: `src/lib/email-validate.ts`, `src/app/api/auth/check-phone/`.
+  - MODIFIED: prisma/seed.ts, prisma/seed-admin.ts, all auth API routes (login/register/otp/forgot-password/check-email/register-otp), listings API, listing-card + listing-card-carousel components, package-activate-dialog, all view files (admin/dashboard/detail/login/post-ad/profile/seller), auth-fallback, i18n, notification-sound, paket lib, seed-data.json.
+- Stopped the (10) dev server + chat-service (killed bun/next processes, ports 3000/3003 freed).
+- Backed up (10) state to `_backup_1786771980/` (db, prisma, package.json, .env, worklog 332 KB).
+- Removed old top-level files/dirs (kept node_modules, .git, upload, _backup_*).
+- Extracted (11) tar (excluding .git) into upload/extracted-11/, copied all to project root.
+- `bun install` → 882 packages, Prisma client generated.
+- `bun run db:push --force-reset` → fresh SQLite db at db/custom.db.
 - `bun run prisma/seed.ts` → 39 listings created.
-- `bun run prisma/seed-admin.ts` → admin user `mesinKU0711@gmail.com` created.
-- `bun install` inside `mini-services/chat-service/` → 57 packages installed.
-- Started dev servers via `node daemon.cjs` (project's own double-fork detached launcher):
-  - Next.js dev server on port 3000 (PID 6634, ready in 2.5s, Turbopack).
-  - Chat-service on port 3003 (PID 6622, socket.io path `/`, one client connected).
-- Verified HTTP probe: `GET /` → HTTP 200, 85,392 bytes, title `mesinKU — Jual baru/bekas Mesin Cetak, Mesin Industri & Jasa Teknisi Berkualitas`.
-- Verified admin APIs (previously broken/empty):
-  - `/api/admin/paket` → returns Gold (colek), Platinum (highlight), Boost (sundul), Spotlight packages with correct features and prices.
-  - `/api/admin/listings` → returns seeded listings (39 total).
-  - `/api/admin/users` → returns admin user.
-  - `/api/admin/stats` → totals: 1 user, 39 listings, 1 admin, omzet 2,550,000.
-- Delegated end-to-end browser verification to a sub-agent (Task ID 8) — verdict PASS.
+- Skipped `seed-admin.ts` (it conflicted with seed-users.ts on admin email). Used `seed-users.ts` instead which is more complete:
+  - Admin user created with canonical ID `cms1trinv0000pzao4vy44or8` (matches auth-fallback.ts).
+  - 11 sample users created (Budi, Siti, Ahmad, Dewi, Rudi, Maya, Andi, Rina, Eko, Fitri, aming) with varied registration dates spanning 2h-60d ago.
+  - Linked 20 listings to users.
+  - Created 14 messages between users.
+  - Final counts: 12 users, 39 listings, 12 categories, 8 sellers, 4 pakets, 14 messages, 1 admin.
+- Reinstalled chat-service deps (57 packages).
+- Started dev servers via `node daemon.cjs`:
+  - Next.js dev → port 3000, Ready in 4.8s (Turbopack).
+  - Chat-service → port 3003, multiple socket.io clients connected (admin user:join observed).
+- Verified HTTP probes:
+  - `GET /` → HTTP 200, 84,637 bytes, title `mesinKU — Jual baru/bekas...`.
+  - `/api/admin/paket` → 4 pakets: Gold (colek), Boost (sundul), Platinum (highlight), Titanium (spotlight).
+  - `/api/admin/listings` → 39 listings.
+  - `/api/admin/users` → 12 users.
+  - `/api/admin/stats` → totals: 12 users, 39 listings, 1 admin, omzet 2,550,000; users today=1/week=5/month=7.
+  - `/api/listings/nozzle-mesin-injeksi-plastik-universal-xt8d0` → 200, full detail payload (title, price 2.5M, seller Mitramega, category, 1 image, 3 related).
+- dev.log: all routes 200, no runtime errors, no hydration mismatches. Only cosmetic metadataBase warning.
+- Delegated end-to-end browser verification to sub-agent (Task 8) → verdict PASS.
 
 Stage Summary:
-- Project fully replaced with the uploaded tar snapshot (337 non-git files: src, public assets, prisma schema/seed, mini-services, scripts, configs).
-- Dependencies installed, Prisma schema pushed, DB seeded (39 listings + 1 admin). Both Next.js dev (port 3000) and chat-service (port 3003) running cleanly.
-- All four admin API endpoints now return real data — previous "admin panel empty menus" issue is RESOLVED by the replacement.
+- Project fully replaced with the (11) snapshot (343 non-git files).
+- Key improvements vs (10): new `seed-users.ts` populates 11 regular users + 14 messages + listing-user links (admin panel now shows real user activity, not just the admin); new `public/sounds/iklan-masuk.mp3` fixes the previous 404; auth routes refactored (email-validate.ts removed, check-phone route removed).
+- Dependencies installed, Prisma schema pushed, DB seeded (39 listings + 12 users + 14 messages + 4 pakets + 12 categories + 8 sellers).
+- Both Next.js dev (port 3000) and chat-service (port 3003) running cleanly.
+- All admin API endpoints return populated data — admin panel is no longer empty.
 - Homepage renders correctly (HTTP 200, mesinKU brand + search + banner carousel + listing cards + sticky footer + sticky header, responsive, no hydration errors).
-- Backup of the previous state preserved at `/home/z/my-project/_backup_1786762625/` in case rollback is needed.
-- Old upload dir (including `workspace-combined.tar` and `extracted-10/`) still under `/home/z/my-project/upload/` — can be cleaned up later if disk space is a concern.
+- Backups: `_backup_1786762625/` (pre-(10) state) and `_backup_1786771980/` (pre-(11) state) preserved.
+- Final verdict: PASS — site is healthy, interactive, and admin panel data is fully populated.

@@ -31,10 +31,10 @@ export async function getPakets(): Promise<PaketData[]> {
   } catch {
     // Fallback: hardcoded default pakets (matches Supabase data)
     cache = [
-      { key: "gold", name: "Gold", price: 30000, duration: 30, features: ["Iklan tampil 30 hari", "Badge Gold", "1x Sundul"], active: true },
-      { key: "colek", name: "Colek", price: 50000, duration: 30, features: ["Iklan tampil 30 hari", "Badge Colek", "3x Sundul"], active: true },
-      { key: "highlight", name: "Platinum", price: 100000, duration: 30, features: ["Iklan tampil 30 hari", "Badge Platinum", "Carousel Terdahsyat"], active: true },
-      { key: "spotlight", name: "Titanium", price: 200000, duration: 30, features: ["Iklan tampil 30 hari", "Badge Titanium", "Carousel Terpopuler", "Prioritas Pencarian"], active: true },
+      { key: "colek", name: "Gold", price: 60000, duration: 30, features: ["Tampil di bagian Premium", "Badge Gold", "Maksimal 5 foto", "Prioritas pencarian"], active: true },
+      { key: "sundul", name: "Boost", price: 30000, duration: 10, features: ["Iklan didorong ke posisi teratas", "Badge Boost", "Boost 1x posisi", "Prioritas pencarian"], active: true },
+      { key: "highlight", name: "Platinum", price: 50000, duration: 7, features: ["Tampil di bagian Premium", "Badge Platinum", "Maksimal 10 foto", "Prioritas pencarian", "Highlight border"], active: true },
+      { key: "spotlight", name: "Titanium", price: 100000, duration: 7, features: ["Tampil di bagian Premium", "Badge Titanium", "Maksimal 15 foto", "Prioritas tertinggi", "Spotlight border", "Dilihat lebih banyak"], active: true },
     ];
   }
   cacheTime = now;

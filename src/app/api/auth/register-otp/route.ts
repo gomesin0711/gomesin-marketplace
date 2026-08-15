@@ -1,42 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendWhatsAppMessage } from "@/lib/whatsapp";
-import {
-  normalizePhone,
-  generateOtpCode,
-  setOtp,
-  getOtp,
-  deleteOtp,
-  OTP_TTL_MS,
-  OTP_LENGTH,
-} from "@/lib/otp-store";
-import { isPhoneTaken } from "@/lib/auth-fallback";
 
 /* ------------------------------------------------------------------ */
 /*  Register OTP — WhatsApp OTP for NEW users (before registration)    */
 /*                                                                    */
+/*  This is SEPARATE from /api/auth/forgot-password (which is for      */
+/*  existing users). For registration, the phone is NOT yet in the     */
+/*  DB, so we just send + verify the OTP without looking up a user.    */
+/*                                                                    */
 /*  POST /api/auth/register-otp                                        */
 /*  Body: { action: "send" | "verify", phone, code? }                  */
-/*                                                                    */
-/*  IMPORTANT: Before sending an OTP, we check whether the phone is    */
-/*  already registered (in DB or fallback store). If it is, we reject  */
-/*  the request so the user is told to log in instead of registering.  */
-/*  This prevents the bad UX of verifying OTP then being rejected at   */
-/*  the final /api/auth/register step.                                 */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/*  Phone normalization                                                */
+/* ------------------------------------------------------------------ */
+
+/** Normalize to digits-only with 62 country code (Indonesia). */
+function normalizePhone(phone: string): string {
+  let p = phone.replace(/[^0-9]/g, "");
+  if (p.startsWith("0")) p = "62" + p.slice(1);
+  if (p.startsWith("+")) p = p.slice(1);
+  if (!p.startsWith("62") && p.length > 0) p = "62" + p;
+  return p;
+}
+
+/* ------------------------------------------------------------------ */
+/*  In-memory OTP store (works on serverless / Vercel warm starts)     */
+/* ------------------------------------------------------------------ */
+
+type OtpEntry = {
+  code: string;
+  expiresAt: number;
+  verified: boolean;
+  createdAt: number;
+};
+
+const otpStore = new Map<string, OtpEntry>();
+const OTP_TTL_MS = 5 * 60 * 1000; // 5 menit
+const OTP_LENGTH = 6;
 const RESEND_COOLDOWN_MS = 60_000; // 60 detik antar kirim
 
-/** Resend cooldown check — returns remaining wait seconds, or 0 if OK. */
-function getCooldownSec(phone: string): number {
-  const entry = getOtp(phone);
-  if (!entry) return 0;
-  // entry.expiresAt - OTP_TTL_MS == createdAt
-  const createdAt = entry.expiresAt - OTP_TTL_MS;
-  const elapsed = Date.now() - createdAt;
-  if (elapsed < RESEND_COOLDOWN_MS) {
-    return Math.ceil((RESEND_COOLDOWN_MS - elapsed) / 1000);
+function generateCode(): string {
+  const digits = "0123456789";
+  let code = "";
+  for (let i = 0; i < OTP_LENGTH; i++) {
+    code += digits[Math.floor(Math.random() * 10)];
   }
-  return 0;
+  return code;
 }
 
 /* ------------------------------------------------------------------ */
@@ -75,39 +86,35 @@ export async function POST(req: NextRequest) {
 
     /* ---------------- ACTION: SEND OTP ---------------- */
     if (action === "send") {
-      // Reject if phone is already registered — tell user to log in instead.
-      // This prevents the bad UX of verifying OTP then being rejected at the
-      // final /api/auth/register step.
-      const phoneTaken = await isPhoneTaken(phone);
-      if (phoneTaken) {
-        return NextResponse.json(
-          { error: "Nomor WhatsApp sudah terdaftar. Silakan masuk." },
-          { status: 409 }
-        );
-      }
-
       // Rate limit (cooldown 60s between sends)
-      const waitSec = getCooldownSec(phone);
-      if (waitSec > 0) {
+      const existing = otpStore.get(phone);
+      if (existing && Date.now() - existing.createdAt < RESEND_COOLDOWN_MS) {
+        const waitSec = Math.ceil(
+          (RESEND_COOLDOWN_MS - (Date.now() - existing.createdAt)) / 1000
+        );
         return NextResponse.json(
           { error: `Tunggu ${waitSec} detik sebelum mengirim ulang`, waitSec },
           { status: 429 }
         );
       }
 
-      const otpCode = generateOtpCode(OTP_LENGTH);
-      setOtp(phone, otpCode);
+      const otpCode = generateCode();
+      otpStore.set(phone, {
+        code: otpCode,
+        expiresAt: Date.now() + OTP_TTL_MS,
+        verified: false,
+        createdAt: Date.now(),
+      });
 
       console.log(
         `[register-otp] Phone: ${phone}, OTP: ${otpCode}`
       );
 
-      // Compose WhatsApp message — OTP code goes FIRST so it's visible in the
-      // notification preview without opening the full message.
+      // Compose WhatsApp message
       const message =
+        `*mesinKU — KODE VERIFIKASI*\n\n` +
+        `Kode OTP untuk pendaftaran akun Anda:\n\n` +
         `*${otpCode}*\n\n` +
-        `*mesinKU — KODE VERIFIKASI*\n` +
-        `Kode OTP untuk pendaftaran akun Anda.\n\n` +
         `Jangan berikan kode ini kepada siapa pun.\n` +
         `Kode berlaku 5 menit.\n\n` +
         `Jika Anda tidak meminta kode ini, abaikan pesan ini.`;
@@ -145,7 +152,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const entry = getOtp(phone);
+      const entry = otpStore.get(phone);
       if (!entry) {
         return NextResponse.json(
           { error: "OTP tidak ditemukan. Silakan kirim ulang." },
@@ -154,7 +161,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (Date.now() > entry.expiresAt) {
-        deleteOtp(phone);
+        otpStore.delete(phone);
         return NextResponse.json(
           { error: "OTP sudah kedaluwarsa. Silakan kirim ulang." },
           { status: 400 }

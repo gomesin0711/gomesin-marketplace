@@ -237,7 +237,7 @@ export function ProfileView() {
     const price = paketMap[pkg]?.price ?? 0;
     return price > 0 ? `Rp ${price.toLocaleString("id-ID")}` : "Gratis";
   };
-  const pkgDisplayName = (pkg: string) => paketMap[pkg]?.name || (pkg === "spotlight" ? "Titanium" : pkg === "highlight" ? "Platinum" : pkg === "sundul" ? "Colek" : "Gold");
+  const pkgDisplayName = (pkg: string) => paketMap[pkg]?.name || (pkg === "spotlight" ? "Titanium" : pkg === "highlight" ? "Platinum" : pkg === "sundul" ? "Boost" : "Gold");
 
   const { t, lang, setLang } = useLang();
   const mounted = useMounted();
@@ -2561,7 +2561,7 @@ export function ProfileView() {
                         {filtered.map((l: any) => {
                           let imgs: string[] = [];
                           try { imgs = Array.isArray(l.images) ? l.images : JSON.parse(l.images || "[]"); } catch {}
-                          const pkgName = l.packageType === "spotlight" ? "Titanium" : l.packageType === "highlight" ? "Platinum" : l.packageType === "sundul" ? "Colek" : "Gold";
+                          const pkgName = l.packageType === "spotlight" ? "Titanium" : l.packageType === "highlight" ? "Platinum" : l.packageType === "sundul" ? "Boost" : "Gold";
                           const pkgColor = l.packageType === "spotlight" ? "bg-amber-100 text-amber-700" : l.packageType === "highlight" ? "bg-orange-100 text-orange-700" : l.packageType === "sundul" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700";
                           const isPaid = l.paymentStatus === "paid";
                           const pkgPrice = paketMap[l.packageType]?.price ?? 0;
@@ -2644,7 +2644,7 @@ export function ProfileView() {
                             {filtered.map((l: any) => {
                               let imgs: string[] = [];
                               try { imgs = Array.isArray(l.images) ? l.images : JSON.parse(l.images || "[]"); } catch {}
-                              const pkgName = l.packageType === "spotlight" ? "Titanium" : l.packageType === "highlight" ? "Platinum" : l.packageType === "sundul" ? "Colek" : "Gold";
+                              const pkgName = l.packageType === "spotlight" ? "Titanium" : l.packageType === "highlight" ? "Platinum" : l.packageType === "sundul" ? "Boost" : "Gold";
                               const pkgColor = l.packageType === "spotlight" ? "bg-amber-100 text-amber-700" : l.packageType === "highlight" ? "bg-orange-100 text-orange-700" : l.packageType === "sundul" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700";
                               const isPaid = l.paymentStatus === "paid";
                               const pkgPrice = paketMap[l.packageType]?.price ?? 0;

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendOtpEmail } from "@/lib/email";
 import { db } from "@/lib/db";
-import { getAuthStore } from "@/lib/auth-fallback";
 import {
   normalizePhone,
   generateOtpCode,
@@ -28,36 +27,15 @@ import {
  *  Phone numbers in the DB may be stored in various formats (with dashes,
  *  with/without country code). We use `phonesMatch()` which normalizes BOTH
  *  numbers before comparing — see otp-store.ts for why naive slice(-10) fails.
- *
- *  We check TWO sources:
- *  1. Prisma/SQLite (primary) — works locally and has registered users.
- *  2. Fallback in-memory store (secondary) — always has the seed admin and
- *     any users registered via the fallback path. This ensures WA login
- *     still works even if the SQLite DB is wiped/re-seeded.
  */
 async function findEmailByPhone(phone: string): Promise<string | null> {
-  // 1. Try Prisma/SQLite first
   try {
     const users = await db.user.findMany({ where: { phone: { not: null } } });
     const user = users.find((u) => phonesMatch(u.phone, phone));
-    if (user?.email) return user.email;
+    return user?.email ?? null;
   } catch {
-    // SQLite unavailable — continue to fallback
+    return null;
   }
-
-  // 2. Fallback: in-memory + /tmp file store (always has seed admin)
-  try {
-    const store = await getAuthStore();
-    for (const u of store.values()) {
-      if (u.phone && phonesMatch(u.phone, phone)) {
-        return u.email;
-      }
-    }
-  } catch {
-    // Fallback store unavailable
-  }
-
-  return null;
 }
 
 /* ------------------------------------------------------------------ */

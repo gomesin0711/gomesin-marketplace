@@ -21,7 +21,7 @@ async function main() {
       name: "Admin mesinKU",
       email,
       password: hashPassword("admin123"),
-      phone: "085888082208",
+      phone: "0812-0000-0000",
       city: "Jakarta",
       role: "admin",
     },

@@ -31,6 +31,23 @@ let unlocked = false;
 // --- Module-level flag: is the user currently viewing an open chat? ---
 let chatOpen = false;
 
+// --- Preloaded HTMLAudioElement for the "iklan masuk" (new listing) ringtone ---
+// Uses the user-supplied mp3 file instead of the synthesized coin drop.
+let listingAudioEl: HTMLAudioElement | null = null;
+function getListingAudio(): HTMLAudioElement | null {
+  if (typeof window === "undefined") return null;
+  if (listingAudioEl) return listingAudioEl;
+  try {
+    const el = new Audio("/sounds/iklan-masuk.mp3");
+    el.preload = "auto";
+    el.volume = 0.9;
+    listingAudioEl = el;
+  } catch {
+    listingAudioEl = null;
+  }
+  return listingAudioEl;
+}
+
 function getAudioCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
   if (audioCtx) return audioCtx;
@@ -47,6 +64,9 @@ function getAudioCtx(): AudioContext | null {
 /**
  * Unlock the AudioContext so it can play sounds instantly later.
  * Call this on first user interaction (click/touch/keydown).
+ *
+ * Also preloads the "iklan masuk" mp3 so it's ready to play instantly
+ * when a new listing arrives.
  */
 export function unlockNotificationSound() {
   if (unlocked) return;
@@ -55,6 +75,9 @@ export function unlockNotificationSound() {
     if (ctx && ctx.state === "suspended") {
       ctx.resume().catch(() => {});
     }
+    // Preload the listing ringtone audio element so it can play
+    // instantly without a network fetch on the first notification.
+    getListingAudio();
     unlocked = true;
   } catch {
     // ignore
@@ -178,12 +201,34 @@ export function playNotificationSound() {
 }
 
 /**
- * Play the "coin drop" notification sound when a NEW listing is detected.
- * Uses a slightly lower variant so it's distinguishable from the chat sound.
+ * Play the "iklan masuk" ringtone when a NEW listing is detected.
+ *
+ * Uses the user-supplied mp3 file (`/public/sounds/iklan-masuk.mp3`) —
+ * a real coin-on-hard-surface recording — instead of the synthesized
+ * coin drop. Falls back to the synthesized "listing" variant if the
+ * audio element fails to load/play.
+ *
  * Respects the user's chat sound preference (same toggle).
  */
 export function playListingNotificationSound() {
   if (!isSoundEnabled()) return;
+  const el = getListingAudio();
+  if (el) {
+    try {
+      // Restart from the beginning if it's still playing.
+      el.currentTime = 0;
+      const p = el.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          // Autoplay blocked or decode error — fall back to synthesized sound.
+          playCoinDropSound("listing");
+        });
+      }
+      return;
+    } catch {
+      // fall through to synthesized fallback
+    }
+  }
   playCoinDropSound("listing");
 }
 

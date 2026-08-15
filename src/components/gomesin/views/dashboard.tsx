@@ -53,7 +53,7 @@ const TABS = [
   { key: "colek", label: "Iklan Gold", icon: Crown, pkgColor: "bg-blue-100 text-blue-700", ringColor: "ring-blue-400", rowBg: "bg-blue-50 hover:bg-blue-100 border-blue-200", badgeColor: "bg-blue-500" },
   { key: "highlight", label: "Iklan Platinum", icon: Gem, pkgColor: "bg-orange-100 text-orange-700", ringColor: "ring-orange-400", rowBg: "bg-orange-50 hover:bg-orange-100 border-orange-200", badgeColor: "bg-orange-500" },
   { key: "spotlight", label: "Iklan Titanium", icon: Shield, pkgColor: "bg-amber-100 text-amber-700", ringColor: "ring-amber-400", rowBg: "bg-amber-50 hover:bg-amber-100 border-amber-200", badgeColor: "bg-amber-500" },
-  { key: "sundul", label: "Iklan Colek", icon: ArrowUpCircle, pkgColor: "bg-purple-100 text-purple-700", ringColor: "ring-purple-400", rowBg: "bg-purple-50 hover:bg-purple-100 border-purple-200", badgeColor: "bg-purple-500" },
+  { key: "sundul", label: "Iklan Boost", icon: ArrowUpCircle, pkgColor: "bg-purple-100 text-purple-700", ringColor: "ring-purple-400", rowBg: "bg-purple-50 hover:bg-purple-100 border-purple-200", badgeColor: "bg-purple-500" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -238,7 +238,7 @@ export function DashboardView() {
     const pkgName =
       l.packageType === "spotlight" ? "Titanium"
       : l.packageType === "highlight" ? "Platinum"
-      : l.packageType === "sundul" ? "Colek"
+      : l.packageType === "sundul" ? "Boost"
       : l.packageType === "colek" ? "Gold"
       : "";
     const pkgColor =
@@ -273,7 +273,7 @@ export function DashboardView() {
         )}
       >
         {/* image */}
-        <div className="relative aspect-square w-full overflow-hidden bg-muted">
+        <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
           {img ? (
             <img src={img} alt={l.title} className="size-full object-cover transition group-hover:scale-105" />
           ) : (
@@ -433,7 +433,7 @@ export function DashboardView() {
     const pkgName =
       l.packageType === "spotlight" ? "Titanium"
       : l.packageType === "highlight" ? "Platinum"
-      : l.packageType === "sundul" ? "Colek"
+      : l.packageType === "sundul" ? "Boost"
       : l.packageType === "colek" ? "Gold"
       : "";
     const pkgColor =
@@ -688,7 +688,7 @@ export function DashboardView() {
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="overflow-hidden rounded-xl border border-border bg-card sm:border-2">
-                <div className="aspect-square w-full animate-pulse bg-muted" />
+                <div className="aspect-[4/3] w-full animate-pulse bg-muted" />
                 <div className="space-y-2 p-2.5">
                   <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
                   <div className="h-3 w-full animate-pulse rounded bg-muted" />

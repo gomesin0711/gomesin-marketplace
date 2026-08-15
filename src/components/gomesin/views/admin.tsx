@@ -205,7 +205,7 @@ function DashboardTab() {
     { label: tr("admAdmins"), value: data.totals.admins, icon: ShieldCheck, color: "text-amber-500", bg: "bg-amber-50" },
   ];
   const periods = [
-    { label: tr("admToday"), ...data.users, ...data.listings, omzet: data.omzet.today },
+    { label: tr("admToday"), u: data.users.today, l: data.listings.today, omzet: data.omzet.today },
     { label: tr("admThisWeek"), u: data.users.week, l: data.listings.week, omzet: data.omzet.week },
     { label: tr("admThisMonth"), u: data.users.month, l: data.listings.month, omzet: data.omzet.month },
   ];
@@ -228,7 +228,7 @@ function DashboardTab() {
           <div key={p.label} className="rounded-xl border border-border bg-card p-4">
             <h3 className="mb-3 text-sm font-bold">{p.label}</h3>
             <div className="space-y-2 text-sm">
-              <Row label={tr("admNewUsers")} value={p.u ?? p.label === "Hari Ini" ? data.users.today : 0} />
+              <Row label={tr("admNewUsers")} value={p.u ?? 0} />
               <Row label={tr("admIncomingAds2")} value={p.l ?? 0} />
               <div className="flex justify-between border-t border-border pt-2">
                 <span className="text-muted-foreground">Omset</span>
@@ -280,7 +280,7 @@ const ADMIN_PKG_TABS = [
   { key: "colek", label: "Gold", icon: Crown, border: "border-blue-300", badgeBg: "bg-blue-100 text-blue-700" },
   { key: "highlight", label: "Platinum", icon: Gem, border: "border-orange-300", badgeBg: "bg-orange-100 text-orange-700" },
   { key: "spotlight", label: "Titanium", icon: Shield, border: "border-amber-300", badgeBg: "bg-amber-100 text-amber-700" },
-  { key: "sundul", label: "Colek", icon: ArrowUpCircle, border: "border-purple-300", badgeBg: "bg-purple-100 text-purple-700" },
+  { key: "sundul", label: "Boost", icon: ArrowUpCircle, border: "border-purple-300", badgeBg: "bg-purple-100 text-purple-700" },
 ] as const;
 
 type AdminPkgTabKey = (typeof ADMIN_PKG_TABS)[number]["key"];
@@ -298,7 +298,7 @@ function getPkgBadge(type: string) {
   switch (type) {
     case "spotlight": return { name: "Titanium", bg: "bg-amber-100 text-amber-700", dot: "bg-amber-500" };
     case "highlight": return { name: "Platinum", bg: "bg-orange-100 text-orange-700", dot: "bg-orange-500" };
-    case "sundul": return { name: "Colek", bg: "bg-purple-100 text-purple-700", dot: "bg-purple-500" };
+    case "sundul": return { name: "Boost", bg: "bg-purple-100 text-purple-700", dot: "bg-purple-500" };
     case "colek": return { name: "Gold", bg: "bg-blue-100 text-blue-700", dot: "bg-blue-500" };
     default: return { name: "Gratis", bg: "bg-secondary text-muted-foreground", dot: "bg-muted-foreground" };
   }
@@ -2731,7 +2731,7 @@ function TransaksiTab() {
     return matchSearch && matchPkg;
   });
 
-  const pkgName = (p: string) => p === "spotlight" ? "Titanium" : p === "highlight" ? "Platinum" : p === "sundul" ? "Colek" : p === "colek" ? "Gold" : p;
+  const pkgName = (p: string) => p === "spotlight" ? "Titanium" : p === "highlight" ? "Platinum" : p === "sundul" ? "Boost" : p === "colek" ? "Gold" : p;
   const pkgColor = (p: string) => p === "spotlight" ? "bg-amber-100 text-amber-700" : p === "highlight" ? "bg-orange-100 text-orange-700" : p === "sundul" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700";
 
   return (
@@ -2774,7 +2774,7 @@ function TransaksiTab() {
             { v: "all", l: "Semua" },
             { v: "spotlight", l: "Titanium" },
             { v: "highlight", l: "Platinum" },
-            { v: "sundul", l: "Colek" },
+            { v: "sundul", l: "Boost" },
             { v: "colek", l: "Gold" },
           ].map((f) => (
             <button

@@ -140,7 +140,7 @@ export function ListingCard({ listing, spotlight = false }: { listing: Listing; 
         </div>
       ) : (
         /* Normal cards (Standard/Sundul): single image */
-        <div className="relative aspect-square w-full overflow-hidden bg-muted">
+        <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
           {img ? (
             <Image
               src={img}
@@ -258,7 +258,7 @@ export function ListingCard({ listing, spotlight = false }: { listing: Listing; 
 export function ListingCardSkeleton() {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">
-      <div className="aspect-square w-full animate-pulse bg-muted" />
+      <div className="aspect-[4/3] w-full animate-pulse bg-muted" />
       <div className="space-y-2 p-3">
         <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
         <div className="h-3 w-full animate-pulse rounded bg-muted" />

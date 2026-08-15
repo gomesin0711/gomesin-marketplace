@@ -63,7 +63,7 @@ export function SellerView() {
         <div className="mb-6 h-32 w-full animate-pulse rounded-xl bg-muted" />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="aspect-square animate-pulse rounded-xl bg-muted" />
+            <div key={i} className="aspect-[4/3] animate-pulse rounded-xl bg-muted" />
           ))}
         </div>
       </div>

@@ -24,10 +24,10 @@ async function getSupabase() {
 // table is empty on a fresh Vercel deploy). Without this, the "Pasang Iklan"
 // page would render every package price as "Rp. 0".
 const DEFAULT_PAKETS = [
-  { id: "default-gold",   key: "gold",      name: "Gold",      price: 30000,  originalPrice: 50000,  duration: 30, features: JSON.stringify(["Iklan tampil 30 hari", "Badge Gold", "1x Sundul"]),                       active: true, sortOrder: 1 },
-  { id: "default-colek",  key: "colek",     name: "Colek",     price: 50000,  originalPrice: 75000,  duration: 30, features: JSON.stringify(["Iklan tampil 30 hari", "Badge Colek", "3x Sundul"]),                      active: true, sortOrder: 2 },
-  { id: "default-high",   key: "highlight", name: "Platinum",  price: 100000, originalPrice: 150000, duration: 30, features: JSON.stringify(["Iklan tampil 30 hari", "Badge Platinum", "Carousel Terdahsyat"]),        active: true, sortOrder: 3 },
-  { id: "default-spot",   key: "spotlight", name: "Titanium",  price: 200000, originalPrice: 300000, duration: 30, features: JSON.stringify(["Iklan tampil 30 hari", "Badge Titanium", "Carousel Terpopuler", "Prioritas Pencarian"]), active: true, sortOrder: 4 },
+  { id: "default-colek",   key: "colek",     name: "Gold",      price: 60000,  originalPrice: 120000, duration: 30, features: JSON.stringify(["Tampil di bagian Premium", "Badge Gold", "Maksimal 5 foto", "Prioritas pencarian"]),                 active: true, sortOrder: 0 },
+  { id: "default-sundul",  key: "sundul",    name: "Boost",     price: 30000,  originalPrice: 50000,  duration: 10, features: JSON.stringify(["Iklan didorong ke posisi teratas", "Badge Boost", "Boost 1x posisi", "Prioritas pencarian"]),     active: true, sortOrder: 1 },
+  { id: "default-high",   key: "highlight", name: "Platinum",  price: 50000,  originalPrice: 100000, duration: 7,  features: JSON.stringify(["Tampil di bagian Premium", "Badge Platinum", "Maksimal 10 foto", "Prioritas pencarian", "Highlight border"]), active: true, sortOrder: 2 },
+  { id: "default-spot",   key: "spotlight", name: "Titanium",  price: 100000, originalPrice: 200000, duration: 7,  features: JSON.stringify(["Tampil di bagian Premium", "Badge Titanium", "Maksimal 15 foto", "Prioritas tertinggi", "Spotlight border", "Dilihat lebih banyak"]), active: true, sortOrder: 3 },
 ];
 
 function parseFeatures(p: any) {

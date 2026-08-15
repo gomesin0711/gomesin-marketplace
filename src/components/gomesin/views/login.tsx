@@ -70,54 +70,14 @@ export function LoginView() {
   const [rOtpCooldown, setROtpCooldown] = useState(0);
 
   // --- Register email availability check ---
-  // Status: "idle" | "checking" | "available" | "taken" | "invalid" | "domainInvalid" | "disposable"
-  //   - invalid       → format error (regex mismatch)
-  //   - domainInvalid → domain has no MX records (can't receive email)
-  //   - disposable    → known temporary-email provider (mailinator, etc.)
-  const [rEmailStatus, setREmailStatus] = useState<"idle" | "checking" | "available" | "taken" | "invalid" | "domainInvalid" | "disposable">("idle");
-
-  // --- Register phone availability check ---
-  // Mirrors rEmailStatus — gives immediate feedback if the phone is already
-  // registered, so the user doesn't waste time requesting/verifying an OTP
-  // only to be rejected at the final register step.
-  const [rPhoneStatus, setRPhoneStatus] = useState<"idle" | "checking" | "available" | "taken" | "invalid">("idle");
+  // Status: "idle" | "checking" | "available" | "taken" | "invalid"
+  const [rEmailStatus, setREmailStatus] = useState<"idle" | "checking" | "available" | "taken" | "invalid">("idle");
 
   useEffect(() => {
     if (rOtpCooldown <= 0) return;
     const id = setTimeout(() => setROtpCooldown((c) => c - 1), 1000);
     return () => clearTimeout(id);
   }, [rOtpCooldown]);
-
-  // Debounced phone availability check — fires 500ms after the user stops typing.
-  // Only checks phones with 9–15 digits to avoid pointless API calls.
-  useEffect(() => {
-    const phone = rPhone.trim();
-    const digits = phone.replace(/[^0-9]/g, "");
-    if (!phone) {
-      setRPhoneStatus("idle");
-      return;
-    }
-    if (digits.length < 9 || digits.length > 15) {
-      setRPhoneStatus("invalid");
-      return;
-    }
-    setRPhoneStatus("checking");
-    let cancelled = false;
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/auth/check-phone?phone=${encodeURIComponent(phone)}`);
-        const data = await res.json();
-        if (cancelled) return;
-        setRPhoneStatus(data?.exists ? "taken" : "available");
-      } catch {
-        if (!cancelled) setRPhoneStatus("idle");
-      }
-    }, 500);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [rPhone]);
 
   // Debounced email availability check — fires 500ms after the user stops typing.
   // Only checks well-formed emails to avoid pointless API calls.
@@ -139,14 +99,7 @@ export function LoginView() {
         const res = await fetch(`/api/auth/check-email?email=${encodeURIComponent(email)}`);
         const data = await res.json();
         if (cancelled) return;
-        // Map the API's single `status` field to the UI state.
-        // API returns: "available" | "taken" | "invalidFormat" | "domainInvalid" | "disposable"
-        const s = data?.status as string | undefined;
-        if (s === "taken") setREmailStatus("taken");
-        else if (s === "domainInvalid") setREmailStatus("domainInvalid");
-        else if (s === "disposable") setREmailStatus("disposable");
-        else if (s === "invalidFormat") setREmailStatus("invalid");
-        else setREmailStatus("available");
+        setREmailStatus(data?.exists ? "taken" : "available");
       } catch {
         if (!cancelled) setREmailStatus("idle");
       }
@@ -323,17 +276,6 @@ export function LoginView() {
       toast.error(tr("regOtpPhoneFirst"));
       return;
     }
-    // Block OTP send if the phone is known to be taken — the backend also
-    // enforces this, but checking here gives instant feedback and avoids
-    // a wasted API call.
-    if (rPhoneStatus === "taken") {
-      toast.error(tr("errPhoneTaken"));
-      return;
-    }
-    if (rPhoneStatus === "invalid") {
-      toast.error(tr("phoneInvalid"));
-      return;
-    }
     setROtpSending(true);
     setROtpDevCode(null);
     try {
@@ -344,9 +286,6 @@ export function LoginView() {
       });
       const data = await res.json();
       if (!res.ok) {
-        // If the server says the phone is taken, refresh local status so the
-        // input border/message reflects it immediately.
-        if (res.status === 409) setRPhoneStatus("taken");
         toast.error(data.error || tr("errConnection"));
         return;
       }
@@ -407,14 +346,6 @@ export function LoginView() {
       toast.error(tr("emailInvalid"));
       return;
     }
-    if (rEmailStatus === "domainInvalid") {
-      toast.error(tr("emailDomainInvalid"));
-      return;
-    }
-    if (rEmailStatus === "disposable") {
-      toast.error(tr("emailDisposable"));
-      return;
-    }
     if (rEmailStatus === "taken") {
       toast.error(tr("errEmailTaken"));
       return;
@@ -423,19 +354,6 @@ export function LoginView() {
     // so we never submit a duplicate even in a race.
     if (rEmailStatus === "checking") {
       toast.error(tr("emailChecking"));
-      return;
-    }
-    // Phone duplicate guard — mirrors the email guard above.
-    if (rPhoneStatus === "taken") {
-      toast.error(tr("errPhoneTaken"));
-      return;
-    }
-    if (rPhoneStatus === "invalid") {
-      toast.error(tr("phoneInvalid"));
-      return;
-    }
-    if (rPhoneStatus === "checking") {
-      toast.error(tr("phoneChecking"));
       return;
     }
     if (!rOtpVerified) {
@@ -468,27 +386,6 @@ export function LoginView() {
       });
       const data = await res.json();
       if (!res.ok) {
-        // Refresh status indicators based on server response, so the form
-        // visually reflects which field caused the conflict.
-        if (res.status === 409) {
-          const msg = (data.error || "").toLowerCase();
-          if (msg.includes("whatsapp") || msg.includes("nomor")) {
-            setRPhoneStatus("taken");
-          } else if (msg.includes("email")) {
-            setREmailStatus("taken");
-          }
-        } else if (res.status === 400 && data.error) {
-          // Server-side domain/format guard rejected the email — reflect it
-          // in the UI so the user sees which field is the problem.
-          const msg = (data.error || "").toLowerCase();
-          if (msg.includes("domain") || msg.includes("menerima") || msg.includes("ditemukan")) {
-            setREmailStatus("domainInvalid");
-          } else if (msg.includes("disposable") || msg.includes("sementara")) {
-            setREmailStatus("disposable");
-          } else if (msg.includes("format") && msg.includes("email")) {
-            setREmailStatus("invalid");
-          }
-        }
         toast.error(data.error || tr("errRegister"));
         return;
       }
@@ -561,7 +458,6 @@ export function LoginView() {
             rEmail={rEmail} setREmail={setREmail}
             rEmailStatus={rEmailStatus}
             rPhone={rPhone} setRPhone={setRPhone}
-            rPhoneStatus={rPhoneStatus}
             rPass={rPass} setRPass={setRPass}
             rPass2={rPass2} setRPass2={setRPass2}
             agree={agree} setAgree={setAgree}
@@ -661,7 +557,6 @@ export function LoginView() {
               rEmail={rEmail} setREmail={setREmail}
               rEmailStatus={rEmailStatus}
               rPhone={rPhone} setRPhone={setRPhone}
-              rPhoneStatus={rPhoneStatus}
               rPass={rPass} setRPass={setRPass}
               rPass2={rPass2} setRPass2={setRPass2}
               agree={agree} setAgree={setAgree}
@@ -698,7 +593,7 @@ function FormSection({
   lWaPhone, setLWaPhone, lWaOtp, setLWaOtp,
   lWaOtpSending, lWaOtpVerifying, lWaOtpVerified, lWaOtpDevCode, lWaCooldown,
   sendLoginOtp, verifyLoginOtp,
-  rName, setRName, rEmail, setREmail, rEmailStatus, rPhone, setRPhone, rPhoneStatus,
+  rName, setRName, rEmail, setREmail, rEmailStatus, rPhone, setRPhone,
   rPass, setRPass, rPass2, setRPass2, agree, setAgree,
   rOtp, setROtp, rOtpSending, rOtpVerifying, rOtpVerified, rOtpDevCode, rOtpCooldown,
   sendRegOtp, verifyRegOtp,
@@ -721,9 +616,8 @@ function FormSection({
   verifyLoginOtp: () => void;
   rName: string; setRName: (v: string) => void;
   rEmail: string; setREmail: (v: string) => void;
-  rEmailStatus: "idle" | "checking" | "available" | "taken" | "invalid" | "domainInvalid" | "disposable";
+  rEmailStatus: "idle" | "checking" | "available" | "taken" | "invalid";
   rPhone: string; setRPhone: (v: string) => void;
-  rPhoneStatus: "idle" | "checking" | "available" | "taken" | "invalid";
   rPass: string; setRPass: (v: string) => void;
   rPass2: string; setRPass2: (v: string) => void;
   agree: boolean; setAgree: (v: boolean) => void;
@@ -956,10 +850,8 @@ function FormSection({
                   rEmailStatus === "available" && "pr-9 border-green-500 focus-visible:ring-green-500/30",
                   rEmailStatus === "taken" && "pr-9 border-destructive focus-visible:ring-destructive/30",
                   rEmailStatus === "invalid" && "pr-9 border-destructive focus-visible:ring-destructive/30",
-                  rEmailStatus === "domainInvalid" && "pr-9 border-destructive focus-visible:ring-destructive/30",
-                  rEmailStatus === "disposable" && "pr-9 border-destructive focus-visible:ring-destructive/30",
                 )}
-                aria-invalid={rEmailStatus === "taken" || rEmailStatus === "invalid" || rEmailStatus === "domainInvalid" || rEmailStatus === "disposable"}
+                aria-invalid={rEmailStatus === "taken" || rEmailStatus === "invalid"}
               />
               {rEmailStatus === "checking" && (
                 <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
@@ -971,12 +863,6 @@ function FormSection({
                 <XCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-destructive" />
               )}
               {rEmailStatus === "invalid" && (
-                <XCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-destructive" />
-              )}
-              {rEmailStatus === "domainInvalid" && (
-                <XCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-destructive" />
-              )}
-              {rEmailStatus === "disposable" && (
                 <XCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-destructive" />
               )}
             </div>
@@ -992,55 +878,13 @@ function FormSection({
             {rEmailStatus === "invalid" && (
               <p className="text-xs font-medium text-destructive">{tr("emailInvalid")}</p>
             )}
-            {rEmailStatus === "domainInvalid" && (
-              <p className="text-xs font-medium text-destructive">{tr("emailDomainInvalid")}</p>
-            )}
-            {rEmailStatus === "disposable" && (
-              <p className="text-xs font-medium text-destructive">{tr("emailDisposable")}</p>
-            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="r-phone">{tr("whatsapp")}</Label>
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="r-phone"
-                value={rPhone}
-                onChange={(e) => setRPhone(e.target.value)}
-                placeholder={tr("whatsappPlaceholder")}
-                className={cn(
-                  "pl-9",
-                  rPhoneStatus === "available" && "pr-9 border-green-500 focus-visible:ring-green-500/30",
-                  rPhoneStatus === "taken" && "pr-9 border-destructive focus-visible:ring-destructive/30",
-                  rPhoneStatus === "invalid" && "pr-9 border-destructive focus-visible:ring-destructive/30",
-                )}
-                aria-invalid={rPhoneStatus === "taken" || rPhoneStatus === "invalid"}
-              />
-              {rPhoneStatus === "checking" && (
-                <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
-              )}
-              {rPhoneStatus === "available" && (
-                <CheckCircle2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-green-600 dark:text-green-400" />
-              )}
-              {rPhoneStatus === "taken" && (
-                <XCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-destructive" />
-              )}
-              {rPhoneStatus === "invalid" && (
-                <XCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-destructive" />
-              )}
+              <Input id="r-phone" value={rPhone} onChange={(e) => setRPhone(e.target.value)} placeholder={tr("whatsappPlaceholder")} className="pl-9" />
             </div>
-            {rPhoneStatus === "checking" && (
-              <p className="text-xs text-muted-foreground">{tr("phoneChecking")}</p>
-            )}
-            {rPhoneStatus === "available" && (
-              <p className="text-xs font-medium text-green-600 dark:text-green-400">{tr("phoneAvailable")}</p>
-            )}
-            {rPhoneStatus === "taken" && (
-              <p className="text-xs font-medium text-destructive">{tr("phoneTaken")}</p>
-            )}
-            {rPhoneStatus === "invalid" && (
-              <p className="text-xs font-medium text-destructive">{tr("phoneInvalid")}</p>
-            )}
           </div>
 
           {/* ===== Register OTP step ===== */}
@@ -1152,7 +996,7 @@ function FormSection({
             <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 accent-primary" />
             <span>{tr("agreeTerms")}</span>
           </label>
-          <Button type="submit" disabled={loading || !rOtpVerified || rEmailStatus === "taken" || rEmailStatus === "invalid" || rEmailStatus === "domainInvalid" || rEmailStatus === "disposable" || rEmailStatus === "checking"} className="w-full gap-2 bg-primary font-semibold" size="lg">
+          <Button type="submit" disabled={loading || !rOtpVerified || rEmailStatus === "taken" || rEmailStatus === "invalid" || rEmailStatus === "checking"} className="w-full gap-2 bg-primary font-semibold" size="lg">
             {loading ? <Loader2 className="size-4 animate-spin" /> : null}
             {loading ? tr("processing") : tr("registerBtn")}
           </Button>

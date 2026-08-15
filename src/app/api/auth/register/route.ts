@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, isDbAvailable } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
-import { fallbackRegisterUser, isPhoneTaken, isEmailTaken } from "@/lib/auth-fallback";
-import { domainHasMx, isDisposableDomain } from "@/lib/email-validate";
+import { fallbackRegisterUser } from "@/lib/auth-fallback";
 
 // ---------------------------------------------------------------------------
 // Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
@@ -58,45 +57,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: "Kata sandi minimal 6 karakter." },
       { status: 400 }
-    );
-  }
-
-  // --- Email reality check (server-side guard) ---
-  // Reject emails whose domain doesn't really exist (no MX records) or is a
-  // known disposable/temporary provider. This is the final safety net in case
-  // the client-side /check-email feedback was bypassed (e.g. a direct API
-  // call). Verifies that the email can actually receive mail — fake domains
-  // like "test@fakedomain123.xyz" are rejected here.
-  const domain = emailNorm.split("@")[1] ?? "";
-  if (isDisposableDomain(domain)) {
-    return NextResponse.json(
-      { error: "Email sementara (disposable) tidak diperbolehkan. Gunakan email asli." },
-      { status: 400 }
-    );
-  }
-  const mxValid = await domainHasMx(domain);
-  if (!mxValid) {
-    return NextResponse.json(
-      { error: "Domain email tidak ditemukan atau tidak dapat menerima email. Periksa kembali email Anda." },
-      { status: 400 }
-    );
-  }
-
-  // --- Cross-store duplicate checks (DB + fallback in-memory store) ---
-  // We check BOTH email and phone across BOTH stores before any insert, so
-  // that a user registered via the fallback path (or the seed admin in the
-  // fallback store) cannot be re-registered with a different email but the
-  // same phone (or vice-versa).
-  if (await isEmailTaken(emailNorm)) {
-    return NextResponse.json(
-      { error: "Email sudah terdaftar. Silakan masuk." },
-      { status: 409 }
-    );
-  }
-  if (phone && (await isPhoneTaken(phone))) {
-    return NextResponse.json(
-      { error: "Nomor WhatsApp sudah terdaftar. Silakan masuk." },
-      { status: 409 }
     );
   }
 

@@ -635,8 +635,9 @@ async function seed() {
   // 5. Upsert paket
   const pakets = [
     { key: "colek", name: "Gold", price: 60000, originalPrice: 120000, duration: 30, features: JSON.stringify(["Tampil di bagian Premium", "Badge Gold", "Maksimal 5 foto", "Prioritas pencarian"]), active: true, sortOrder: 0 },
-    { key: "highlight", name: "Platinum", price: 50000, originalPrice: 100000, duration: 7, features: JSON.stringify(["Tampil di bagian Premium", "Badge Platinum", "Maksimal 10 foto", "Prioritas pencarian", "Highlight border"]), active: true, sortOrder: 1 },
-    { key: "spotlight", name: "Titanium", price: 100000, originalPrice: 200000, duration: 7, features: JSON.stringify(["Tampil di bagian Premium", "Badge Titanium", "Maksimal 15 foto", "Prioritas tertinggi", "Spotlight border", "Dilihat lebih banyak"]), active: true, sortOrder: 2 },
+    { key: "sundul", name: "Boost", price: 30000, originalPrice: 50000, duration: 10, features: JSON.stringify(["Iklan didorong ke posisi teratas", "Badge Boost", "Boost 1x posisi", "Prioritas pencarian"]), active: true, sortOrder: 1 },
+    { key: "highlight", name: "Platinum", price: 50000, originalPrice: 100000, duration: 7, features: JSON.stringify(["Tampil di bagian Premium", "Badge Platinum", "Maksimal 10 foto", "Prioritas pencarian", "Highlight border"]), active: true, sortOrder: 2 },
+    { key: "spotlight", name: "Titanium", price: 100000, originalPrice: 200000, duration: 7, features: JSON.stringify(["Tampil di bagian Premium", "Badge Titanium", "Maksimal 15 foto", "Prioritas tertinggi", "Spotlight border", "Dilihat lebih banyak"]), active: true, sortOrder: 3 },
   ];
   for (const p of pakets) {
     await db.paket.upsert({
