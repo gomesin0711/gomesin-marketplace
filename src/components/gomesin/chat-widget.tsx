@@ -438,8 +438,6 @@ export function ChatInner({
           </div>
         </div>
       </div>
-
-      {/* ===== MESSAGES ===== */}
       <div
         ref={scrollRef}
         className={cn(
@@ -457,7 +455,7 @@ export function ChatInner({
         )}
         {messages.length > 0 && (
           <div className="flex justify-center py-1">
-            <span className="rounded-full bg-white/80 px-3 py-0.5 text-[10px] font-medium text-black/60 shadow-sm">Hari ini</span>
+            <span className="rounded-full bg-white/80 dark:bg-white/10 px-3 py-0.5 text-[10px] font-medium text-black/60 dark:text-white/70 shadow-sm">Hari ini</span>
           </div>
         )}
         {messages.map((m, i) => (
@@ -473,7 +471,7 @@ export function ChatInner({
                   "max-w-[85%] cursor-pointer rounded-2xl text-sm shadow-sm transition select-none",
                   m.role === "user"
                     ? "rounded-br-sm bg-primary text-primary-foreground"
-                    : cn("rounded-bl-sm bg-white text-black font-medium"),
+                    : cn("rounded-bl-sm bg-white dark:bg-[#1F1F1F] text-black dark:text-white font-medium"),
                   selectedMsg === i && "ring-2 ring-blue-400 ring-offset-1",
                   m.image ? "overflow-hidden p-0" : "px-3 py-2"
                 )}

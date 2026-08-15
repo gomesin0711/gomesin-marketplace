@@ -106,6 +106,7 @@ import { DashboardView } from "./dashboard";
 import { FavoritesView } from "./favorites";
 import { NewListingsNotificationList } from "../notification-bell";
 import EmojiPicker, { EmojiStyle, Theme } from "emoji-picker-react";
+import { useTheme } from "next-themes";
 import { useChatBg } from "@/lib/use-chat-bg";
 import {
   Popover,
@@ -340,6 +341,14 @@ export function ProfileView() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { bgKey: chatBgKey, setBg: setChatBg, bgStyle: chatBgStyle, isDark: chatBgIsDark, presets: chatBgPresets } = useChatBg();
   const [chatBgOpen, setChatBgOpen] = useState(false);
+  // Global dark-mode (header toggle). When active, the entire chat page flips
+  // to a black background regardless of the per-user chat-bg preset.
+  const { theme } = useTheme();
+  const isDarkMode = mounted && theme === "dark";
+  // Override the messages-area background to pure black in dark mode.
+  const effectiveChatBgStyle: React.CSSProperties = isDarkMode
+    ? { backgroundColor: "#000000" }
+    : chatBgStyle;
   const [payFilter, setPayFilter] = useState<"all" | "paid" | "pending">("all");
   const [payViewMode, setPayViewMode] = useState<"grid" | "line">("grid");
   const [myAdsView, setMyAdsView] = useState<"grid" | "line">("grid");
@@ -1482,10 +1491,10 @@ export function ProfileView() {
                 {/* ===== LEFT: mesinKU conversation list (full pane on mobile, sidebar on desktop) ===== */}
                 {panel === "pesan" && (
                   <div className={cn(
-                    "relative flex-col w-full bg-[#FFFFFF]",
+                    "relative flex-col w-full bg-[#FFFFFF] dark:bg-black",
                     activeChatId !== null
-                      ? "hidden md:flex md:w-[360px] md:shrink-0 md:border-r md:border-[#E5E7EB]"
-                      : "flex md:w-[360px] md:shrink-0 md:border-r md:border-[#E5E7EB]"
+                      ? "hidden md:flex md:w-[360px] md:shrink-0 md:border-r md:border-[#E5E7EB] dark:md:border-white/10"
+                      : "flex md:w-[360px] md:shrink-0 md:border-r md:border-[#E5E7EB] dark:md:border-white/10"
                   )}>
                     {/* mesinKU green header — logo + wordmark + search + kebab */}
                     <div className="bg-[#16A34A] text-white">
@@ -1523,19 +1532,19 @@ export function ProfileView() {
                               <MoreVertical className="size-5" />
                             </button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-56 p-2" align="end">
+                          <PopoverContent className="w-56 p-2 dark:bg-[#1F1F1F] dark:border-white/10" align="end">
                             <button
                               onClick={() => { setLeftMenuOpen(false); setChatTab("panggilan"); }}
-                              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
+                              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[#17202A] dark:text-white transition hover:bg-[#F5F7F6] dark:hover:bg-white/5"
                             >
-                              <Phone className="size-4 text-[#16A34A]" /> Panggilan
+                              <Phone className="size-4 text-[#16A34A] dark:text-emerald-400" /> Panggilan
                             </button>
-                            <div className="my-1 border-t border-[#E5E7EB]" />
+                            <div className="my-1 border-t border-[#E5E7EB] dark:border-white/10" />
                             <button
                               onClick={() => { setLeftMenuOpen(false); setPanel("pengaturan"); }}
-                              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
+                              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[#17202A] dark:text-white transition hover:bg-[#F5F7F6] dark:hover:bg-white/5"
                             >
-                              <Settings className="size-4 text-[#6B7280]" /> Pengaturan
+                              <Settings className="size-4 text-[#6B7280] dark:text-gray-400" /> Pengaturan
                             </button>
                           </PopoverContent>
                         </Popover>
@@ -1572,21 +1581,21 @@ export function ProfileView() {
                     {chatTab === "chat" && (
                       <>
                         {/* Search pill */}
-                        <div className="bg-[#FFFFFF] px-3 py-2">
-                          <div className="flex items-center gap-3 rounded-xl bg-[#F5F7F6] px-3 py-2 ring-1 ring-[#E5E7EB]">
-                            <Search className="size-4 text-[#6B7280]" />
+                        <div className="bg-[#FFFFFF] dark:bg-black px-3 py-2">
+                          <div className="flex items-center gap-3 rounded-xl bg-[#F5F7F6] dark:bg-[#1F1F1F] px-3 py-2 ring-1 ring-[#E5E7EB] dark:ring-white/10">
+                            <Search className="size-4 text-[#6B7280] dark:text-gray-400" />
                             <input
                               type="text"
                               value={chatSearch}
                               onChange={(e) => setChatSearch(e.target.value)}
                               placeholder="Cari chat atau pengguna"
-                              className="flex-1 bg-transparent text-sm text-[#17202A] outline-none placeholder:text-[#6B7280]"
+                              className="flex-1 bg-transparent text-sm text-[#17202A] dark:text-white outline-none placeholder:text-[#6B7280] dark:placeholder:text-gray-400"
                             />
                             {chatSearch && (
                               <button
                                 onClick={() => setChatSearch("")}
                                 aria-label="Hapus pencarian"
-                                className="grid size-5 place-items-center rounded-full text-[#6B7280] hover:bg-black/5"
+                                className="grid size-5 place-items-center rounded-full text-[#6B7280] dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/10"
                               >
                                 <X className="size-3.5" />
                               </button>
@@ -1595,19 +1604,19 @@ export function ProfileView() {
                         </div>
 
                         {/* Conversation list — loading skeleton / empty / list */}
-                        <div className="flex-1 overflow-y-auto mesinku-scroll bg-[#FFFFFF]">
+                        <div className="flex-1 overflow-y-auto mesinku-scroll bg-[#FFFFFF] dark:bg-black">
                           {messagesLoading ? (
                             // Skeleton — gray pulsing bars mimicking conversation rows
                             <div className="space-y-0">
                               {Array.from({ length: 6 }).map((_, i) => (
                                 <div key={i} className="flex items-center gap-3 px-4 py-3">
-                                  <div className="size-12 shrink-0 animate-pulse rounded-full bg-[#F5F7F6]" />
-                                  <div className="min-w-0 flex-1 space-y-2 border-b border-[#E5E7EB] pb-3">
+                                  <div className="size-12 shrink-0 animate-pulse rounded-full bg-[#F5F7F6] dark:bg-white/5" />
+                                  <div className="min-w-0 flex-1 space-y-2 border-b border-[#E5E7EB] dark:border-white/10 pb-3">
                                     <div className="flex justify-between">
-                                      <div className="h-3.5 w-24 animate-pulse rounded bg-[#F5F7F6]" />
-                                      <div className="h-3 w-10 animate-pulse rounded bg-[#F5F7F6]" />
+                                      <div className="h-3.5 w-24 animate-pulse rounded bg-[#F5F7F6] dark:bg-white/5" />
+                                      <div className="h-3 w-10 animate-pulse rounded bg-[#F5F7F6] dark:bg-white/5" />
                                     </div>
-                                    <div className="h-3 w-48 animate-pulse rounded bg-[#F5F7F6]" />
+                                    <div className="h-3 w-48 animate-pulse rounded bg-[#F5F7F6] dark:bg-white/5" />
                                   </div>
                                 </div>
                               ))}
@@ -1615,13 +1624,13 @@ export function ProfileView() {
                           ) : filteredConversations.length === 0 ? (
                             // Empty state — mesinKU branded
                             <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-                              <div className="grid size-20 place-items-center rounded-2xl bg-[#DCFCE7]">
-                                <MessageSquare className="size-10 text-[#16A34A]" strokeWidth={1.8} />
+                              <div className="grid size-20 place-items-center rounded-2xl bg-[#DCFCE7] dark:bg-[#0A3D23]">
+                                <MessageSquare className="size-10 text-[#16A34A] dark:text-emerald-400" strokeWidth={1.8} />
                               </div>
-                              <p className="mt-4 text-base font-semibold text-[#17202A]">
+                              <p className="mt-4 text-base font-semibold text-[#17202A] dark:text-white">
                                 {chatSearch ? "Tidak ditemukan" : "Mulai Mengobrol"}
                               </p>
-                              <p className="mt-1 max-w-[15rem] text-xs text-[#6B7280]">
+                              <p className="mt-1 max-w-[15rem] text-xs text-[#6B7280] dark:text-gray-400">
                                 {chatSearch
                                   ? `Tidak ada chat yang cocok dengan "${chatSearch}".`
                                   : "Pilih iklan lalu ketuk 'Chat Penjual' untuk memulai percakapan pertama Anda di mesinKU."}
@@ -1630,7 +1639,7 @@ export function ProfileView() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="mt-4 border-[#16A34A] text-[#16A34A] hover:bg-[#DCFCE7] hover:text-[#16A34A]"
+                                  className="mt-4 border-[#16A34A] dark:border-[#16A34A] text-[#16A34A] dark:text-emerald-400 hover:bg-[#DCFCE7] dark:hover:bg-[#0A3D23] hover:text-[#16A34A] dark:hover:text-emerald-300"
                                   onClick={() => { setPanel(null); clearProfilePanel(); goToListings({}); }}
                                 >
                                   Jelajahi iklan
@@ -1644,8 +1653,8 @@ export function ProfileView() {
                                 onClick={() => openChat(c.id)}
                                 onContextMenu={(e) => handleConvContextMenu(e, c.id)}
                                 className={cn(
-                                  "flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-[#F5F7F6] md:px-4",
-                                  activeChatId === c.id ? "bg-[#DCFCE7]/60" : ""
+                                  "flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-[#F5F7F6] dark:hover:bg-white/5 md:px-4",
+                                  activeChatId === c.id ? "bg-[#DCFCE7]/60 dark:bg-[#0A3D23]/60" : ""
                                 )}
                               >
                                 <div className="relative shrink-0">
@@ -1653,20 +1662,20 @@ export function ProfileView() {
                                     {c.partnerImage ? (
                                       <img src={c.partnerImage} alt={c.name} className="size-full rounded-full object-cover" />
                                     ) : (
-                                      <AvatarFallback className="bg-[#DCFCE7] text-sm font-bold text-[#16A34A]">
+                                      <AvatarFallback className="bg-[#DCFCE7] dark:bg-[#0A3D23] text-sm font-bold text-[#16A34A] dark:text-emerald-400">
                                         {(c.name || "?").split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
                                       </AvatarFallback>
                                     )}
                                   </Avatar>
                                   {/* online dot — purely visual */}
-                                  <span className="absolute bottom-0 right-0 size-3 rounded-full border-2 border-white bg-[#16A34A]" aria-hidden />
+                                  <span className="absolute bottom-0 right-0 size-3 rounded-full border-2 border-white dark:border-black bg-[#16A34A]" aria-hidden />
                                 </div>
-                                <div className="min-w-0 flex-1 border-b border-[#E5E7EB] pb-3">
+                                <div className="min-w-0 flex-1 border-b border-[#E5E7EB] dark:border-white/10 pb-3">
                                   <div className="flex items-center justify-between gap-2">
-                                    <p className={cn("truncate text-[15px] text-[#17202A]", c.unread > 0 ? "font-semibold" : "font-normal")}>{c.name}</p>
+                                    <p className={cn("truncate text-[15px] text-[#17202A] dark:text-white", c.unread > 0 ? "font-semibold" : "font-normal")}>{c.name}</p>
                                     <span className={cn(
                                       "shrink-0 text-[11px] tabular-nums",
-                                      c.unread > 0 ? "font-semibold text-[#16A34A]" : "text-[#6B7280]"
+                                      c.unread > 0 ? "font-semibold text-[#16A34A] dark:text-emerald-400" : "text-[#6B7280] dark:text-gray-400"
                                     )}>
                                       {timeAgo(c.lastTime, mounted ? lang : "id")}
                                     </span>
@@ -1674,18 +1683,18 @@ export function ProfileView() {
                                   <div className="mt-0.5 flex items-center justify-between gap-2">
                                     <p className={cn(
                                       "truncate text-[13px]",
-                                      c.unread > 0 ? "font-medium text-[#17202A]" : "text-[#6B7280]"
+                                      c.unread > 0 ? "font-medium text-[#17202A] dark:text-white" : "text-[#6B7280] dark:text-gray-400"
                                     )}>
                                       {c.lastMessage}
                                     </p>
                                     {c.unread > 0 && (
-                                      <span className="grid min-w-5 shrink-0 place-items-center rounded-full bg-[#16A34A] px-1.5 text-[11px] font-bold text-white">
+                                      <span className="grid min-w-5 shrink-0 place-items-center rounded-full bg-[#16A34A] dark:bg-emerald-500 px-1.5 text-[11px] font-bold text-white">
                                         {c.unread > 99 ? "99+" : c.unread}
                                       </span>
                                     )}
                                   </div>
                                   {c.listingTitle && (
-                                    <p className="mt-1 inline-flex items-center gap-1 truncate text-[11px] font-medium text-[#16A34A]">
+                                    <p className="mt-1 inline-flex items-center gap-1 truncate text-[11px] font-medium text-[#16A34A] dark:text-emerald-400">
                                       <Tag className="size-3" /> {c.listingTitle}
                                     </p>
                                   )}
@@ -1711,28 +1720,28 @@ export function ProfileView() {
                           <div className="absolute inset-0 z-40" onClick={() => setNewChatOpen(false)}>
                             <div className="absolute inset-0 bg-black/20 backdrop-blur-[1px]" />
                             <div
-                              className="absolute bottom-4 right-4 w-60 overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-xl md:bottom-6 md:right-6"
+                              className="absolute bottom-4 right-4 w-60 overflow-hidden rounded-2xl border border-[#E5E7EB] dark:border-white/10 bg-white dark:bg-[#1F1F1F] shadow-xl md:bottom-6 md:right-6"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <button
                                 onClick={() => { setNewChatOpen(false); setPanel(null); clearProfilePanel(); goToListings({}); }}
-                                className="flex w-full items-center gap-3 px-4 py-3 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
+                                className="flex w-full items-center gap-3 px-4 py-3 text-sm text-[#17202A] dark:text-white transition hover:bg-[#F5F7F6] dark:hover:bg-white/5"
                               >
-                                <span className="grid size-9 place-items-center rounded-full bg-[#DCFCE7] text-[#16A34A]"><Plus className="size-4" /></span>
+                                <span className="grid size-9 place-items-center rounded-full bg-[#DCFCE7] dark:bg-[#0A3D23] text-[#16A34A] dark:text-emerald-400"><Plus className="size-4" /></span>
                                 Chat Baru
                               </button>
                               <button
                                 onClick={() => { setNewChatOpen(false); toast.info("Grup segera hadir"); }}
-                                className="flex w-full items-center gap-3 px-4 py-3 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
+                                className="flex w-full items-center gap-3 px-4 py-3 text-sm text-[#17202A] dark:text-white transition hover:bg-[#F5F7F6] dark:hover:bg-white/5"
                               >
-                                <span className="grid size-9 place-items-center rounded-full bg-[#DCFCE7] text-[#16A34A]"><Users className="size-4" /></span>
+                                <span className="grid size-9 place-items-center rounded-full bg-[#DCFCE7] dark:bg-[#0A3D23] text-[#16A34A] dark:text-emerald-400"><Users className="size-4" /></span>
                                 Grup Baru
                               </button>
                               <button
                                 onClick={() => { setNewChatOpen(false); toast.info("Daftar kontak segera hadir"); }}
-                                className="flex w-full items-center gap-3 px-4 py-3 text-sm text-[#17202A] transition hover:bg-[#F5F7F6]"
+                                className="flex w-full items-center gap-3 px-4 py-3 text-sm text-[#17202A] dark:text-white transition hover:bg-[#F5F7F6] dark:hover:bg-white/5"
                               >
-                                <span className="grid size-9 place-items-center rounded-full bg-[#DCFCE7] text-[#16A34A]"><UserPlus className="size-4" /></span>
+                                <span className="grid size-9 place-items-center rounded-full bg-[#DCFCE7] dark:bg-[#0A3D23] text-[#16A34A] dark:text-emerald-400"><UserPlus className="size-4" /></span>
                                 Kontak
                               </button>
                             </div>
@@ -1743,23 +1752,23 @@ export function ProfileView() {
 
                     {/* ===== Panggilan tab — mock recent calls ===== */}
                     {chatTab === "panggilan" && (
-                      <div className="flex-1 overflow-y-auto bg-[#FFFFFF]">
+                      <div className="flex-1 overflow-y-auto bg-[#FFFFFF] dark:bg-black">
                         <div className="px-4 py-3">
                           <button
                             onClick={() => toast.info("Mulai panggilan baru segera hadir")}
-                            className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left transition hover:bg-[#F5F7F6]"
+                            className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left transition hover:bg-[#F5F7F6] dark:hover:bg-white/5"
                           >
-                            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-[#DCFCE7] text-[#16A34A]">
+                            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-[#DCFCE7] dark:bg-[#0A3D23] text-[#16A34A] dark:text-emerald-400">
                               <Phone className="size-5" />
                             </span>
                             <div>
-                              <p className="text-sm font-semibold text-[#17202A]">Mulai panggilan baru</p>
-                              <p className="text-xs text-[#6B7280]">Cari kontak untuk dihubungi</p>
+                              <p className="text-sm font-semibold text-[#17202A] dark:text-white">Mulai panggilan baru</p>
+                              <p className="text-xs text-[#6B7280] dark:text-gray-400">Cari kontak untuk dihubungi</p>
                             </div>
                           </button>
                         </div>
-                        <div className="border-t border-[#E5E7EB] px-4 py-3">
-                          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#6B7280]">Terbaru</p>
+                        <div className="border-t border-[#E5E7EB] dark:border-white/10 px-4 py-3">
+                          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#6B7280] dark:text-gray-400">Terbaru</p>
                           <div className="space-y-1">
                             {allConversations.slice(0, 5).map((c: any, i: number) => {
                               const isOutgoing = i % 2 === 0;
@@ -1770,22 +1779,22 @@ export function ProfileView() {
                                     {c.partnerImage ? (
                                       <img src={c.partnerImage} alt={c.name} className="size-full rounded-full object-cover" />
                                     ) : (
-                                      <AvatarFallback className="bg-[#DCFCE7] text-xs font-bold text-[#16A34A]">
+                                      <AvatarFallback className="bg-[#DCFCE7] dark:bg-[#0A3D23] text-xs font-bold text-[#16A34A] dark:text-emerald-400">
                                         {(c.name || "?").split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
                                       </AvatarFallback>
                                     )}
                                   </Avatar>
                                   <div className="min-w-0 flex-1">
-                                    <p className={cn("truncate text-sm font-medium", isMissed ? "text-red-600" : "text-[#17202A]")}>{c.name}</p>
-                                    <p className="flex items-center gap-1 text-xs text-[#6B7280]">
-                                      {isMissed ? <PhoneMissed className="size-3 text-red-500" /> : isOutgoing ? <PhoneOutgoing className="size-3 text-[#16A34A]" /> : <PhoneIncoming className="size-3 text-[#6B7280]" />}
+                                    <p className={cn("truncate text-sm font-medium", isMissed ? "text-red-600" : "text-[#17202A] dark:text-white")}>{c.name}</p>
+                                    <p className="flex items-center gap-1 text-xs text-[#6B7280] dark:text-gray-400">
+                                      {isMissed ? <PhoneMissed className="size-3 text-red-500" /> : isOutgoing ? <PhoneOutgoing className="size-3 text-[#16A34A] dark:text-emerald-400" /> : <PhoneIncoming className="size-3 text-[#6B7280] dark:text-gray-400" />}
                                       {timeAgo(c.lastTime, mounted ? lang : "id")} lalu
                                     </p>
                                   </div>
                                   <button
                                     onClick={() => toast.info("Panggilan suara segera hadir")}
                                     aria-label="Panggil"
-                                    className="grid size-9 shrink-0 place-items-center rounded-full text-[#16A34A] transition hover:bg-[#DCFCE7]"
+                                    className="grid size-9 shrink-0 place-items-center rounded-full text-[#16A34A] dark:text-emerald-400 transition hover:bg-[#DCFCE7] dark:hover:bg-[#0A3D23]"
                                   >
                                     <Phone className="size-4" />
                                   </button>
@@ -1794,8 +1803,8 @@ export function ProfileView() {
                             })}
                             {allConversations.length === 0 && (
                               <div className="py-8 text-center">
-                                <Phone className="mx-auto size-8 text-[#E5E7EB]" />
-                                <p className="mt-2 text-xs text-[#6B7280]">Belum ada panggilan. Riwayat panggilan akan muncul di sini.</p>
+                                <Phone className="mx-auto size-8 text-[#E5E7EB] dark:text-white/10" />
+                                <p className="mt-2 text-xs text-[#6B7280] dark:text-gray-400">Belum ada panggilan. Riwayat panggilan akan muncul di sini.</p>
                               </div>
                             )}
                           </div>
@@ -1836,7 +1845,7 @@ export function ProfileView() {
                 {/* ===== RIGHT: Chat view or placeholder (full pane on mobile when chat open) ===== */}
                 {panel === "pesan" && (
                   <div className={cn(
-                    "flex-col bg-[#F5F7F6] w-full min-h-0",
+                    "flex-col bg-[#F5F7F6] dark:bg-black w-full min-h-0",
                     // Mobile: full width when a chat is open; hidden when no chat (list is shown)
                     // Desktop: flex-1 pane always visible
                     activeChatId !== null
@@ -1925,8 +1934,8 @@ export function ProfileView() {
                                   <MoreVertical className="size-5" />
                                 </button>
                               </PopoverTrigger>
-                              <PopoverContent className="w-64 p-3" align="end">
-                                <p className="mb-2 text-xs font-bold text-[#17202A]">Warna Background Chat</p>
+                              <PopoverContent className="w-64 p-3 dark:bg-[#1F1F1F] dark:border-white/10" align="end">
+                                <p className="mb-2 text-xs font-bold text-[#17202A] dark:text-white">Warna Background Chat</p>
                                 <div className="grid grid-cols-5 gap-2">
                                   {chatBgPresets.map((p) => (
                                     <button
@@ -1934,7 +1943,7 @@ export function ProfileView() {
                                       onClick={() => { setChatBg(p.key); }}
                                       className={cn(
                                         "size-9 rounded-full border-2 transition",
-                                        chatBgKey === p.key ? "border-[#16A34A] ring-2 ring-[#16A34A]/30" : "border-[#E5E7EB] hover:scale-110"
+                                        chatBgKey === p.key ? "border-[#16A34A] dark:border-emerald-500 ring-2 ring-[#16A34A]/30 dark:ring-emerald-500/30" : "border-[#E5E7EB] dark:border-white/15 hover:scale-110"
                                       )}
                                       style={{ backgroundColor: p.color }}
                                       title={p.label}
@@ -1942,23 +1951,23 @@ export function ProfileView() {
                                     />
                                   ))}
                                 </div>
-                                <div className="mt-3 border-t border-[#E5E7EB] pt-2">
+                                <div className="mt-3 border-t border-[#E5E7EB] dark:border-white/10 pt-2">
                                   <button
                                     onClick={() => { setChatBg(chatBgKey === "dark" ? "default" : "dark"); }}
-                                    className="flex w-full items-center gap-2.5 px-2 py-2 text-sm text-[#17202A] transition hover:bg-[#F5F7F6] rounded-md"
+                                    className="flex w-full items-center gap-2.5 px-2 py-2 text-sm text-[#17202A] dark:text-white transition hover:bg-[#F5F7F6] dark:hover:bg-white/5 rounded-md"
                                   >
                                     {chatBgKey === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
                                     {chatBgKey === "dark" ? "Mode Terang" : "Mode Gelap"}
                                   </button>
                                   <button
                                     onClick={() => { setChatBgOpen(false); handleClearChat(); }}
-                                    className="flex w-full items-center gap-2.5 px-2 py-2 text-sm text-[#17202A] transition hover:bg-[#F5F7F6] rounded-md"
+                                    className="flex w-full items-center gap-2.5 px-2 py-2 text-sm text-[#17202A] dark:text-white transition hover:bg-[#F5F7F6] dark:hover:bg-white/5 rounded-md"
                                   >
                                     <Eraser className="size-4" /> Bersihkan Chat
                                   </button>
                                   <button
                                     onClick={() => { setChatBgOpen(false); handleDeleteChat(); }}
-                                    className="flex w-full items-center gap-2.5 px-2 py-2 text-sm text-red-600 transition hover:bg-[#F5F7F6] rounded-md"
+                                    className="flex w-full items-center gap-2.5 px-2 py-2 text-sm text-red-600 transition hover:bg-[#F5F7F6] dark:hover:bg-white/5 rounded-md"
                                   >
                                     <Trash2 className="size-4" /> Hapus Chat
                                   </button>
@@ -1969,11 +1978,11 @@ export function ProfileView() {
                           {/* Messages — listing shown as a chat bubble (not a banner) */}
                           <div
                             ref={chatScrollRef}
-                            className={cn("flex-1 space-y-1 overflow-y-auto px-3 py-3 md:px-4 md:py-4", chatBgIsDark && "text-white")}
-                            style={chatBgStyle}
+                            className={cn("flex-1 space-y-1 overflow-y-auto px-3 py-3 md:px-4 md:py-4", (chatBgIsDark || isDarkMode) && "text-white")}
+                            style={effectiveChatBgStyle}
                           >
                             <div className="flex justify-center py-1">
-                              <span className="rounded-md bg-[#DCFCE7] px-3 py-1 text-[11px] font-medium text-[#16A34A] shadow-sm">Hari ini</span>
+                              <span className="rounded-md bg-[#DCFCE7] dark:bg-[#0A3D23] px-3 py-1 text-[11px] font-medium text-[#16A34A] dark:text-emerald-300 shadow-sm">Hari ini</span>
                             </div>
                             {/* Fresh chat (no messages yet) — show the listing bubble
                                 on the RIGHT (sender side) because the current user is
@@ -1983,11 +1992,11 @@ export function ProfileView() {
                                 <button
                                   type="button"
                                   onClick={() => { if (bubbleListingSlug) goToDetail(bubbleListingSlug); }}
-                                  className="relative max-w-[75%] overflow-hidden rounded-lg bg-white text-left shadow-sm ring-1 ring-[#16A34A]/30 transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40"
+                                  className="relative max-w-[75%] overflow-hidden rounded-lg bg-white dark:bg-[#1F1F1F] text-left shadow-sm ring-1 ring-[#16A34A]/30 dark:ring-[#16A34A]/40 transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40"
                                   title={bubbleListingSlug ? "Buka iklan" : undefined}
                                 >
                                   <span className="absolute -right-1.5 top-0 h-3 w-3 overflow-hidden" aria-hidden>
-                                    <span className="absolute right-0 top-0 h-3 w-3 rounded-tl-sm bg-white" />
+                                    <span className="absolute right-0 top-0 h-3 w-3 rounded-tl-sm bg-white dark:bg-[#1F1F1F]" />
                                   </span>
                                   {bubbleListingImage ? (
                                     <img src={proxyUrl(bubbleListingImage)} alt={bubbleListingTitle} className="max-h-44 w-full object-cover" />
@@ -1997,13 +2006,13 @@ export function ProfileView() {
                                     </div>
                                   )}
                                   <div className="p-2.5">
-                                    <p className="truncate text-[13px] font-medium text-[#17202A]">{bubbleListingTitle}</p>
+                                    <p className="truncate text-[13px] font-medium text-[#17202A] dark:text-white">{bubbleListingTitle}</p>
                                     {bubbleListingPrice != null && (
-                                      <p className="text-[13px] font-semibold text-[#16A34A]">Rp {bubbleListingPrice.toLocaleString("id-ID")}</p>
+                                      <p className="text-[13px] font-semibold text-[#16A34A] dark:text-emerald-400">Rp {bubbleListingPrice.toLocaleString("id-ID")}</p>
                                     )}
-                                    <span className="mt-1 flex items-center justify-end gap-1 text-right text-[10px] text-[#6B7280]">
+                                    <span className="mt-1 flex items-center justify-end gap-1 text-right text-[10px] text-[#6B7280] dark:text-gray-400">
                                       {bubbleListingSlug && (
-                                        <span className="inline-flex items-center gap-0.5 rounded-full bg-[#DCFCE7] px-1.5 py-0.5 text-[9px] font-semibold text-[#16A34A]">
+                                        <span className="inline-flex items-center gap-0.5 rounded-full bg-[#DCFCE7] dark:bg-[#0A3D23] px-1.5 py-0.5 text-[9px] font-semibold text-[#16A34A] dark:text-emerald-300">
                                           <ExternalLink className="size-2.5" /> Lihat Iklan
                                         </span>
                                       )}
@@ -2036,13 +2045,13 @@ export function ProfileView() {
                                       type="button"
                                       onClick={() => { if (c.listingSlug) goToDetail(c.listingSlug); }}
                                       className={cn(
-                                        "relative max-w-[75%] overflow-hidden rounded-lg bg-white text-left shadow-sm ring-1 ring-[#16A34A]/30 transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40",
-                                        isMe ? "ring-[#16A34A]/40" : "ring-[#16A34A]/20"
+                                        "relative max-w-[75%] overflow-hidden rounded-lg bg-white dark:bg-[#1F1F1F] text-left shadow-sm ring-1 ring-[#16A34A]/30 dark:ring-[#16A34A]/40 transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40",
+                                        isMe ? "ring-[#16A34A]/40 dark:ring-[#16A34A]/50" : "ring-[#16A34A]/20 dark:ring-[#16A34A]/30"
                                       )}
                                       title={c.listingSlug ? "Buka iklan" : undefined}
                                     >
                                       <span className={cn("absolute top-0 h-3 w-3 overflow-hidden", isMe ? "-right-1.5" : "-left-1.5")} aria-hidden>
-                                        <span className={cn("absolute top-0 h-3 w-3 bg-white", isMe ? "right-0 rounded-tl-sm" : "left-0 rounded-tr-sm")} />
+                                        <span className={cn("absolute top-0 h-3 w-3 bg-white dark:bg-[#1F1F1F]", isMe ? "right-0 rounded-tl-sm" : "left-0 rounded-tr-sm")} />
                                       </span>
                                       {c.listingImage ? (
                                         <img src={proxyUrl(c.listingImage)} alt={c.listingTitle!} className="max-h-44 w-full object-cover" />
@@ -2052,13 +2061,13 @@ export function ProfileView() {
                                         </div>
                                       )}
                                       <div className="p-2.5">
-                                        <p className="truncate text-[13px] font-medium text-[#17202A]">{c.listingTitle}</p>
+                                        <p className="truncate text-[13px] font-medium text-[#17202A] dark:text-white">{c.listingTitle}</p>
                                         {c.listingPrice != null && (
-                                          <p className="text-[13px] font-semibold text-[#16A34A]">Rp {c.listingPrice.toLocaleString("id-ID")}</p>
+                                          <p className="text-[13px] font-semibold text-[#16A34A] dark:text-emerald-400">Rp {c.listingPrice.toLocaleString("id-ID")}</p>
                                         )}
-                                        <span className="mt-1 flex items-center justify-end gap-1 text-right text-[10px] text-[#6B7280]">
+                                        <span className="mt-1 flex items-center justify-end gap-1 text-right text-[10px] text-[#6B7280] dark:text-gray-400">
                                           {c.listingSlug && (
-                                            <span className="inline-flex items-center gap-0.5 rounded-full bg-[#DCFCE7] px-1.5 py-0.5 text-[9px] font-semibold text-[#16A34A]">
+                                            <span className="inline-flex items-center gap-0.5 rounded-full bg-[#DCFCE7] dark:bg-[#0A3D23] px-1.5 py-0.5 text-[9px] font-semibold text-[#16A34A] dark:text-emerald-300">
                                               <ExternalLink className="size-2.5" /> Lihat Iklan
                                             </span>
                                           )}
@@ -2087,8 +2096,8 @@ export function ProfileView() {
                                       : cn(
                                           "max-w-[75%] md:max-w-[65%] px-2 py-1.5 text-[14px] font-normal",
                                           isMe
-                                            ? "rounded-lg bg-[#DCFCE7] text-[#17202A]"
-                                            : "rounded-lg bg-white text-[#17202A]"
+                                            ? "rounded-lg bg-[#DCFCE7] dark:bg-[#0A3D23] text-[#17202A] dark:text-emerald-50"
+                                            : "rounded-lg bg-white dark:bg-[#1F1F1F] text-[#17202A] dark:text-white"
                                         )
                                   )}
                                 >
@@ -2104,7 +2113,7 @@ export function ProfileView() {
                                       <span
                                         className={cn(
                                           "absolute top-0 h-3 w-3 rounded-sm",
-                                          isMe ? "right-0 bg-[#DCFCE7]" : "left-0 bg-white"
+                                          isMe ? "right-0 bg-[#DCFCE7] dark:bg-[#0A3D23]" : "left-0 bg-white dark:bg-[#1F1F1F]"
                                         )}
                                       />
                                     </span>
@@ -2123,9 +2132,9 @@ export function ProfileView() {
                                     </p>
                                   )}
                                   {!isEmojiOnly && (
-                                    <span className={cn("flex items-center justify-end gap-1 pt-0.5 text-[10px]", chatBgIsDark ? "text-white/60" : "text-[#6B7280]")}>
+                                    <span className={cn("flex items-center justify-end gap-1 pt-0.5 text-[10px]", (chatBgIsDark || isDarkMode) ? "text-white/60" : "text-[#6B7280]")}>
                                       {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
-                                      {isMe && <CheckCheck className="size-3.5 text-[#16A34A]" />}
+                                      {isMe && <CheckCheck className="size-3.5 text-[#16A34A] dark:text-emerald-400" />}
                                     </span>
                                   )}
                                 </div>
@@ -2150,11 +2159,11 @@ export function ProfileView() {
                                   <button
                                     type="button"
                                     onClick={() => { if (bubbleListingSlug) goToDetail(bubbleListingSlug); }}
-                                    className="relative max-w-[75%] overflow-hidden rounded-lg bg-white text-left shadow-sm ring-2 ring-[#16A34A]/30 transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40"
+                                    className="relative max-w-[75%] overflow-hidden rounded-lg bg-white dark:bg-[#1F1F1F] text-left shadow-sm ring-2 ring-[#16A34A]/30 dark:ring-[#16A34A]/50 transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40"
                                     title={bubbleListingSlug ? "Buka iklan" : undefined}
                                   >
                                     <span className="absolute -right-1.5 top-0 h-3 w-3 overflow-hidden" aria-hidden>
-                                      <span className="absolute right-0 top-0 h-3 w-3 rounded-tl-sm bg-white" />
+                                      <span className="absolute right-0 top-0 h-3 w-3 rounded-tl-sm bg-white dark:bg-[#1F1F1F]" />
                                     </span>
                                     {bubbleListingImage ? (
                                       <img src={proxyUrl(bubbleListingImage)} alt={bubbleListingTitle} className="max-h-44 w-full object-cover" />
@@ -2164,13 +2173,13 @@ export function ProfileView() {
                                       </div>
                                     )}
                                     <div className="p-2.5">
-                                      <p className="truncate text-[13px] font-medium text-[#17202A]">{bubbleListingTitle}</p>
+                                      <p className="truncate text-[13px] font-medium text-[#17202A] dark:text-white">{bubbleListingTitle}</p>
                                       {bubbleListingPrice != null && (
-                                        <p className="text-[13px] font-semibold text-[#16A34A]">Rp {bubbleListingPrice.toLocaleString("id-ID")}</p>
+                                        <p className="text-[13px] font-semibold text-[#16A34A] dark:text-emerald-400">Rp {bubbleListingPrice.toLocaleString("id-ID")}</p>
                                       )}
-                                      <span className="mt-1 flex items-center justify-end gap-1 text-right text-[10px] text-[#6B7280]">
+                                      <span className="mt-1 flex items-center justify-end gap-1 text-right text-[10px] text-[#6B7280] dark:text-gray-400">
                                         {bubbleListingSlug && (
-                                          <span className="inline-flex items-center gap-0.5 rounded-full bg-[#DCFCE7] px-1.5 py-0.5 text-[9px] font-semibold text-[#16A34A]">
+                                          <span className="inline-flex items-center gap-0.5 rounded-full bg-[#DCFCE7] dark:bg-[#0A3D23] px-1.5 py-0.5 text-[9px] font-semibold text-[#16A34A] dark:text-emerald-300">
                                             <ExternalLink className="size-2.5" /> Lihat Iklan
                                           </span>
                                         )}
@@ -2183,20 +2192,20 @@ export function ProfileView() {
                             })()}
                             {chatSending && (
                               <div className="flex justify-start">
-                                <div className="relative flex items-center gap-1 rounded-lg bg-white px-3 py-2.5 shadow-sm">
+                                <div className="relative flex items-center gap-1 rounded-lg bg-white dark:bg-[#1F1F1F] px-3 py-2.5 shadow-sm">
                                   <span className="absolute -left-1.5 top-0 h-3 w-3 overflow-hidden" aria-hidden>
-                                    <span className="absolute left-0 top-0 h-3 w-3 rounded-tr-sm bg-white" />
+                                    <span className="absolute left-0 top-0 h-3 w-3 rounded-tr-sm bg-white dark:bg-[#1F1F1F]" />
                                   </span>
-                                  <span className="size-2 animate-bounce rounded-full bg-[#16A34A] [animation-delay:-0.3s]" />
-                                  <span className="size-2 animate-bounce rounded-full bg-[#16A34A] [animation-delay:-0.15s]" />
-                                  <span className="size-2 animate-bounce rounded-full bg-[#16A34A]" />
+                                  <span className="size-2 animate-bounce rounded-full bg-[#16A34A] dark:bg-emerald-400 [animation-delay:-0.3s]" />
+                                  <span className="size-2 animate-bounce rounded-full bg-[#16A34A] dark:bg-emerald-400 [animation-delay:-0.15s]" />
+                                  <span className="size-2 animate-bounce rounded-full bg-[#16A34A] dark:bg-emerald-400" />
                                 </div>
                               </div>
                             )}
                           </div>
                           {/* Image preview (before sending) */}
                           {pendingImage && (
-                            <div className="flex items-center gap-2 border-t border-border bg-white p-2">
+                            <div className="flex items-center gap-2 border-t border-border bg-white dark:bg-[#1F1F1F] p-2">
                               <img src={pendingImage} alt="Preview" className="size-16 rounded-lg object-cover" />
                               <button
                                 type="button"
@@ -2210,11 +2219,11 @@ export function ProfileView() {
                           )}
                           {/* Emoji picker popover — full emoji library (large native emoji, search, categories) */}
                           {showEmoji && (
-                            <div className="border-t border-border bg-white">
+                            <div className="border-t border-border bg-white dark:bg-[#1F1F1F]">
                               <EmojiPicker
                                 onEmojiClick={(emoji) => { setChatInput((prev) => prev + emoji.emoji); }}
                                 emojiStyle={EmojiStyle.NATIVE}
-                                theme={Theme.LIGHT}
+                                theme={isDarkMode ? Theme.DARK : Theme.LIGHT}
                                 width="100%"
                                 height={280}
                                 previewConfig={{ showPreview: false }}
@@ -2226,7 +2235,7 @@ export function ProfileView() {
                           )}
                           {/* GIF / Sticker picker popover — animated emoji stickers */}
                           {showGifs && (
-                            <div className="flex h-[280px] flex-col border-t border-border bg-white">
+                            <div className="flex h-[280px] flex-col border-t border-border bg-white dark:bg-[#1F1F1F]">
                               <div className="border-b border-border p-2">
                                 <input
                                   type="text"
@@ -2287,7 +2296,7 @@ export function ProfileView() {
                               The receiver (seller) only sees the conversation after a
                               message exists, so the shortcuts never appear for them. */}
                           {bubbleListingTitle && convo.length === 0 && (
-                            <div className="flex gap-1.5 overflow-x-auto border-t border-[#E5E7EB] bg-[#F5F7F6] px-2 py-2 no-scrollbar md:px-3">
+                            <div className="flex gap-1.5 overflow-x-auto border-t border-[#E5E7EB] dark:border-white/10 bg-[#F5F7F6] dark:bg-black px-2 py-2 no-scrollbar md:px-3">
                               {[
                                 "Apakah masih tersedia?",
                                 "Harga bisa nego?",
@@ -2304,7 +2313,7 @@ export function ProfileView() {
                                     setChatInput(q);
                                     setShowEmoji(false);
                                   }}
-                                  className="shrink-0 rounded-full border border-[#16A34A]/30 bg-white px-3 py-1.5 text-xs font-medium text-[#16A34A] shadow-sm transition hover:border-[#16A34A] hover:bg-[#DCFCE7] active:scale-95"
+                                  className="shrink-0 rounded-full border border-[#16A34A]/30 dark:border-[#16A34A]/40 bg-white dark:bg-[#1F1F1F] px-3 py-1.5 text-xs font-medium text-[#16A34A] dark:text-emerald-400 shadow-sm transition hover:border-[#16A34A] hover:bg-[#DCFCE7] dark:hover:bg-[#0A3D23] active:scale-95"
                                 >
                                   {q}
                                 </button>
@@ -2314,15 +2323,15 @@ export function ProfileView() {
                           {/* Input — mesinKU floating rounded bar with mic/send toggle */}
                           <form
                             onSubmit={(e) => { e.preventDefault(); sendChat(); }}
-                            className="flex items-end gap-2 bg-[#F5F7F6] px-2 py-2 md:px-3 md:py-2.5"
+                            className="flex items-end gap-2 bg-[#F5F7F6] dark:bg-black px-2 py-2 md:px-3 md:py-2.5"
                           >
                             <button
                               type="button"
                               onClick={() => setShowEmoji((v) => !v)}
                               aria-label="Emoji"
                               className={cn(
-                                "grid size-10 shrink-0 place-items-center rounded-full transition hover:bg-black/5",
-                                showEmoji ? "text-[#16A34A]" : "text-[#6B7280]"
+                                "grid size-10 shrink-0 place-items-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10",
+                                showEmoji ? "text-[#16A34A] dark:text-emerald-400" : "text-[#6B7280] dark:text-gray-400"
                               )}
                             >
                               <Smile className="size-6" />
@@ -2333,7 +2342,7 @@ export function ProfileView() {
                                 value={chatInput}
                                 onChange={(e) => setChatInput(e.target.value)}
                                 placeholder="Tulis pesan..."
-                                className="h-11 w-full rounded-2xl border border-transparent bg-white pr-20 pl-4 text-[15px] text-[#17202A] outline-none shadow-sm placeholder:text-[#6B7280]"
+                                className="h-11 w-full rounded-2xl border border-transparent bg-white dark:bg-[#1F1F1F] pr-20 pl-4 text-[15px] text-[#17202A] dark:text-white outline-none shadow-sm placeholder:text-[#6B7280] dark:placeholder:text-gray-400"
                                 disabled={chatSending}
                               />
                               <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
@@ -2341,7 +2350,7 @@ export function ProfileView() {
                                   type="button"
                                   onClick={() => fileInputRef.current?.click()}
                                   aria-label="Lampirkan gambar"
-                                  className="grid size-8 place-items-center rounded-full text-[#6B7280] hover:bg-black/5"
+                                  className="grid size-8 place-items-center rounded-full text-[#6B7280] dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/10"
                                 >
                                   <Paperclip className="size-5" />
                                 </button>
@@ -2349,7 +2358,7 @@ export function ProfileView() {
                                   type="button"
                                   onClick={() => cameraInputRef.current?.click()}
                                   aria-label="Buka kamera"
-                                  className="grid size-8 place-items-center rounded-full text-[#6B7280] hover:bg-black/5"
+                                  className="grid size-8 place-items-center rounded-full text-[#6B7280] dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/10"
                                 >
                                   <Camera className="size-5" />
                                 </button>
@@ -2423,10 +2432,10 @@ export function ProfileView() {
                       );
                     })() : (
                       /* Placeholder when no chat selected — mesinKU branded empty state */
-                      <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden bg-[#F5F7F6]">
+                      <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden bg-[#F5F7F6] dark:bg-black">
                         {/* mesinKU subtle dot pattern backdrop */}
                         <div
-                          className="pointer-events-none absolute inset-0 opacity-[0.05]"
+                          className="pointer-events-none absolute inset-0 opacity-[0.05] dark:opacity-[0.08]"
                           style={{
                             backgroundImage:
                               "radial-gradient(circle at 20% 30%, #16A34A 2px, transparent 2px), radial-gradient(circle at 70% 60%, #16A34A 2px, transparent 2px), radial-gradient(circle at 40% 80%, #16A34A 1px, transparent 1px)",
@@ -2436,19 +2445,19 @@ export function ProfileView() {
                         />
                         <div className="relative text-center">
                           {/* mesinKU logo mark — large rounded speech bubble */}
-                          <div className="mx-auto grid size-20 place-items-center rounded-3xl bg-[#DCFCE7] ring-1 ring-[#16A34A]/15">
-                            <svg viewBox="0 0 24 24" className="size-10 text-[#16A34A]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <div className="mx-auto grid size-20 place-items-center rounded-3xl bg-[#DCFCE7] dark:bg-[#0A3D23] ring-1 ring-[#16A34A]/15 dark:ring-[#16A34A]/30">
+                            <svg viewBox="0 0 24 24" className="size-10 text-[#16A34A] dark:text-emerald-400" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
                               <circle cx="12" cy="12" r="1.4" fill="currentColor" />
                             </svg>
                           </div>
-                          <p className="mt-5 text-2xl font-bold tracking-tight text-[#17202A]">
-                            mesin<span className="text-[#16A34A]">KU</span> Chat
+                          <p className="mt-5 text-2xl font-bold tracking-tight text-[#17202A] dark:text-white">
+                            mesin<span className="text-[#16A34A] dark:text-emerald-400">KU</span> Chat
                           </p>
-                          <p className="mx-auto mt-2 max-w-xs text-sm text-[#6B7280]">
+                          <p className="mx-auto mt-2 max-w-xs text-sm text-[#6B7280] dark:text-gray-400">
                             Pilih chat di sebelah kiri untuk mulai pesan dengan penjual atau pembeli.
                           </p>
-                          <p className="mt-6 inline-flex items-center gap-1 rounded-full bg-[#DCFCE7] px-3 py-1 text-[11px] font-medium text-[#16A34A]">
+                          <p className="mt-6 inline-flex items-center gap-1 rounded-full bg-[#DCFCE7] dark:bg-[#0A3D23] px-3 py-1 text-[11px] font-medium text-[#16A34A] dark:text-emerald-300">
                             <Lock className="size-3" />
                             Pesan terenkripsi end-to-end
                           </p>
