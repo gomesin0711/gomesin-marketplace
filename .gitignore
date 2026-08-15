@@ -55,6 +55,9 @@ server.log
 db/*.db
 db/*.db-journal
 
+# Backup snapshots (old project snapshots — jangan di-commit)
+_backup_*/
+
 # Skills directory
 /skills/tool-results/
 # Large design HTML templates (~38MB) — tidak dipakai oleh app
