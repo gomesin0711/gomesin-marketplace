@@ -4313,3 +4313,28 @@ Stage Summary:
 - Old unused sound files deleted: preview-coin-drop.wav + render-coin-drop-preview.ts script.
 - Only one sound file remains: public/sounds/iklan-masuk.mp3 (the coin ringtone).
 - Deployed to https://mesinku-ten.vercel.app — ringtone verified accessible (HTTP 200, audio/mpeg, 75485 bytes).
+
+---
+Task ID: deploy-mesinku-domain
+Agent: Main
+Task: Deploy to https://mesinku.vercel.app with token ***REDACTED_VERCEL_TOKEN***
+
+Work Log:
+- Investigated ownership of mesinku.vercel.app via multiple Vercel API endpoints:
+  1. GET /v9/domains/mesinku.vercel.app → {"error":{"code":"forbidden","message":"You don't have access to \"mesinku.vercel.app\""}}
+  2. POST /v9/projects/mesinku/domains (attempt to add as production domain) → {"error":{"code":"owned-on-other-team","domain":"mesinku.vercel.app","message":"Cannot add mesinku.vercel.app since it's already assigned to another project.","teamName":"argajienbi's projects"}}
+- Confirmed the token only has access to ONE Vercel team: "gomesin0711-1596s-projects" (user: gomesin0711@gmail.com).
+- The mesinku.vercel.app subdomain is owned by a DIFFERENT Vercel account: "argajienbi's projects". This is a hard platform limitation — a <name>.vercel.app subdomain is globally unique across ALL of Vercel.
+- The content at mesinku.vercel.app ("<title>MesinKu - Dashboard</title>") is from that other account's deployment, NOT ours (our title is "mesinKU — Jual baru/bekas Mesin Cetak...").
+- Our "mesinku" project (prj_zY4y9ZKTg2PtlztXwFlppjtFtzec) was auto-suffixed by Vercel to mesinku-ten.vercel.app because the bare mesinku.vercel.app was already claimed.
+- Attempted `vercel alias set <deployment> mesinku.vercel.app` → "Error: The chosen alias mesinku.vercel.app is already in use."
+- Verified the latest production deployment (mesinku-ten.vercel.app) is live and serving all recent changes:
+  - Ringtone mp3: HTTP 200, 75485 bytes, audio/mpeg ✅
+  - Old preview wav: HTTP 404 (deleted) ✅
+  - Homepage: HTTP 200, loads in 0.12s ✅
+  - API: returns listings with packageType field ✅
+
+Stage Summary:
+- CANNOT deploy to https://mesinku.vercel.app — the subdomain is owned by another Vercel account ("argajienbi's projects"), not the user's account ("gomesin0711-1596s-projects"). This is a Vercel platform limitation: <name>.vercel.app subdomains are globally unique. The provided token does not have access to the owning account.
+- Latest code IS deployed and live at https://mesinku-ten.vercel.app (our mesinku project's production URL), including all recent changes (package badges + ringtone replacement).
+- To use mesinku.vercel.app, the user would need: (a) access to the "argajienbi's projects" Vercel account, OR (b) the owner of that account to delete their "mesinku" project to free the subdomain, OR (c) use a custom domain (e.g. mesinku.com) which can be added via Vercel domains.
