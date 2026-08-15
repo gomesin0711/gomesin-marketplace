@@ -284,7 +284,7 @@ export function ProfileView() {
     },
     enabled: !!user?.id,
     staleTime: 0,
-    refetchInterval: 3000, // Polling fallback — picks up new messages within 3s even without socket.io (production has no socket server).
+    refetchInterval: 2000, // Polling safety net — primary delivery is realtime via socket.io `message:new`.
     refetchIntervalInBackground: false,
   });
   const conversations: any[] = messagesData?.conversations ?? [];

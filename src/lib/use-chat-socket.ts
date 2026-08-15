@@ -76,9 +76,9 @@ function getSocket(): Socket {
     // The Caddy gateway forwards based on the XTransformPort query param, so
     // all requests must go to "/" with the query param attached.
     path: "/",
-    // Polling first, then upgrade to websocket — more reliable across
-    // browsers/networks than starting with websocket directly.
-    transports: ["polling", "websocket"],
+    // Websocket FIRST for true realtime delivery (no polling delay).
+    // Falls back to polling if websocket is blocked/unavailable.
+    transports: ["websocket", "polling"],
     forceNew: true,
     reconnection: true,
     reconnectionAttempts: 10,

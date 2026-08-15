@@ -4366,3 +4366,45 @@ Stage Summary:
   - Package badges on Iklan Aktif + Iklan Saya (matching Iklan Baru style)
   - Ringtone replacement (coin mp3, old preview wav deleted)
 - The gomesin project (gomesin.vercel.app) is the production deployment target owned by the user's account. The mesinku project (mesinku-ten.vercel.app) still exists as a separate deployment from the previous task.
+
+---
+Task ID: chat-realtime-users-mobile-ringtone
+Agent: Main
+Task: Fix chat 5s delay (make realtime), complete admin Users list on mobile, change chat ringtone to "mesinku" TTS voice, deploy to gomesin.vercel.app
+
+Work Log:
+- **Task 1: Chat realtime fix**
+  - Root cause: socket.io client used `transports: ["polling", "websocket"]` — polling FIRST. Polling transport has inherent delay (messages delivered on next poll cycle, not instantly). Also, chat-widget.tsx polled every 5s and profile.tsx every 3s as fallback.
+  - Fix in src/lib/use-chat-socket.ts: Changed transports to `["websocket", "polling"]` — websocket FIRST for true realtime delivery. Falls back to polling only if websocket is blocked.
+  - Reduced polling fallback intervals: chat-widget.tsx 5s→2s, profile.tsx 3s→2s (safety net only, primary delivery is via socket.io `message:new` event which fires instantly).
+  - Chat-service verified running on port 3003 (1 client connected, uptime 3912s).
+
+- **Task 2: Admin Users mobile complete list**
+  - Problem: PenggunaTab used a single `<table>` with `min-w-[640px]` — on mobile, columns (No. HP, Kota, Daftar) were hidden (`hidden sm:table-cell`), requiring horizontal scroll. Users list was incomplete on mobile.
+  - Fix in src/components/gomesin/views/admin.tsx PenggunaTab: Added a mobile card layout (`sm:hidden`) shown on screens < 640px, alongside the existing table (`hidden sm:block`) for desktop.
+  - Mobile card shows ALL user info in 3 rows:
+    - Row 1: Avatar (initials) + Name + Email + Role badge
+    - Row 2: Phone (with icon) + City (with icon)
+    - Row 3: Registration date (with icon) + Delete button
+  - Desktop table: all columns now always visible (removed `hidden sm:table-cell` from No. HP, Kota, Daftar columns since the table is already `hidden sm:block`).
+  - Verified with Agent Browser on 375px mobile viewport: mobile cards present, table hidden, all user fields visible (name, email, phone, city, role, date, delete button).
+
+- **Task 3: Chat ringtone = "mesinku" TTS voice**
+  - Generated TTS audio saying "mesinku" using z-ai CLI: `z-ai tts -i "mesinku" -o public/sounds/mesinku-chat.wav --format wav --voice tongtong --speed 1.0` (47376 bytes, 16-bit mono 24kHz WAV).
+  - Updated src/lib/notification-sound.ts:
+    - Added `getChatAudio()` function that preloads `/sounds/mesinku-chat.wav`.
+    - `playNotificationSound()` (chat closed): now plays mesinku-chat.wav at volume 0.9. Falls back to synthesized coin drop if audio fails.
+    - `playDingSound()` (chat open): now plays mesinku-chat.wav at volume 0.5 (quieter since user is already viewing). Falls back to soft synthesized clink.
+    - Both functions preloaded in `unlockNotificationSound()` for instant playback.
+  - The listing ringtone (iklan-masuk.mp3, coin-on-hard-surface) remains unchanged — only the CHAT ringtone changed to "mesinku" voice.
+
+- **Deployed to gomesin.vercel.app:**
+  - Build completed in 54s.
+  - Production URL: https://gomesin.vercel.app ✅
+  - Verified: homepage HTTP 200, mesinku-chat.wav HTTP 200 (47376 bytes, audio/wave), iklan-masuk.mp3 HTTP 200 (75485 bytes, audio/mpeg), API users returns 2 users.
+
+Stage Summary:
+- Chat is now realtime: websocket-first transport eliminates the 5-second polling delay. Messages arrive instantly via socket.io `message:new` event. Polling reduced to 2s as a safety net only.
+- Admin Users page on mobile now shows complete user info in a card layout (name, email, phone, city, role, date, delete) — no more hidden columns or horizontal scrolling.
+- Chat ringtone changed from synthesized coin drop to TTS voice saying "mesinku". Listing ringtone (coin mp3) unchanged.
+- All changes deployed to https://gomesin.vercel.app and verified.

@@ -1857,10 +1857,63 @@ function PenggunaTab() {
   return (
     <div className="space-y-3">
       <h2 className="text-base font-bold">Pengguna Terdaftar ({users.length})</h2>
-      <div className="overflow-x-auto rounded-xl border border-border bg-card">
+
+      {/* ===== MOBILE: Card list (complete info, no horizontal scroll) ===== */}
+      <div className="space-y-2 sm:hidden">
+        {users.map((u: any) => (
+          <div
+            key={u.id}
+            onClick={() => setPreviewUser(u)}
+            className="cursor-pointer rounded-xl border border-border bg-card p-3 transition hover:bg-accent/30"
+          >
+            {/* Row 1: avatar + name + role badge */}
+            <div className="flex items-center gap-2.5">
+              <span className="grid size-10 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                {u.name.split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold">{u.name}</p>
+                <p className="truncate text-[11px] text-muted-foreground">{u.email}</p>
+              </div>
+              <Badge className={cn("shrink-0", isAdmin(u) ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground")}>
+                {u.role}
+              </Badge>
+            </div>
+            {/* Row 2: phone + city */}
+            <div className="mt-2 flex items-center gap-3 text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Phone className="size-3 shrink-0" /> {u.phone || "-"}
+              </span>
+              <span className="flex items-center gap-1">
+                <MapPin className="size-3 shrink-0" /> {u.city || "-"}
+              </span>
+            </div>
+            {/* Row 3: date + delete */}
+            <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
+              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                <Calendar className="size-3" /> {fmtDate(u.createdAt)}
+              </span>
+              <button
+                onClick={(e) => handleDelete(u, e)}
+                disabled={isAdmin(u) || del.isPending}
+                className={cn(
+                  "flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold transition",
+                  isAdmin(u) ? "cursor-not-allowed bg-muted text-muted-foreground/40" : "bg-red-100 text-red-600 hover:bg-red-200"
+                )}
+                title={isAdmin(u) ? "Tidak dapat menghapus admin" : "Hapus user"}
+              >
+                <Trash2 className="size-3" /> Hapus
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ===== DESKTOP: Table (sm+) ===== */}
+      <div className="hidden overflow-x-auto rounded-xl border border-border bg-card sm:block">
         <table className="w-full min-w-[640px] text-sm">
           <thead><tr className="border-b border-border bg-secondary/50 text-left text-xs font-semibold text-muted-foreground">
-            <th className="p-2">Nama</th><th className="p-2">Email</th><th className="hidden p-2 sm:table-cell">No. HP</th><th className="hidden p-2 sm:table-cell">Kota</th><th className="p-2">Role</th><th className="hidden p-2 sm:table-cell">Daftar</th><th className="p-2 text-center">Aksi</th>
+            <th className="p-2">Nama</th><th className="p-2">Email</th><th className="p-2">No. HP</th><th className="p-2">Kota</th><th className="p-2">Role</th><th className="p-2">Daftar</th><th className="p-2 text-center">Aksi</th>
           </tr></thead>
           <tbody>
             {users.map((u: any) => (
@@ -1878,10 +1931,10 @@ function PenggunaTab() {
                   </div>
                 </td>
                 <td className="p-2 text-xs text-muted-foreground">{u.email}</td>
-                <td className="hidden p-2 text-xs sm:table-cell">{u.phone || "-"}</td>
-                <td className="hidden p-2 text-xs sm:table-cell">{u.city || "-"}</td>
+                <td className="p-2 text-xs">{u.phone || "-"}</td>
+                <td className="p-2 text-xs">{u.city || "-"}</td>
                 <td className="p-2"><Badge className={isAdmin(u) ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"}>{u.role}</Badge></td>
-                <td className="hidden p-2 text-xs text-muted-foreground sm:table-cell">{fmtDate(u.createdAt)}</td>
+                <td className="p-2 text-xs text-muted-foreground">{fmtDate(u.createdAt)}</td>
                 <td className="p-2" onClick={(e) => e.stopPropagation()}>
                   <div className="flex justify-center">
                     <button

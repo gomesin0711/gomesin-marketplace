@@ -119,8 +119,9 @@ export function ChatInner({
   const queryClient = useQueryClient();
   const { sendMessage, markRead, subscribe } = useChatSocket();
 
-  // Fetch conversation history. Poll every 5s so messages sent via HTTP
-  // fallback (e.g. on Vercel where socket.io isn't running) still appear.
+  // Fetch conversation history. Poll every 2s as a SAFETY NET only —
+  // primary delivery is via socket.io `message:new` (instant, realtime).
+  // The poll catches messages if the socket temporarily drops.
   const { data: historyData } = useQuery({
     queryKey: ["chat-history", currentUser?.id, ownerId, listing.id],
     queryFn: async () => {
@@ -130,7 +131,7 @@ export function ChatInner({
       return res.json();
     },
     enabled: !!currentUser && !!ownerId,
-    refetchInterval: 5000,
+    refetchInterval: 2000,
     refetchIntervalInBackground: false,
   });
 

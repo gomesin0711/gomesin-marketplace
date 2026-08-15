@@ -49,6 +49,23 @@ function getListingAudio(): HTMLAudioElement | null {
   return listingAudioEl;
 }
 
+// --- Preloaded HTMLAudioElement for the "mesinku" chat ringtone ---
+// TTS-generated voice saying "mesinku" — plays on incoming chat messages.
+let chatAudioEl: HTMLAudioElement | null = null;
+function getChatAudio(): HTMLAudioElement | null {
+  if (typeof window === "undefined") return null;
+  if (chatAudioEl) return chatAudioEl;
+  try {
+    const el = new Audio("/sounds/mesinku-chat.wav");
+    el.preload = "auto";
+    el.volume = 0.9;
+    chatAudioEl = el;
+  } catch {
+    chatAudioEl = null;
+  }
+  return chatAudioEl;
+}
+
 function getAudioCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
   if (audioCtx) return audioCtx;
@@ -76,9 +93,10 @@ export function unlockNotificationSound() {
     if (ctx && ctx.state === "suspended") {
       ctx.resume().catch(() => {});
     }
-    // Preload the listing ringtone audio element so it can play
+    // Preload the listing + chat ringtone audio elements so they can play
     // instantly without a network fetch on the first notification.
     getListingAudio();
+    getChatAudio();
     unlocked = true;
   } catch {
     // ignore
@@ -193,11 +211,30 @@ function playCoinDropSound(variant: "chat" | "listing" = "chat") {
 }
 
 /**
- * Play the "coin drop" notification sound for incoming chat messages.
+ * Play the "mesinku" chat ringtone for incoming chat messages.
+ * Uses a TTS-generated voice saying "mesinku". Falls back to the
+ * synthesized coin drop if the audio file fails to load/play.
  * Respects the user's chat sound preference (localStorage "mesinku-chat-sound").
  */
 export function playNotificationSound() {
   if (!isSoundEnabled()) return;
+  const el = getChatAudio();
+  if (el) {
+    try {
+      el.currentTime = 0;
+      el.volume = 0.9; // Full volume — chat is not open, user needs to be alerted.
+      const p = el.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          // Autoplay blocked or decode error — fall back to synthesized sound.
+          playCoinDropSound("chat");
+        });
+      }
+      return;
+    } catch {
+      // fall through to synthesized fallback
+    }
+  }
   playCoinDropSound("chat");
 }
 
@@ -235,20 +272,40 @@ export function playListingNotificationSound() {
 }
 
 /**
- * Play a single soft "clink" sound (~120ms) via the Web Audio API.
- * Used when a chat is currently open (so the user is already looking at it)
- * and a new message arrives — a single soft clink is less intrusive than
- * the full multi-bounce coin drop.
+ * Play the "mesinku" chat ringtone (at lower volume) when a chat is
+ * currently open. Same TTS voice as playNotificationSound but quieter
+ * since the user is already viewing the conversation.
+ * Falls back to a soft synthesized clink if the audio file is unavailable.
  */
 export function playDingSound() {
   if (!isSoundEnabled()) return;
+  const el = getChatAudio();
+  if (el) {
+    try {
+      el.currentTime = 0;
+      el.volume = 0.5; // Lower volume — user is already viewing the chat.
+      const p = el.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          playClinkSoft();
+        });
+      }
+      return;
+    } catch {
+      // fall through to synthesized fallback
+    }
+  }
+  playClinkSoft();
+}
+
+/** Soft synthesized clink — fallback for playDingSound. */
+function playClinkSoft() {
   const ctx = getAudioCtx();
   if (!ctx) return;
   try {
     if (ctx.state === "suspended") {
       ctx.resume().catch(() => {});
     }
-    // Single soft clink — low volume, short decay.
     playClink(ctx, ctx.currentTime, 2600, 0.14, 0.12);
   } catch {
     // ignore — audio is best-effort
