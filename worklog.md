@@ -4338,3 +4338,31 @@ Stage Summary:
 - CANNOT deploy to https://mesinku.vercel.app — the subdomain is owned by another Vercel account ("argajienbi's projects"), not the user's account ("gomesin0711-1596s-projects"). This is a Vercel platform limitation: <name>.vercel.app subdomains are globally unique. The provided token does not have access to the owning account.
 - Latest code IS deployed and live at https://mesinku-ten.vercel.app (our mesinku project's production URL), including all recent changes (package badges + ringtone replacement).
 - To use mesinku.vercel.app, the user would need: (a) access to the "argajienbi's projects" Vercel account, OR (b) the owner of that account to delete their "mesinku" project to free the subdomain, OR (c) use a custom domain (e.g. mesinku.com) which can be added via Vercel domains.
+
+---
+Task ID: deploy-gomesin-ringtone
+Agent: Main
+Task: Replace ringtone with uploaded file, deploy to https://gomesin.vercel.app with token ***REDACTED_VERCEL_TOKEN***
+
+Work Log:
+- User re-uploaded the-sound-of-a-coin-on-a-hard-surface-3.mp3 (MD5: ed454ad70e188492fc432d9b9f058f11). Compared with existing public/sounds/iklan-masuk.mp3 — byte-identical (same MD5). Ringtone content already correct from previous task.
+- Re-copied uploaded file over public/sounds/iklan-masuk.mp3 to fulfill "diganti dengan file ini" (content identical, but ensures the file is the user-supplied one). Cleaned up the upload folder.
+- Switched Vercel project link from "mesinku" project back to "gomesin" project (which owns gomesin.vercel.app):
+  - Backed up current mesinku link to .vercel/project.json.mesinku.bak
+  - Restored gomesin link from .vercel/project.json.gomesin.bak → .vercel/project.json (projectId: prj_mJFlErTv5qJcEloX0EnCa2Scxxkt)
+- Deployed to Vercel production via `vercel deploy --prod`:
+  - Build completed in 54s
+  - Aliased to https://gomesin.vercel.app ✅ (this subdomain IS owned by the user's account "gomesin0711-1596s-projects")
+- Verified deployment at https://gomesin.vercel.app:
+  - Homepage: HTTP 200, loads in 0.86s ✅
+  - Title: "mesinKU — Jual baru/bekas Mesin Cetak, Mesin Industri & Jasa Teknisi Berkualitas" ✅ (correct app, NOT the other account's "MesinKu - Dashboard" that was at mesinku.vercel.app)
+  - Ringtone mp3: HTTP 200, 75485 bytes, audio/mpeg ✅
+  - Old preview wav: HTTP 404 (deleted) ✅
+  - API listings: returns listings with packageType field populated (highlight, colek, etc.) ✅
+
+Stage Summary:
+- Ringtone notification (public/sounds/iklan-masuk.mp3) = the-sound-of-a-coin-on-a-hard-surface-3.mp3 (coin-on-hard-surface recording, 75485 bytes).
+- Deployed successfully to https://gomesin.vercel.app — all recent changes live:
+  - Package badges on Iklan Aktif + Iklan Saya (matching Iklan Baru style)
+  - Ringtone replacement (coin mp3, old preview wav deleted)
+- The gomesin project (gomesin.vercel.app) is the production deployment target owned by the user's account. The mesinku project (mesinku-ten.vercel.app) still exists as a separate deployment from the previous task.
