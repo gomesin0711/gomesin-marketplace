@@ -4243,3 +4243,36 @@ Stage Summary:
   2. Connect Vercel project to GitHub repo in Vercel dashboard for auto-deploy on push
   3. Trigger redeploy from Vercel dashboard: https://vercel.com/team_vgpQdeAKV4c1O02dNKubgurT/prj_mJFlErTv5qJcEloX0EnCa2Scxxkt/deployments
 - Production (gomesin.vercel.app) still serving OLD code until manual deploy is triggered.
+
+---
+Task ID: badge-fix-deploy
+Agent: Main
+Task: Add package badges to Iklan Aktif + Iklan Saya matching Iklan Baru style, then deploy to mesinku.vercel.app
+
+Work Log:
+- Investigated badge implementation across all listing pages:
+  - admin.tsx IklanTab (Iklan Aktif): Already had getPkgBadge() rendered at top-right with light colors (bg-amber-100 text-amber-700) — matched Iklan Baru style. ✅ No change needed.
+  - admin.tsx IklanBaruTab (Iklan Baru): Reference implementation — light badge at top-right. ✅
+  - dashboard.tsx (Iklan Saya): Grid card used SOLID colors (bg-amber-500 with white text) at top-LEFT — did NOT match Iklan Baru. Line card already used light colors. ❌ Grid needed fix.
+- Fixed dashboard.tsx Iklan Saya grid card:
+  - Changed pkgBadgeColor from solid colors (bg-amber-500) to light colors (bg-amber-100 text-amber-700) matching Iklan Baru/Iklan Aktif getPkgBadge() style.
+  - Moved package badge from top-left cluster to top-right (separate from status badge) to match Iklan Baru/Iklan Aktif layout.
+  - Status badge remains at top-left with solid colors (bg-green-500 etc.).
+- Verified with Agent Browser on local dev server (localhost:3000):
+  - Iklan Aktif page: Shows "Aktif" (top-left) + "Platinum"/"Gold" (top-right) badges correctly. ✅
+  - Iklan Saya page (grid view): Shows "Aktif" (top-left) + "Platinum" (top-right, light color) correctly. ✅
+  - Iklan Saya page (line view): Shows "Aktif" + "Platinum" + "7 hari lagi" badges correctly. ✅
+- Deployed to Vercel:
+  - Created new Vercel project named "mesinku" (the existing "gomesin" project was aliased to gomesin.vercel.app).
+  - Linked local project to mesinku Vercel project (projectId: prj_zY4y9ZKTg2PtlztXwFlppjtFtzec).
+  - Deployed to production with `vercel deploy --prod`.
+  - Build completed successfully (prisma generate + next build, 1m duration).
+  - Production URL: https://mesinku-ten.vercel.app (mesinku.vercel.app is already taken by another Vercel account — tried `vercel alias set` but got "already in use" error).
+  - Verified production API returns listings with packageType field populated correctly.
+- Backed up original .vercel/project.json to .vercel/project.json.gomesin.bak before switching to mesinku project.
+
+Stage Summary:
+- Iklan Aktif (admin): Package badges already present and correct (top-right, light colors). No change needed.
+- Iklan Saya (user): FIXED — grid card package badge changed from solid colors at top-left to light colors at top-right, matching Iklan Baru style.
+- Deployed to https://mesinku-ten.vercel.app (production). The preferred https://mesinku.vercel.app domain is owned by another Vercel account and cannot be claimed.
+- All badge styles now consistent across Iklan Baru, Iklan Aktif, and Iklan Saya pages.

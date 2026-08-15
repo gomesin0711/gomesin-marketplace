@@ -243,13 +243,14 @@ export function DashboardView() {
       : l.packageType === "highlight" ? "Platinum"
       : l.packageType === "sundul" ? "Boost"
       : l.packageType === "colek" ? "Gold"
-      : "";
+      : "Gratis";
+    // Light badge style — matches Iklan Baru / Iklan Aktif (admin) badge look
     const pkgBadgeColor =
-      l.packageType === "spotlight" ? "bg-amber-500"
-      : l.packageType === "highlight" ? "bg-orange-500"
-      : l.packageType === "sundul" ? "bg-purple-500"
-      : l.packageType === "colek" ? "bg-blue-500"
-      : "";
+      l.packageType === "spotlight" ? "bg-amber-100 text-amber-700"
+      : l.packageType === "highlight" ? "bg-orange-100 text-orange-700"
+      : l.packageType === "sundul" ? "bg-purple-100 text-purple-700"
+      : l.packageType === "colek" ? "bg-blue-100 text-blue-700"
+      : "bg-secondary text-muted-foreground";
 
     const { days: remainingDays, expired } = getRemainingDays(l.paymentExpiry);
 
@@ -293,18 +294,17 @@ export function DashboardView() {
               </span>
             </div>
           )}
-          {/* top-left badges: status + package (matches home card's top-left badge cluster) */}
+          {/* top-left badge: status (matches Iklan Baru/Iklan Aktif layout) */}
           <div className="pointer-events-none absolute left-2 top-2 flex flex-wrap gap-1">
             <span className={cn("flex items-center gap-0.5 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow", statusInfo.color)}>
               <StatusIcon className="size-2.5" />
               {statusInfo.text}
             </span>
-            {pkgName && (
-              <span className={cn("rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow", pkgBadgeColor)}>
-                {pkgName}
-              </span>
-            )}
           </div>
+          {/* top-right badge: package (matches Iklan Baru/Iklan Aktif layout) */}
+          <span className={cn("pointer-events-none absolute right-2 top-2 rounded-md px-2 py-0.5 text-[10px] font-bold shadow", pkgBadgeColor)}>
+            {pkgName}
+          </span>
           {/* views badge — bottom-left (matches home card) */}
           <span className="pointer-events-none absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur">
             <Eye className="size-3" />
@@ -421,7 +421,7 @@ export function DashboardView() {
       : l.packageType === "highlight" ? "Platinum"
       : l.packageType === "sundul" ? "Boost"
       : l.packageType === "colek" ? "Gold"
-      : "";
+      : "Gratis";
     const pkgColor =
       l.packageType === "spotlight" ? "bg-amber-100 text-amber-700 border-amber-200"
       : l.packageType === "highlight" ? "bg-orange-100 text-orange-700 border-orange-200"
@@ -487,11 +487,9 @@ export function DashboardView() {
             <span className={cn("flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm", statusInfo.color)}>
               <StatusIcon className="size-2.5" /> {statusInfo.text}
             </span>
-            {pkgName && (
-              <span className={cn("rounded-md border px-1.5 py-0.5 text-[10px] font-bold", pkgColor)}>
-                {pkgName}
-              </span>
-            )}
+            <span className={cn("rounded-md border px-1.5 py-0.5 text-[10px] font-bold", pkgColor)}>
+              {pkgName}
+            </span>
             {l.paymentExpiry && l.paymentStatus === "paid" && (
               <span className={cn(
                 "flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold",
