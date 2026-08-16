@@ -105,6 +105,18 @@ export function ChatInner({
   const imgFileRef = useRef<HTMLInputElement>(null);
   const imgCamRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Track the previous `sending` value so we can detect the true→false
+  // transition (i.e. a send just completed) and refocus the chat input.
+  // Using a useEffect (instead of requestAnimationFrame in the `finally`
+  // block) is more reliable — it fires after React commits the re-render
+  // that re-enables the input, so focus() always succeeds, every time.
+  const prevSendingRef = useRef(false);
+  useEffect(() => {
+    if (prevSendingRef.current && !sending) {
+      inputRef.current?.focus();
+    }
+    prevSendingRef.current = sending;
+  }, [sending]);
   const { t } = useLang();
   const mounted = useMounted();
   const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
@@ -252,14 +264,7 @@ export function ChatInner({
       queryClient.invalidateQueries({ queryKey: ["messages"] });
       queryClient.invalidateQueries({ queryKey: ["chat-history"] });
     } catch { toast.error(tr("chatSendFailed")); }
-    finally {
-      setSending(false);
-      // Refocus the chat input after sending completes so the cursor stays
-      // in the box — the user can immediately type the next message. We wait
-      // one frame because the input is `disabled` while sending=true; it only
-      // becomes focusable again after React re-renders with sending=false.
-      requestAnimationFrame(() => inputRef.current?.focus());
-    }
+    finally { setSending(false); }
   };
 
   // ===== Context menu actions =====

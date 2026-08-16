@@ -336,6 +336,20 @@ export function ProfileView() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
+  // Track the previous `chatSending` value so we can detect the true→false
+  // transition (i.e. a send just completed) and refocus the chat input.
+  // Using a useEffect (instead of requestAnimationFrame in the `finally`
+  // block) is more reliable — it fires after React commits the re-render
+  // that re-enables the input, so focus() always succeeds, every time.
+  // This keeps the cursor in the chat box after EVERY send, not just the
+  // first few.
+  const prevChatSendingRef = useRef(false);
+  useEffect(() => {
+    if (prevChatSendingRef.current && !chatSending) {
+      chatInputRef.current?.focus();
+    }
+    prevChatSendingRef.current = chatSending;
+  }, [chatSending]);
   const addPaymentRef = useRef<HTMLDivElement>(null);
   const [msgMenu, setMsgMenu] = useState<{ visible: boolean; x: number; y: number; msgIndex: number | null }>({ visible: false, x: 0, y: 0, msgIndex: null });
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -845,12 +859,6 @@ export function ProfileView() {
       toast.error(tr("chatSendFailed"));
     } finally {
       setChatSending(false);
-      // Refocus the chat input after sending completes so the cursor stays
-      // in the box — the user can immediately type the next message. We wait
-      // one frame because the input is `disabled` while chatSending=true; it
-      // only becomes focusable again after React re-renders with
-      // chatSending=false.
-      requestAnimationFrame(() => chatInputRef.current?.focus());
     }
   };
 

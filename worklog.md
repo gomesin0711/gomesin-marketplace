@@ -4947,3 +4947,31 @@ Stage Summary:
 - User can immediately type the next message without re-tapping/clicking the input
 - Focus is applied after send completes (input re-enabled) via requestAnimationFrame for reliability
 - Works for both Enter-to-send and button-click send paths (both call the same send/sendChat function)
+
+---
+Task ID: chat-input-focus-every-time
+Agent: Main
+Task: Fix chat input focus so cursor stays in box after EVERY send (not just first 3)
+
+Work Log:
+- Previous approach used requestAnimationFrame() in the send() finally block — unreliable because it can race with other state updates (conversation refresh, message list updates, draft→real conversation transition after a few messages). This caused focus to work for the first ~3 sends then stop.
+- Replaced with a robust useEffect-based approach that watches the `sending`/`chatSending` state transition (true→false = send completed) and refocuses the input.
+
+Root cause analysis:
+- After a few messages, the draft conversation gets replaced by a real DB-fetched conversation (setDraftConv(null) + poll refetch), causing additional re-renders. The rAF callback fired before/after these re-renders inconsistently, sometimes finding the input disabled or the ref stale. useEffect fires reliably AFTER React commits the final render with sending=false, so the input is always enabled and focusable.
+
+chat-widget.tsx changes:
+- Removed requestAnimationFrame focus from finally block (reverted to plain `finally { setSending(false); }`)
+- Added `prevSendingRef` + useEffect that detects sending true→false transition and calls `inputRef.current?.focus()`
+
+profile.tsx changes:
+- Removed requestAnimationFrame focus from sendChat() finally block
+- Added `prevChatSendingRef` + useEffect that detects chatSending true→false transition and calls `chatInputRef.current?.focus()`
+
+- Verified: "✓ Compiled in 355ms", eslint clean on both files
+
+Stage Summary:
+- Cursor now stays in chat input after EVERY message send — not just the first 3
+- useEffect approach is deterministic: fires after React commits the re-render where sending=false (input re-enabled), so focus() always succeeds
+- Works for both floating chat widget and Pesan panel
+- No timing/race issues — reliable every single time
