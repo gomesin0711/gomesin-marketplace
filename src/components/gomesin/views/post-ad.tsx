@@ -81,7 +81,7 @@ async function postListing(payload: any) {
 // Year options: 2025 down to 1990
 const YEAR_OPTIONS = Array.from({ length: 2025 - 1990 + 1 }, (_, i) => String(2025 - i));
 
-const STEP_LABELS = ["Informasi Dasar", "Detail & Deskripsi", "Foto Mesin", "Konfirmasi"];
+const STEP_LABELS = ["Informasi Dasar", "Detail & Deskripsi", "Paket & Foto", "Pembayaran"];
 
 export function PostAdView() {
   const { qrisImageUrl } = useSiteAssets();
@@ -800,12 +800,117 @@ export function PostAdView() {
           </div>
         )}
 
-        {/* ========== STEP 3: Foto Mesin ========== */}
+        {/* ========== STEP 3: Pilih Paket & Foto Mesin ========== */}
         {step === 3 && (
           <div className="space-y-4">
+            {/* --- Package Selection — MUST be chosen BEFORE photo upload so the
+                 package's maxPhotos limit is enforced correctly (e.g. Gold = 5,
+                 Platinum = 10, Titanium = 15). Switching to a smaller package
+                 automatically trims excess photos (see trim useEffect above). --- */}
+            <div className="space-y-2">
+              <h2 className="text-base font-bold text-foreground">Pilih Paket Iklan</h2>
+              <p className="text-xs text-muted-foreground">
+                Pilih paket promosi terlebih dahulu — batas jumlah foto mengikuti paket yang dipilih (mis. Gold maksimal 5 foto, Platinum 10 foto, Titanium 15 foto).
+              </p>
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+                {pkgKeys.map((key) => {
+                  const pk = paketMap[key];
+                  const isUpgradeOnly = key === "sundul";
+                  const Icon = pkgIconMap[key] || Tag;
+                  const name = pk?.name || key;
+                  const price = pk?.price ?? 0;
+                  const origPrice = pk?.originalPrice ?? 0;
+                  const dur = pk?.duration || 30;
+                  const feats = (pk?.features && pk.features.length > 0) ? pk.features : [];
+                  const disc = origPrice > 0 && origPrice > price ? Math.round((1 - price / origPrice) * 100) : 0;
+                  const savings = origPrice > price ? origPrice - price : 0;
+                  return (
+                    <button
+                      type="button"
+                      key={key}
+                      disabled={isUpgradeOnly}
+                      onClick={() => {
+                        setSelectedPackage(key);
+                        setShowPayment(price > 0);
+                        setPaymentMethod("");
+                        // Reset unique-code state so the total briefly shows
+                        // just the new package price while the useEffect
+                        // fetches a fresh, DIFFERENT code for the new package.
+                        setUniqueCode(0);
+                        setQrisAmount(price);
+                      }}
+                      className={cn(
+                        "relative rounded-xl border-2 bg-card p-3 text-left transition",
+                        isUpgradeOnly
+                          ? "cursor-not-allowed border-border bg-muted/40 opacity-60"
+                          : selectedPackage === key
+                            ? pkgSelectedColorMap[key] || "border-primary ring-2 ring-primary"
+                            : (pkgColorMap[key] || "border-border") + " hover:shadow-md"
+                      )}
+                      title={isUpgradeOnly ? "Paket Boost hanya untuk iklan yang sudah terbit (upgrade)" : undefined}
+                    >
+                      {key === "gratis" && !isUpgradeOnly && (
+                        <span className="absolute -top-2 left-2 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8px] font-bold uppercase text-white">Gratis</span>
+                      )}
+                      {key === "highlight" && !isUpgradeOnly && (
+                        <span className="absolute -top-2 left-2 rounded-full bg-primary px-1.5 py-0.5 text-[8px] font-bold uppercase text-primary-foreground">Populer</span>
+                      )}
+                      {isUpgradeOnly && (
+                        <span className="absolute -top-2 right-1 rounded-full bg-slate-500 px-1.5 py-0.5 text-[7px] font-bold uppercase text-white">Upgrade saja</span>
+                      )}
+                      {disc > 0 && (
+                        <span className={cn(
+                          "absolute -top-2 right-1 rounded-full bg-red-500 px-1.5 py-0.5 text-[8px] font-bold text-white",
+                          key === "highlight" && "-top-7"
+                        )}>-{disc}%</span>
+                      )}
+                      <div className="flex items-center justify-between">
+                        <span className="grid size-7 place-items-center rounded-md bg-secondary">
+                          <Icon className={cn("size-4", pkgIconColorMap[key] || "text-muted-foreground")} />
+                        </span>
+                        {selectedPackage === key && !isUpgradeOnly && (
+                          <span className="rounded-full bg-green-500 p-0.5">
+                            <CheckCircle2 className="size-3 text-white" />
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-2 text-xs font-bold">{name}</p>
+                      <p className="mt-0.5 text-sm font-extrabold text-primary">
+                        {price === 0 ? (
+                          <span>GRATIS</span>
+                        ) : (
+                          <span>{formatRupiahFull(price)}</span>
+                        )}
+                        {origPrice > 0 && origPrice > price && (
+                          <span className="ml-1 text-[10px] font-medium text-muted-foreground line-through">
+                            {formatRupiahFull(origPrice)}
+                          </span>
+                        )}
+                        <span className="text-[10px] font-normal text-muted-foreground">/{dur}hari</span>
+                      </p>
+                      {savings > 0 && (
+                        <p className="mt-0.5 text-[10px] font-semibold text-red-500">Hemat {formatRupiahFull(savings)}</p>
+                      )}
+                      {feats.length > 0 && (
+                        <ul className="mt-2 space-y-1">
+                          {feats.map((f: string, i: number) => (
+                            <li key={i} className="flex items-start gap-1.5 text-[10px] leading-tight text-foreground">
+                              <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-green-500" />
+                              {f}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* --- Photo upload (limit follows the selected package's maxPhotos) --- */}
             <h2 className="text-base font-bold text-foreground">Foto Mesin</h2>
             <p className="text-xs text-muted-foreground">
-              Upload foto mesin (min. 1 foto)
+              Upload foto mesin (min. 1 foto) — maksimal {paketMap[selectedPackage]?.maxPhotos ?? 3} foto sesuai paket {paketMap[selectedPackage]?.name || selectedPackage}.
             </p>
 
             {/* Photo grid: 2 columns */}
@@ -973,109 +1078,25 @@ export function PostAdView() {
           </div>
         )}
 
-        {/* ========== STEP 4: Pilih Paket & Konfirmasi ========== */}
+        {/* ========== STEP 4: Pembayaran & Ringkasan ========== */}
         {step === 4 && (
           <div className="space-y-4">
-            <h2 className="text-base font-bold text-foreground">Konfirmasi</h2>
+            <h2 className="text-base font-bold text-foreground">Pembayaran &amp; Ringkasan</h2>
 
-            {/* Package Selection */}
-            <div className="space-y-2">
-              <h3 className="text-sm font-bold text-foreground">Pilih Paket Iklan</h3>
-              <p className="text-xs text-muted-foreground">
-                Pilih paket promosi agar iklan Anda lebih cepat laku.
-              </p>
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
-                {pkgKeys.map((key) => {
-                  const pk = paketMap[key];
-                  const isUpgradeOnly = key === "sundul";
-                  const Icon = pkgIconMap[key] || Tag;
-                  const name = pk?.name || key;
-                  const price = pk?.price ?? 0;
-                  const origPrice = pk?.originalPrice ?? 0;
-                  const dur = pk?.duration || 30;
-                  const feats = (pk?.features && pk.features.length > 0) ? pk.features : [];
-                  const disc = origPrice > 0 && origPrice > price ? Math.round((1 - price / origPrice) * 100) : 0;
-                  const savings = origPrice > price ? origPrice - price : 0;
-                  return (
-                    <button
-                      type="button"
-                      key={key}
-                      disabled={isUpgradeOnly}
-                      onClick={() => {
-                        setSelectedPackage(key);
-                        setShowPayment(price > 0);
-                        setPaymentMethod("");
-                        // Reset unique-code state so the total briefly shows
-                        // just the new package price while the useEffect
-                        // fetches a fresh, DIFFERENT code for the new package.
-                        setUniqueCode(0);
-                        setQrisAmount(price);
-                      }}
-                      className={cn(
-                        "relative rounded-xl border-2 bg-card p-3 text-left transition",
-                        isUpgradeOnly
-                          ? "cursor-not-allowed border-border bg-muted/40 opacity-60"
-                          : selectedPackage === key
-                            ? pkgSelectedColorMap[key] || "border-primary ring-2 ring-primary"
-                            : (pkgColorMap[key] || "border-border") + " hover:shadow-md"
-                      )}
-                      title={isUpgradeOnly ? "Paket Boost hanya untuk iklan yang sudah terbit (upgrade)" : undefined}
-                    >
-                      {key === "gratis" && !isUpgradeOnly && (
-                        <span className="absolute -top-2 left-2 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8px] font-bold uppercase text-white">Gratis</span>
-                      )}
-                      {key === "highlight" && !isUpgradeOnly && (
-                        <span className="absolute -top-2 left-2 rounded-full bg-primary px-1.5 py-0.5 text-[8px] font-bold uppercase text-primary-foreground">Populer</span>
-                      )}
-                      {isUpgradeOnly && (
-                        <span className="absolute -top-2 right-1 rounded-full bg-slate-500 px-1.5 py-0.5 text-[7px] font-bold uppercase text-white">Upgrade saja</span>
-                      )}
-                      {disc > 0 && (
-                        <span className={cn(
-                          "absolute -top-2 right-1 rounded-full bg-red-500 px-1.5 py-0.5 text-[8px] font-bold text-white",
-                          key === "highlight" && "-top-7"
-                        )}>-{disc}%</span>
-                      )}
-                      <div className="flex items-center justify-between">
-                        <span className="grid size-7 place-items-center rounded-md bg-secondary">
-                          <Icon className={cn("size-4", pkgIconColorMap[key] || "text-muted-foreground")} />
-                        </span>
-                        {selectedPackage === key && !isUpgradeOnly && (
-                          <span className="rounded-full bg-green-500 p-0.5">
-                            <CheckCircle2 className="size-3 text-white" />
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-2 text-xs font-bold">{name}</p>
-                      <p className="mt-0.5 text-sm font-extrabold text-primary">
-                        {price === 0 ? (
-                          <span>GRATIS</span>
-                        ) : (
-                          <span>{formatRupiahFull(price)}</span>
-                        )}
-                        {origPrice > 0 && origPrice > price && (
-                          <span className="ml-1 text-[10px] font-medium text-muted-foreground line-through">
-                            {formatRupiahFull(origPrice)}
-                          </span>
-                        )}
-                        <span className="text-[10px] font-normal text-muted-foreground">/{dur}hari</span>
-                      </p>
-                      {savings > 0 && (
-                        <p className="mt-0.5 text-[10px] font-semibold text-red-500">Hemat {formatRupiahFull(savings)}</p>
-                      )}
-                      {feats.length > 0 && (
-                        <ul className="mt-2 space-y-1">
-                          {feats.map((f: string, i: number) => (
-                            <li key={i} className="flex items-start gap-1.5 text-[10px] leading-tight text-foreground">
-                              <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-green-500" />
-                              {f}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </button>
-                  );
-                })}
+            {/* Selected package badge (read-only — package was chosen in step 3) */}
+            <div className="rounded-xl border border-border bg-card p-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="grid size-8 place-items-center rounded-md bg-secondary">
+                  {(() => { const Ic = pkgIconMap[selectedPackage] || Tag; return <Ic className={cn("size-4", pkgIconColorMap[selectedPackage] || "text-muted-foreground")} />; })()}
+                </span>
+                <div>
+                  <p className="text-xs text-muted-foreground">Paket Terpilih</p>
+                  <p className="text-sm font-bold text-foreground">{paketMap[selectedPackage]?.name || selectedPackage}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] text-muted-foreground">Maks. {paketMap[selectedPackage]?.maxPhotos ?? 3} foto · {paketMap[selectedPackage]?.duration ?? 30} hari</p>
+                <p className="text-sm font-extrabold text-primary">{(paketMap[selectedPackage]?.price ?? 0) === 0 ? "GRATIS" : formatRupiahFull(paketMap[selectedPackage]?.price ?? 0)}</p>
               </div>
             </div>
 
@@ -1188,6 +1209,10 @@ export function PostAdView() {
                   <span className="font-medium text-foreground max-w-[60%] text-right truncate">
                     {description ? (description.length > 60 ? description.slice(0, 60) + "..." : description) : "-"}
                   </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Paket Iklan</span>
+                  <span className="font-medium text-foreground">{paketMap[selectedPackage]?.name || selectedPackage}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Foto</span>
