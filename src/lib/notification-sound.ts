@@ -50,16 +50,16 @@ function getListingAudio(): HTMLAudioElement | null {
 }
 
 // --- Preloaded HTMLAudioElement for the "mesinku" chat ringtone ---
-// TTS-generated Indonesian voice saying "mesin ku!" (cheerful, speed 1.3) —
-// styled after the iconic Shopee notification jingle. A synthesized two-note
-// ascending "ding-ding" chime plays right before the voice for the full
-// Shopee-style effect. The `?v=3` query string busts the browser cache.
+// TTS-generated Indonesian voice saying "me~ sin~ ku~" (sing-song, speed 1.2) —
+// styled after the iconic Shopee chat notification. A synthesized 3-note
+// ascending major arpeggio chime (C6→E6→G6) plays right before the voice for
+// the full Shopee-style jingle effect. The `?v=4` query string busts the cache.
 let chatAudioEl: HTMLAudioElement | null = null;
 function getChatAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
   if (chatAudioEl) return chatAudioEl;
   try {
-    const el = new Audio("/sounds/mesinku-chat.wav?v=3");
+    const el = new Audio("/sounds/mesinku-chat.wav?v=4");
     el.preload = "auto";
     el.volume = 0.9;
     chatAudioEl = el;
@@ -214,12 +214,13 @@ function playCoinDropSound(variant: "chat" | "listing" = "chat") {
 }
 
 /**
- * Play a Shopee-style ascending two-note "ding-ding" chime using the Web Audio
- * API. The first note is a bright mid-high tone (~1318 Hz = E6) and the second
- * is a higher tone (~1760 Hz = A6) — a perfect fourth interval that mimics the
- * cheerful, attention-grabbing Shopee notification intro.
+ * Play a Shopee-style ascending 3-note major arpeggio chime using the Web Audio
+ * API. The notes are C6 (1046.50 Hz) → E6 (1318.51 Hz) → G6 (1567.98 Hz) — a
+ * bright major triad arpeggio that mimics the cheerful, attention-grabbing
+ * Shopee chat notification intro.
  *
- * Each note is a quick sine-wave pluck with a bell-like fast decay.
+ * Each note is a quick sine-wave pluck with a bell-like fast decay + a quiet
+ * 2nd-harmonic overtone for sparkle.
  *
  * @param startTime  When to start the first note (seconds, ctx-relative).
  * @param peakGain   Volume (0-1). Lower for the soft chat-open variant.
@@ -231,11 +232,12 @@ function playShopeeChime(startTime: number, peakGain: number) {
     if (ctx.state === "suspended") {
       ctx.resume().catch(() => {});
     }
-    // Two ascending notes: E6 (1318.51 Hz) then A6 (1760.00 Hz).
-    // Each is a sine pluck with a tiny 2nd-harmonic overtone for sparkle.
+    // Three ascending notes: C6 → E6 → G6 (major triad arpeggio).
+    // Cheerful, bright, and reminiscent of the Shopee chat notification.
     const notes = [
-      { freq: 1318.51, t: 0.0, dur: 0.18 },
-      { freq: 1760.0, t: 0.14, dur: 0.26 },
+      { freq: 1046.5, t: 0.0, dur: 0.16 },
+      { freq: 1318.51, t: 0.11, dur: 0.16 },
+      { freq: 1567.98, t: 0.22, dur: 0.24 },
     ];
     for (const n of notes) {
       const t0 = startTime + n.t;
@@ -290,7 +292,7 @@ export function playNotificationSound() {
     try {
       el.currentTime = 0;
       el.volume = 0.9; // Full volume — chat is not open, user needs to be alerted.
-      // Delay the voice slightly so it follows the chime intro (Shopee-style).
+      // Delay the voice slightly so it follows the 3-note chime intro (Shopee-style).
       window.setTimeout(() => {
         try {
           el.currentTime = 0;
@@ -304,7 +306,7 @@ export function playNotificationSound() {
         } catch {
           playCoinDropSound("chat");
         }
-      }, 380);
+      }, 480);
       return;
     } catch {
       // fall through to synthesized fallback
@@ -374,7 +376,7 @@ export function playDingSound() {
         } catch {
           playClinkSoft();
         }
-      }, 380);
+      }, 480);
       return;
     } catch {
       // fall through to synthesized fallback

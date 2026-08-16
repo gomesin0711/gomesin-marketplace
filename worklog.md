@@ -4796,3 +4796,23 @@ Stage Summary:
 - Two variants: full volume (chat closed) + soft (chat open)
 - Fallback chain preserved: if TTS audio fails, synthesized coin drop plays instead
 - Cache-bust v=3 ensures all users hear the new jingle immediately
+
+---
+Task ID: chat-ringtone-shopee-v2
+Agent: Main
+Task: Refine chat ringtone to sound more like Shopee chat notification
+
+Work Log:
+- Backed up previous version to mesinku-chat.wav.bak3
+- Regenerated TTS with sing-song input: `z-ai tts --input "me~ sin~ ku~" --voice tongtong --speed 1.2 --format wav` (tilde elongation for musical delivery, 101988 bytes)
+- Upgraded playShopeeChime() from 2-note to 3-note ascending major arpeggio: C6 (1046.50Hz) → E6 (1318.51Hz) → G6 (1567.98Hz) — brighter, more cheerful, closer to actual Shopee chat notification
+- Adjusted voice delay from 380ms to 480ms to match the longer 3-note chime (~460ms total)
+- Updated both playNotificationSound() (full volume, gain 0.35) and playDingSound() (soft, gain 0.18)
+- Bumped cache-bust query string from ?v=3 to ?v=4
+- Verified: dev server compiles clean, audio served HTTP 200 with new Content-Length, eslint clean
+
+Stage Summary:
+- Chat ringtone now: 3-note "ding-ding-ding" ascending major arpeggio (C-E-G) → sing-song "me~ sin~ ku~" voice
+- More authentic Shopee-style jingle with brighter, cheerfuller chime
+- Two volume variants preserved (chat closed = loud, chat open = soft)
+- Cache-bust v=4 forces browser to fetch new audio
