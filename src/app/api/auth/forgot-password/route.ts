@@ -218,11 +218,11 @@ export async function POST(req: NextRequest) {
 
       console.log(`[forgot-password] Phone: ${phone}, OTP: ${otpCode}`);
 
-      // Compose WhatsApp message
+      // Compose WhatsApp message — OTP code FIRST so it's visible in the
+      // WhatsApp notification preview without opening the chat.
       const message =
-        `*mesinKU — KODE VERIFIKASI*\n\n` +
-        `Kode OTP untuk reset kata sandi Anda:\n\n` +
-        `*${otpCode}*\n\n` +
+        `*${otpCode}* — Kode OTP mesinKU\n\n` +
+        `Kode OTP untuk reset kata sandi Anda.\n\n` +
         `Jangan berikan kode ini kepada siapa pun.\n` +
         `Kode berlaku 5 menit.\n\n` +
         `Jika Anda tidak meminta reset sandi, abaikan pesan ini.`;
