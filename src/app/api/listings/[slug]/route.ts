@@ -4,6 +4,7 @@ import { parseListing } from "@/lib/types";
 import { getPaketMap } from "@/lib/paket";
 import { saveImagesToLocal } from "@/lib/save-image";
 import { getFallbackListingBySlug } from "@/lib/fallback-data";
+import { normalizeSupabaseDate } from "@/lib/supabase-helpers";
 
 // ---------------------------------------------------------------------------
 // Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
@@ -28,15 +29,20 @@ function safeJsonParse(s: string, fallback: any) {
 // Parse a raw Supabase row into the same shape as parseListing(Prisma row).
 function parseSupabaseListing(row: any) {
   if (!row) return row;
+  const seller = row.seller
+    ? { ...row.seller, joinedAt: normalizeSupabaseDate(row.seller.joinedAt) }
+    : null;
   return {
     ...row,
     price: typeof row.price === "string" ? Number(row.price) : row.price ?? 0,
     images: row.images ? (typeof row.images === "string" ? safeJsonParse(row.images, []) : row.images) : [],
     specs: row.specs ? (typeof row.specs === "string" ? safeJsonParse(row.specs, {}) : row.specs) : {},
-    createdAt: row.createdAt ?? null,
-    paymentExpiry: row.paymentExpiry ?? null,
+    createdAt: normalizeSupabaseDate(row.createdAt),
+    paymentExpiry: normalizeSupabaseDate(row.paymentExpiry),
+    // Mirror Prisma's parseListing: expose seller.joinedAt at the top level too.
+    joinedAt: seller?.joinedAt ?? null,
     category: row.category ?? null,
-    seller: row.seller ?? null,
+    seller,
     user: row.user ?? null,
   };
 }

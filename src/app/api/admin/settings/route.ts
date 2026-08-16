@@ -4,6 +4,21 @@ import { db, isDbAvailable } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 // ---------------------------------------------------------------------------
+// Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
+// connect to PostgreSQL. Locally we use Prisma + SQLite.
+// ---------------------------------------------------------------------------
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://nyyvmttbwlwqunigkrms.supabase.co";
+const SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55eXZtdHRid2x3cXVuaWdrcm1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMTY1NjIsImV4cCI6MjEwMDU5MjU2Mn0.yME5cuLw6bAnZ3-Pdq4IoFwEkyDATjJ3XcaJXBNcWe8";
+
+async function getSupabase() {
+  const { createClient } = await import("@supabase/supabase-js");
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+// ---------------------------------------------------------------------------
 // Site-wide settings (key-value store) — managed from the admin "Pengaturan"
 // tab. Keys currently used:
 //   - bcaAccount      : BCA bank account number (displayed on payment pages)
@@ -27,7 +42,7 @@ const DEFAULTS: Record<string, string> = {
   bcaAccount: "8770338221",
   bcaName: "Lina Listiawati",
   whatsappNumber: "6285888082208",
-  supportEmail: "mesinKU0711@gmail.com",
+  supportEmail: "mesinku711@gmail.com",
   chatSoundEnabled: "on",
   qrisImageUrl: "/qris-mesinKU.jpeg",
   qrisImageVersion: "2",
@@ -44,6 +59,7 @@ const ALLOWED_KEYS = new Set(Object.keys(DEFAULTS));
 export async function GET() {
   const result: Record<string, string> = { ...DEFAULTS };
 
+  // --- Path A: local dev (Prisma + SQLite) ---
   if (isDbAvailable()) {
     try {
       const rows = await db.siteSetting.findMany();
@@ -52,10 +68,27 @@ export async function GET() {
           result[row.key] = row.value;
         }
       }
+      return NextResponse.json(result);
     } catch (error) {
-      console.error("[admin/settings] GET error:", error);
-      // fall through to return defaults
+      console.error("[admin/settings] Prisma GET error, trying Supabase:", error);
+      // fall through to Supabase
     }
+  }
+
+  // --- Path B: Vercel (raw Supabase) ---
+  try {
+    const supabase = await getSupabase();
+    const { data: rows, error } = await supabase.from("SiteSetting").select("key,value");
+    if (!error && rows) {
+      for (const row of rows) {
+        if (ALLOWED_KEYS.has(row.key)) {
+          result[row.key] = row.value;
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[admin/settings] Supabase GET error:", error);
+    // return defaults
   }
 
   return NextResponse.json(result);

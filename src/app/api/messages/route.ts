@@ -19,7 +19,20 @@ async function getSupabase() {
 }
 
 function toISO(d: any): string {
-  return d instanceof Date ? d.toISOString() : new Date(d).toISOString();
+  if (d instanceof Date) return d.toISOString();
+  // Supabase returns timestamp strings WITHOUT a trailing "Z" and may strip
+  // trailing zeros from milliseconds (e.g. "2026-08-16T04:21:37.378" or
+  // "2026-08-16T03:23:15.62"). Normalize to 3-digit ms + Z to match Prisma.
+  if (typeof d === "string") {
+    const m = d.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?(Z?)$/);
+    if (m) {
+      let ms = m[2] || ".000";
+      ms = ms.padEnd(4, "0").slice(0, 4);
+      return m[1] + ms + "Z";
+    }
+    return d.endsWith("Z") ? d : d + "Z";
+  }
+  return new Date(d).toISOString();
 }
 
 // Supabase Message.id has no default — generate a cuid-compatible id.

@@ -5898,3 +5898,42 @@ Stage Summary:
 - Defensive parsing di 3 lapisan: API route, lib helper, dan frontend component.
 - Walau data DB ada yang format object, frontend tetap tidak crash.
 - User perlu hard refresh browser (Ctrl+Shift+R) untuk bypass cache dan load JS bundle baru.
+
+---
+Task ID: sync-online-offline
+Agent: main (Z.ai Code)
+Task: Buat hasil deploy online sama dengan offline (make production match local dev).
+
+Work Log:
+- Investigated differences between local (Prisma+SQLite) and production (Supabase):
+  * Paket data completely different (local: colek/sundul/highlight/spotlight; prod: gratis/spotlight/highlight/titanium/platinum)
+  * Categories had different IDs (local: cmsv4ru4v...; prod: cms1trfeh... from old migration)
+  * Listings: local had 48, prod had 0
+  * SiteSettings: local had 5 keys, prod had 0
+  * Banners: different content
+- Created /home/z/my-project/scripts/sync-local-to-supabase.ts — pushes ALL local SQLite data to production Supabase (delete + insert, FK-ordered).
+- Ran sync: all 8 tables matched (Category 13/13, User 2/2, Seller 9/9, Paket 8/8, SiteSetting 5/5, UniqueCode 4/4, Listing 48/48, Message 62/62).
+- Fixed stats route topCategories sort bug: Prisma groupBy `_count: true` returns a number, not `_count._all` object. Sort was no-op. Fixed to sort by number directly.
+- Fixed date normalization across 6 API routes: Supabase returns timestamps without "Z" and strips trailing zeros from milliseconds (e.g. "2026-08-16T03:23:15.62" vs Prisma's "2026-08-16T03:23:15.620Z"). Created shared helper /home/z/my-project/src/lib/supabase-helpers.ts with normalizeSupabaseDate() that pads milliseconds to 3 digits + appends Z.
+- Updated routes to use shared helper: listings, admin/listings, listings/[slug], my-listings, most-searched, popular.
+- Fixed messages route toISO() timezone bug: `new Date("2026-08-16T04:21:37.378")` parses as LOCAL time (not UTC), shifting the value. Fixed to append Z before parsing.
+- Added top-level `joinedAt` field to all parseSupabaseListing functions to mirror Prisma's parseListing output.
+- Added Supabase code paths to 4 routes that were missing them (fell back to hardcoded seed data on Vercel):
+  * /api/categories — was returning hardcoded fallback categories with old IDs
+  * /api/admin/settings — was returning DEFAULTS (with old mixed-case email) instead of Supabase data
+  * /api/listings/popular — was returning hardcoded fallback popular listings
+  * /api/listings/most-searched — was returning hardcoded fallback most-searched listings
+  * /api/search — was returning hardcoded fallback search results
+- Synced 3 missing banner rows (__site_hero_banner__, __site_banner_2__, __site_banner_3__) from Supabase back to local SQLite (local had lost them).
+- Updated DEFAULTS in settings route: supportEmail changed from "mesinKU0711@gmail.com" to "mesinku711@gmail.com" to match local DB.
+- Redeployed to Vercel 3 times (each build ~33s, ready ~1m).
+- Final verification: ALL 10 endpoints return byte-for-byte identical JSON:
+  [MATCH] pakets, categories, listings, most-searched, spotlight, hero-banner, banner, banner-2, banner-3, settings
+- Admin stats also match: totals (users=2, listings=48, admins=1, omzetAll=2800000) and topCategories (Jasa=6, Mesin Makanan & Minuman=5, Mesin Cetak=4).
+
+Stage Summary:
+- Production (https://gomesin.vercel.app) now returns IDENTICAL data to local dev across all major endpoints.
+- Root causes fixed: (1) data divergence via sync script, (2) stats sort bug, (3) date format mismatch (Z + trailing zeros), (4) 5 routes missing Supabase code paths (used hardcoded fallbacks), (5) missing top-level joinedAt field.
+- Created reusable sync script (scripts/sync-local-to-supabase.ts) for future use.
+- Created shared helper (src/lib/supabase-helpers.ts) for date normalization.
+- All 8 Supabase tables now have identical row counts to local SQLite.

@@ -79,8 +79,13 @@ export async function GET() {
       by: ["categoryId"],
       _count: true,
     });
+    // Prisma groupBy with `_count: true` returns `_count` as a number (NOT an
+    // object with `_all`). Sort by that number directly so local matches the
+    // Supabase code path (which sorts by count in JS).
+    const countOf = (c: any): number =>
+      typeof c._count === "number" ? c._count : ((c._count as any)?._all ?? 0);
     const categoryCounts = [...allCategoryCounts]
-      .sort((a, b) => ((b._count as any)?._all ?? 0) - ((a._count as any)?._all ?? 0))
+      .sort((a, b) => countOf(b) - countOf(a))
       .slice(0, 6);
     const catIds = categoryCounts.map((c) => c.categoryId);
     const cats = await db.category.findMany({ where: { id: { in: catIds } } });
@@ -88,7 +93,7 @@ export async function GET() {
     cats.forEach((c) => (catMap[c.id] = c.name));
     const topCategories = categoryCounts.map((c) => ({
       name: catMap[c.categoryId] || "—",
-      count: (c._count as any)?._all ?? (typeof c._count === 'number' ? c._count : 0),
+      count: countOf(c),
     }));
 
     const last7Days: { date: string; label: string; omzet: number; count: number }[] = [];
