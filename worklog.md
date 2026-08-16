@@ -4756,3 +4756,21 @@ Stage Summary:
   - The Jasa category was missing from the SQLite DB (only 12 categories present). Re-ran scripts/seed-jasa.mjs + scripts/fix-jasa.mjs to add it. Recommend adding these scripts to the DB provisioning step (or to prisma/seed.ts) so a fresh DB always includes the Jasa category.
   - The chat "Pesan" button is actually labeled "Chat" in the UI (header.tsx uses tr("chat") which returns "Chat" in Indonesian, not "Pesan"). The task description's hint to look for a "Pesan" button was slightly off — the visible/aria-label is "Chat". Not a bug, just a naming note.
   - No other issues. All 4 verification points pass.
+
+---
+Task ID: chat-ringtone-fast
+Agent: Main
+Task: Regenerate chat ringtone "mesinku" with faster speech
+
+Work Log:
+- Read current notification-sound.ts to confirm chat ringtone path: /sounds/mesinku-chat.wav
+- Backed up old file (speed 0.9, 66084 bytes) to mesinku-chat.wav.bak
+- Regenerated via `z-ai tts --input "mesin ku" --output mesinku-chat.wav --voice tongtong --speed 1.5 --format wav`
+- New file is 40976 bytes (shorter duration = faster speech)
+- Updated notification-sound.ts: added `?v=2` cache-bust query string + updated comment to reflect speed 1.5
+- Verified dev server serves new file correctly (HTTP 200, Content-Length: 40976, Cache-Control: max-age=0)
+
+Stage Summary:
+- Chat ringtone now plays "mesin ku" at fast speech rate (1.5x vs previous 0.9x)
+- Cache-bust query string ensures browsers fetch the new version instead of stale cache
+- No code logic changes — only the audio asset + cache-bust version bump
