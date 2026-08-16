@@ -398,7 +398,8 @@ export function PostAdView() {
     setCompressing(true);
     try {
       for (const file of willAdd) {
-        const compressed = await compressImage(file);
+        // Ad photos: compress to max 150KB (per user requirement).
+        const compressed = await compressImage(file, 150_000);
         setImages((p) => [...p, compressed]);
       }
       toast.success(tr("photoAdded"));

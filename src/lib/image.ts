@@ -1,8 +1,8 @@
 // Client-side image compression utility.
-// Compresses an image File to a base64 data URL under maxBytes (default 100KB).
+// Compresses an image File to a base64 data URL under maxBytes (default 150KB).
 
-const MAX_DIMENSION = 800; // max width/height in pixels
-const TARGET_BYTES = 100_000; // ~100KB
+const MAX_DIMENSION = 1024; // max width/height in pixels (raised for ad photos)
+const TARGET_BYTES = 150_000; // ~150KB — target for ad photos
 
 /**
  * Route external image URLs through our server-side proxy to avoid CORS issues.
@@ -73,34 +73,51 @@ export async function compressImage(
     height = Math.round(height * ratio);
   }
 
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas tidak didukung");
-  ctx.drawImage(img, 0, 0, width, height);
+  // Iteratively compress: try decreasing quality at current dimensions, and
+  // if still over target, reduce dimensions by 20% and retry the full quality
+  // ladder. This reliably hits the maxBytes target even for large sources.
+  // Allow a small 5% tolerance so we don't over-compress needlessly.
+  const tolerance = Math.round(maxBytes * 0.05);
+  const hardLimit = maxBytes + tolerance;
 
-  // Try decreasing JPEG quality until under maxBytes
-  const qualities = [0.75, 0.65, 0.55, 0.45, 0.35, 0.25, 0.15, 0.1];
-  let result = canvas.toDataURL("image/jpeg", 0.75);
+  const qualities = [0.85, 0.75, 0.65, 0.55, 0.45, 0.35, 0.25, 0.15, 0.1];
 
-  for (const q of qualities) {
-    result = canvas.toDataURL("image/jpeg", q);
-    // Estimate base64 size: data URL header ~23 chars, base64 is ~4/3 of binary
-    const bytes = Math.round((result.length - 23) * 0.75);
-    if (bytes <= maxBytes) break;
+  let curW = width;
+  let curH = height;
+  let result = "";
+  let done = false;
+
+  while (!done && curW >= 100 && curH >= 100) {
+    const canvas = document.createElement("canvas");
+    canvas.width = curW;
+    canvas.height = curH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas tidak didukung");
+    ctx.drawImage(img, 0, 0, curW, curH);
+
+    for (const q of qualities) {
+      result = canvas.toDataURL("image/jpeg", q);
+      if (estimateBytes(result) <= hardLimit) {
+        done = true;
+        break;
+      }
+    }
+    if (!done) {
+      curW = Math.round(curW * 0.8);
+      curH = Math.round(curH * 0.8);
+    }
   }
 
-  // If still too large, progressively halve dimensions
-  let scale = 0.8;
-  while (estimateBytes(result) > maxBytes && scale > 0.1) {
-    const w = Math.round(width * scale);
-    const h = Math.round(height * scale);
-    canvas.width = w;
-    canvas.height = h;
-    ctx.drawImage(img, 0, 0, w, h);
-    result = canvas.toDataURL("image/jpeg", 0.5);
-    scale *= 0.8;
+  // Fallback: if we somehow exited without a result, produce a tiny one.
+  if (!result) {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.min(curW, 200);
+    canvas.height = Math.min(curH, 200);
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      result = canvas.toDataURL("image/jpeg", 0.1);
+    }
   }
 
   return result;

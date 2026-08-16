@@ -22,11 +22,16 @@ interface DeferredPrompt extends Event {
 /* ------------------------------------------------------------------ */
 
 const DISMISSED_KEY = "gomesin-pwa-dismissed";
+const SOFT_DISMISSED_KEY = "gomesin-pwa-soft-dismissed";
 const INSTALLED_KEY = "gomesin-pwa-installed";
-const DISMISS_MS = 60 * 60 * 1000; // 1 hour
-// iOS has no beforeinstallprompt event — show the instructions popup
-// after this delay. Chromium browsers wait for the event instead.
-const IOS_SHOW_DELAY_MS = 1500;
+const DISMISS_MS = 60 * 60 * 1000; // 1 hour — hard dismiss ("Nanti Saja" / native reject)
+const SOFT_DISMISS_MS = 15 * 60 * 1000; // 15 min — soft dismiss ("Mengerti")
+// Auto-show the install popup after this delay on ALL platforms.
+// (Previously Chromium waited for `beforeinstallprompt` which on mobile can
+// take 30+ seconds or require scrolling — so the popup never appeared.
+// Now we show on a timer and update the button to "Install Now" reactively
+// when the native prompt becomes available.)
+const SHOW_DELAY_MS = 1200;
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -50,11 +55,20 @@ function isStandalone(): boolean {
 
 function canShow(): boolean {
   try {
+    // Hard dismiss — 1 hour
     const raw = localStorage.getItem(DISMISSED_KEY);
-    if (!raw) return true;
-    const ts = Number(raw);
-    if (isNaN(ts)) return true;
-    return Date.now() - ts > DISMISS_MS;
+    if (raw) {
+      const ts = Number(raw);
+      if (!isNaN(ts) && Date.now() - ts < DISMISS_MS) return false;
+    }
+    // Soft dismiss — 15 min (only blocks the timer-based auto-show, NOT the
+    // real-time beforeinstallprompt re-show which overrides it)
+    const soft = localStorage.getItem(SOFT_DISMISSED_KEY);
+    if (soft) {
+      const ts = Number(soft);
+      if (!isNaN(ts) && Date.now() - ts < SOFT_DISMISS_MS) return false;
+    }
+    return true;
   } catch {
     return true;
   }
@@ -62,6 +76,10 @@ function canShow(): boolean {
 
 function markDismissed() {
   try { localStorage.setItem(DISMISSED_KEY, String(Date.now())); } catch {}
+}
+
+function markSoftDismissed() {
+  try { localStorage.setItem(SOFT_DISMISSED_KEY, String(Date.now())); } catch {}
 }
 
 function isInstalled(): boolean {
@@ -130,29 +148,22 @@ export function PwaInstallPrompt() {
   const browser: Browser = typeof window !== "undefined" ? detectBrowser() : "chrome";
   const chromium = isChromium(browser);
 
-  /* ------ Core logic: listen for beforeinstallprompt in real-time ------
+  /* ------ Core logic: auto-show popup + real-time native prompt ------
    *
-   * PROBLEM (previous version):
-   *   The popup showed at 800ms via a setTimeout, but Chrome only fires
-   *   `beforeinstallprompt` AFTER its engagement heuristic is satisfied
-   *   (often 2-5+ seconds). So the popup appeared with a "Got it" button
-   *   (no native prompt captured yet), and clicking it dismissed the
-   *   popup for 1 hour — even when the event fired later the popup never
-   *   reappeared, so the user could never install via the in-app UI.
-   *
-   * FIX:
-   *   1. Add a REAL-TIME `beforeinstallprompt` listener. When the event
-   *      fires (at any time), we immediately set hasNativePrompt=true and
-   *      show the popup (if eligible). This guarantees the "Install
-   *      Sekarang" button is always wired to a working deferred prompt.
-   *   2. For Chromium (Android/Desktop): DON'T show the popup on a timer.
-   *      Wait for `beforeinstallprompt` to fire — if the site isn't
-   *      installable (e.g. SW not active yet), no popup is shown rather
-   *      than a broken one.
-   *   3. For iOS (no beforeinstallprompt event exists): show the
-   *      instructions popup after IOS_SHOW_DELAY_MS.
-   *   4. Only `markDismissed()` on explicit "Nanti Saja" or after the
-   *      native prompt outcome — NOT on "Got it".
+   * STRATEGY:
+   *   1. Auto-show the install popup on a timer (SHOW_DELAY_MS) for ALL
+   *      platforms (Android, iOS, desktop). This fixes the mobile issue
+   *      where the popup never appeared because Chromium's
+   *      `beforeinstallprompt` event requires an engagement heuristic
+   *      (scrolling/clicking) that can take 30+ seconds on mobile.
+   *   2. A real-time `beforeinstallprompt` listener updates the button
+   *      label from "Mengerti" → "Install Sekarang" reactively when the
+   *      native prompt becomes available. If the popup was soft-dismissed
+   *      (user clicked "Mengerti" earlier), the listener OVERRIDES the
+   *      soft dismissal and re-shows the popup with the working install
+   *      button — because now we actually have something useful to offer.
+   *   3. Hard dismissal ("Nanti Saja" / native prompt rejected) blocks
+   *      both the timer and the real-time re-show for 1 hour.
    */
   useEffect(() => {
     if (isStandalone() || isInstalled()) return;
@@ -171,33 +182,42 @@ export function PwaInstallPrompt() {
     }
 
     // Real-time listener — fires whenever Chrome decides the app is
-    // installable, even if that's 5 seconds after page load.
+    // installable, even if that's 5-30 seconds after page load on mobile.
+    // When it fires, update the button to "Install Now" and (re-)show the
+    // popup unless the user hard-dismissed it.
     const handleBIP = () => {
       setHasNativePrompt(true);
-      // Show the popup now that we have a real install prompt to offer.
-      if (canShow() && !isStandalone() && !isInstalled()) {
+      // Clear soft dismissal — we now have a real install prompt to offer,
+      // so the earlier "Mengerti" click shouldn't block re-showing.
+      try { localStorage.removeItem(SOFT_DISMISSED_KEY); } catch {}
+      // Only re-show if not hard-dismissed.
+      const hardOk = (() => {
+        try {
+          const raw = localStorage.getItem(DISMISSED_KEY);
+          if (!raw) return true;
+          const ts = Number(raw);
+          if (isNaN(ts)) return true;
+          return Date.now() - ts > DISMISS_MS;
+        } catch { return true; }
+      })();
+      if (hardOk && !isStandalone() && !isInstalled()) {
         mountedRef.current = true;
         setShowPopup(true);
       }
     };
     window.addEventListener("beforeinstallprompt", handleBIP);
 
-    // For iOS (no beforeinstallprompt event ever) and non-Chromium
-    // desktop browsers without install support, show the instructions
-    // popup after a short delay.
-    let iosTimer: ReturnType<typeof setTimeout> | undefined;
-    if (platform === "ios" || (platform === "desktop" && !chromium)) {
-      iosTimer = setTimeout(() => {
-        if (canShow() && !isStandalone() && !isInstalled()) {
-          mountedRef.current = true;
-          setShowPopup(true);
-        }
-      }, IOS_SHOW_DELAY_MS);
-    }
+    // Auto-show the popup on a timer for ALL platforms.
+    const timer = setTimeout(() => {
+      if (canShow() && !isStandalone() && !isInstalled()) {
+        mountedRef.current = true;
+        setShowPopup(true);
+      }
+    }, SHOW_DELAY_MS);
 
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBIP);
-      if (iosTimer) clearTimeout(iosTimer);
+      clearTimeout(timer);
     };
   }, [platform, chromium]);
 
@@ -258,13 +278,15 @@ export function PwaInstallPrompt() {
       return;
     }
 
-    // Desktop/Android without native prompt: just close the popup.
-    // Do NOT markDismissed — the user may not have had a chance to
-    // install yet (beforeinstallprompt hasn't fired).
+    // Desktop/Android without native prompt: the button says "Mengerti".
+    // Soft-dismiss (15 min) so the popup doesn't reappear on every navigation
+    // but CAN reappear when `beforeinstallprompt` fires (the listener clears
+    // the soft dismissal).
     setShowPopup(false);
+    markSoftDismissed();
   }, [platform]);
 
-  /* ------ explicit dismiss ("Nanti Saja") ------ */
+  /* ------ explicit dismiss ("Nanti Saja") — hard dismiss, 1 hour ------ */
   const handleDismiss = useCallback(() => {
     setShowPopup(false);
     markDismissed();
