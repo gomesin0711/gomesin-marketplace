@@ -22,7 +22,7 @@
  *   3. Fetch the 2 listings owned by the admin
  *   4. Fetch the categories referenced by those listings
  *   5. Update local mesinKU admin: phone, bannerImage, logoImage, city, address
- *      (KEEP mesinKU name / email / company — those are the correct rebrand)
+ *      (KEEP mesinKU name / email=mesinku711@gmail.com / company — those are the correct rebrand)
  *   6. Upsert categories locally (so listing FK is valid)
  *   7. Upsert seller locally (rebrand any "gomesin" text → "mesinKU" just in case)
  *   8. Upsert listings locally (link to admin userId + sellerId)

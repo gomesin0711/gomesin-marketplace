@@ -4,7 +4,7 @@ import { hashPassword } from "../src/lib/auth";
 const db = new PrismaClient();
 
 async function main() {
-  const email = "mesinKU0711@gmail.com";
+  const email = "mesinku711@gmail.com";
 
   // Password dibaca dari env var ADMIN_PASSWORD.
   // Jangan hardcode password default di repo — jika env var tidak diset, seed akan error.

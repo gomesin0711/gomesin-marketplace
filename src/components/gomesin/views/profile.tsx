@@ -3406,7 +3406,7 @@ export function ProfileView() {
                   <p className="mb-3 text-base font-bold md:text-lg">Tentang mesinKU</p>
                   <div className="space-y-2 text-sm text-muted-foreground">
                     <div className="flex justify-between"><span>Versi Aplikasi</span><span className="font-medium text-foreground">1.0.0</span></div>
-                    <div className="flex justify-between"><span>Email Dukungan</span><span className="font-medium text-foreground">mesinKU0711@gmail.com</span></div>
+                    <div className="flex justify-between"><span>Email Dukungan</span><span className="font-medium text-foreground">mesinku711@gmail.com</span></div>
                     <div className="flex justify-between"><span>WhatsApp</span><span className="font-medium text-foreground">0858 8808 2208</span></div>
                     <div className="flex justify-between"><span>Lokasi</span><span className="font-medium text-foreground">Tangerang, Indonesia</span></div>
                   </div>
@@ -3734,7 +3734,7 @@ export function ProfileView() {
                         <p className="mb-3 text-sm font-bold">Hubungi Kami</p>
                         <div className="space-y-2">
                           <a
-                            href="mailto:mesinKU0711@gmail.com"
+                            href="mailto:mesinku711@gmail.com"
                             className="flex items-center gap-3 rounded-lg border border-border p-2.5 transition hover:bg-accent"
                           >
                             <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
@@ -3742,7 +3742,7 @@ export function ProfileView() {
                             </span>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs text-muted-foreground">Email</p>
-                              <p className="text-sm font-semibold">mesinKU0711@gmail.com</p>
+                              <p className="text-sm font-semibold">mesinku711@gmail.com</p>
                             </div>
                             <ExternalLink className="size-3.5 text-muted-foreground" />
                           </a>

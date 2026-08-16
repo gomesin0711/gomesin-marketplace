@@ -94,7 +94,7 @@ export function Footer() {
           <div>
             <h4 className="mb-3 text-sm font-bold text-foreground">{tr("contactUs")}</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li className="flex items-center gap-2"><Mail className="size-4 text-primary" /> mesinKU0711@gmail.com</li>
+              <li className="flex items-center gap-2"><Mail className="size-4 text-primary" /> mesinku711@gmail.com</li>
               <li className="flex items-center gap-2"><MessageCircle className="size-4 text-primary" /> WhatsApp: 0858 8808 2208</li>
               <li className="flex items-center gap-2"><MapPin className="size-4 text-primary" /> Tangerang, Indonesia</li>
             </ul>

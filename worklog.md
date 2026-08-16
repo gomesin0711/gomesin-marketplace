@@ -6274,3 +6274,38 @@ Stage Summary:
 - Code: 27 files updated with new hardcoded fallbacks
 - Vercel env vars: updated to new project
 - Production: https://gomesin.vercel.app — all CRUD operations verified working
+
+---
+Task ID: 13
+Agent: main (Z.ai Code)
+Task: Rubah email login admin dari mesinKU0711@gmail.com menjadi mesinku711@gmail.com
+
+Work Log:
+- Grepped codebase for all occurrences of `mesinKU0711@gmail.com` (the current admin login email, mixed-case) — found references in: prisma/seed-admin.ts, prisma/seed-users.ts, src/lib/auth-fallback.ts (SEED_USERS), src/components/gomesin/footer.tsx, src/components/gomesin/views/admin.tsx (placeholder + 7 audit-log entries), src/components/gomesin/views/profile.tsx (3 support-email displays), scripts/sync-admin-from-supabase.ts (comment), and various test/fix scripts.
+- Reviewed login flow (src/app/api/auth/login/route.ts): tries Prisma/SQLite with COLLATE NOCASE first → Supabase fallback → in-memory auth-fallback SEED_USERS. So the DB record is the primary login path; auth-fallback is last-resort.
+- Reviewed check-email route: uses COLLATE NOCASE on SQLite, then ilike on Supabase.
+- Wrote scripts/change-admin-email.ts — idempotent migration that UPDATEs the admin User row's email from mesinKU0711@gmail.com → mesinku711@gmail.com using raw SQL ($queryRaw/$executeRaw) because SQLite doesn't support Prisma's `mode: "insensitive"`. Includes conflict-check (aborts if a different user already owns the new email) and idempotency (no-ops if admin already migrated).
+- Ran `bun run scripts/change-admin-email.ts` → SUCCESS. Found admin id=cmsv4ru2c0000q71dpo8ynqqi (name="Admin mesinKU", email="mesinKU0711@gmail.com", role="admin"), updated email to mesinku711@gmail.com, verified.
+- Updated src/lib/auth-fallback.ts SEED_USERS[0].email: mesinKU0711@gmail.com → mesinku711@gmail.com.
+- Updated prisma/seed-admin.ts: `const email = "mesinKU0711@gmail.com"` → `"mesinku711@gmail.com"`.
+- Updated prisma/seed-users.ts ADMIN.email: mesinKU0711@gmail.com → mesinku711@gmail.com.
+- Updated src/components/gomesin/footer.tsx: footer contact email → mesinku711@gmail.com.
+- Updated src/components/gomesin/views/admin.tsx: access-denied hint (1) + 7 audit-log `user` fields (ids 1,2,3,4,5,9,10) + supportEmail placeholder → mesinku711@gmail.com.
+- Updated src/components/gomesin/views/profile.tsx: 3 support-email displays (Email Dukungan row, mailto href, contact card) → mesinku711@gmail.com.
+- Updated scripts/sync-admin-from-supabase.ts header comment to reflect new email.
+- Confirmed /tmp/auth-users.json does not exist (no stale cache to clear).
+- Verified dev server (port 3000) was running and HMR recompiled successfully after edits (dev.log shows "✓ Compiled in 499ms" + "✓ Compiled in 1929ms", no errors).
+- API regression tests:
+  * POST /api/auth/login {email:"mesinku711@gmail.com", password:"admin123"} → 200, returns user {id:"cmsv4ru2c0000q71dpo8ynqqi", name:"Admin mesinKU", email:"mesinku711@gmail.com", role:"admin", phone:"085888082208"} ✓
+  * GET /api/auth/check-email?email=mesinku711@gmail.com → {"exists":true} ✓
+- Confirmed no stale `mesinKU0711` / `mesinku0711` references remain in src/ or prisma/ (only remaining hit is a documentation COMMENT in check-email/route.ts explaining why COLLATE NOCASE is used — references old email as a "legacy" example, which is now genuinely accurate, so left as-is).
+- Note: GET /api/auth/check-email?email=mesinKU0711@gmail.com still returns {exists:true} because the Supabase production DB still has the original gomesin admin with that email. This is expected — the local SQLite admin (the one used for login in this dev environment) is now mesinku711@gmail.com. Production Supabase data was NOT touched.
+
+Stage Summary:
+- Admin login email successfully changed: mesinKU0711@gmail.com → mesinku711@gmail.com.
+- DB record updated (id=cmsv4ru2c0000q71dpo8ynqqi now has email=mesinku711@gmail.com).
+- All seed files (prisma/seed-admin.ts, prisma/seed-users.ts, src/lib/auth-fallback.ts) updated so future reseeds preserve the new email.
+- All UI displays (footer, admin access-denied hint, admin audit log, admin supportEmail placeholder, profile support email ×3) updated to show mesinku711@gmail.com.
+- Login with mesinku711@gmail.com / admin123 verified working end-to-end via API (returns admin user, role=admin).
+- Password unchanged (still admin123). All other admin attributes (name="Admin mesinKU", phone, bannerImage, logoImage, company, etc.) preserved.
+- No dev server restart needed — HMR picked up all edits cleanly, no console/runtime errors in dev.log.

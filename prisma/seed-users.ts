@@ -9,7 +9,7 @@ const db = new PrismaClient();
 const ADMIN = {
   id: "cms1trinv0000pzao4vy44or8",
   name: "Admin mesinKU",
-  email: "mesinKU0711@gmail.com",
+  email: "mesinku711@gmail.com",
   // Pre-hashed password for "admin123" — same as auth-fallback SEED_USERS.
   // Using the exact same hash so login works whether the request hits the
   // DB path or the auth-fallback path.
