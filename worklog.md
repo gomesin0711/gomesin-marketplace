@@ -6335,3 +6335,32 @@ Stage Summary:
 - All services running: Next.js (port 3000), chat-service (port 3003).
 - Admin email change is fully live and deployable: DB record, seed files, UI displays, and login flow all use mesinku711@gmail.com.
 - The app is accessible via the Preview Panel. Admin can log in with mesinku711@gmail.com / admin123.
+
+---
+Task ID: 15
+Agent: main (Z.ai Code)
+Task: Deploy to https://gomesin.vercel.app + sync admin email change to production Supabase DB
+
+Work Log:
+- Checked Vercel CLI: installed at /usr/local/bin/vercel (v59.1.3). Project already linked (.vercel/project.json: orgId=team_vgpQdeAKV4c1O02dNKubgurT, projectId=prj_mJFlErTv5qJcEloX0EnCa2Scxxkt). vercel.json configured: framework=nextjs, buildCommand="prisma generate && next build".
+- Deployed to Vercel production: `vercel --prod --token <token> --yes`. Build completed in 35s. All 46 routes (static + dynamic API) deployed successfully. Aliased to https://gomesin.vercel.app. Ready in 1m.
+- Post-deploy verification revealed: login with new email mesinku711@gmail.com worked, but via auth-fallback seed (returned placeholder admin with id=cms1trinv0000pzao4vy44or8, no banner/logo). The real Supabase admin (id=cmsv4ru2c0000q71dpo8ynqqi) still had the OLD email mesinKU0711@gmail.com. check-email for mesinku711@gmail.com returned {exists:false} (Supabase didn't have it).
+- Updated Supabase production DB: PATCH https://yzxeinqoryvprhuibtzn.supabase.co/rest/v1/User?email=ilike.mesinKU0711@gmail.com with body {"email":"mesinku711@gmail.com"} using the anon key. Supabase RLS allowed the update (returned the updated row confirming email=mesinku711@gmail.com).
+- Verified Supabase admin password hash (b48903e9...) matches "admin123" via verifyPassword() — password unchanged, still admin123.
+- Final production verification (all PASS):
+  * Login mesinku711@gmail.com / admin123 → 200, returns real Supabase admin (id=cmsv4ru2c0000q71dpo8ynqqi, email=mesinku711@gmail.com, role=admin, name="Admin mesinKU", phone=085888082208) ✓
+  * check-email mesinku711@gmail.com → {exists:true} ✓
+  * Login mesinKU0711@gmail.com / admin123 → 401 "Email atau kata sandi salah." ✓ (old email no longer in Supabase)
+  * check-email mesinKU0711@gmail.com → {exists:false} ✓ (old email removed)
+  * Home page https://gomesin.vercel.app/ → HTTP 200 (63391 bytes) ✓
+
+Stage Summary:
+- Production deployment successful at https://gomesin.vercel.app (Vercel build 35s, all 46 routes deployed).
+- Admin email change is now fully live on PRODUCTION:
+  * Local SQLite DB: mesinku711@gmail.com ✓
+  * Supabase production DB: mesinku711@gmail.com ✓ (updated via REST API PATCH)
+  * Auth-fallback seed: mesinku711@gmail.com ✓
+  * All UI displays (footer, admin, profile): mesinku711@gmail.com ✓
+  * Old email mesinKU0711@gmail.com no longer works anywhere ✓
+- Admin login on production: mesinku711@gmail.com / admin123 → returns REAL admin account (with correct Supabase id, not the fallback placeholder).
+- Password unchanged: admin123.
