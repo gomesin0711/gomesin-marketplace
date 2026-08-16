@@ -508,6 +508,55 @@ export async function POST(req: NextRequest) {
     // --- Path B: Vercel (raw Supabase) ---
     const supabase = await getSupabase();
 
+    // ── Ensure the User row exists in Supabase ───────────────────────────
+    // The Supabase `Listing` table has a FK constraint (Listing_userId_fkey)
+    // that requires `userId` to reference an existing row in `User`.
+    // If a user logged in via a different mechanism (or their session predates
+    // the Supabase migration), their userId may not exist in Supabase yet,
+    // causing the Listing INSERT to fail with a FK violation.
+    // Fix: find-or-create a minimal User row using the provided userId/name/phone.
+    let effectiveUserId: string | null = userId || null;
+    if (effectiveUserId) {
+      const { data: existingUser } = await supabase
+        .from("User")
+        .select("id")
+        .eq("id", effectiveUserId)
+        .limit(1);
+      if (!existingUser || existingUser.length === 0) {
+        // User not in Supabase → create a minimal placeholder row to satisfy FK.
+        // Email must be unique; generate a deterministic placeholder.
+        const placeholderEmail = `user-${effectiveUserId}@mesinku.local`;
+        const nowIso = new Date().toISOString();
+        const { error: userInsertErr } = await supabase
+          .from("User")
+          .insert({
+            id: effectiveUserId,
+            name: userName || "Pengguna mesinKU",
+            email: placeholderEmail,
+            password: "", // placeholder — user cannot log in with this row
+            phone: userPhone || null,
+            city: city || null,
+            company: null,
+            address: null,
+            bannerImage: null,
+            logoImage: null,
+            role: "user",
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          });
+        if (userInsertErr) {
+          // If two concurrent requests race to create the same user, the second
+          // will get a 23505 unique_violation — that's fine, the row now exists.
+          if (!String(userInsertErr.code || "").includes("23505")) {
+            console.error("[listings] Supabase User ensure-create error:", userInsertErr);
+            // As a last resort, decouple the listing from the user so the ad
+            // can still be posted (better UX than blocking the post entirely).
+            effectiveUserId = null;
+          }
+        }
+      }
+    }
+
     // Find-or-create the Seller: query by userId (via existing listings) first,
     // then by name+phone, else insert a new row.
     let sellerId: string | null = null;
@@ -635,7 +684,7 @@ export async function POST(req: NextRequest) {
       uniqueCode: typeof uniqueCode === "number" && uniqueCode > 0 ? uniqueCode : null,
       categoryId: finalCategoryId,
       sellerId,
-      userId: userId || null,
+      userId: effectiveUserId,
       views: 0,
       violationFlag: false,
     };
