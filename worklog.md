@@ -4877,3 +4877,24 @@ Stage Summary:
 - Instant playback (no 480ms delay) — more responsive
 - Two variants preserved: full volume (chat closed) + soft (chat open)
 - Fallback chain unchanged: if TTS audio fails → synthesized coin drop / soft clink
+
+---
+Task ID: chat-ringtone-mesinku-indo
+Agent: Main
+Task: Change chat ringtone voice text back to "mesinku" (Indonesian)
+
+Work Log:
+- Backed up "my mesin" version to mesinku-chat.wav.bak6
+- Regenerated TTS with Indonesian text: `z-ai tts --input "mesinku" --voice tongtong --speed 2.0 --format wav` (23718 bytes, 0.487s duration)
+- Speed remains 2.0x (unchanged from previous), chime still removed (voice plays directly)
+- Updated notification-sound.ts:
+  - Comment: "my mesin" → "mesinku", noted Indonesian language
+  - Bumped cache-bust from ?v=6 to ?v=7
+  - Updated docstrings in playNotificationSound() and playDingSound(): "my mesin" → "mesinku"
+- Verified: dev server compiles clean, audio HTTP 200 (new ETag/Content-Length), eslint clean
+
+Stage Summary:
+- Chat ringtone now: "mesinku" (Indonesian) at 2x speed, no chime intro, plays instantly
+- Reverted from English "my mesin" back to Indonesian "mesinku"
+- Two volume variants preserved (chat closed 0.9, chat open 0.5)
+- Cache-bust v=7 forces browser refresh

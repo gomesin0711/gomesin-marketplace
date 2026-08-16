@@ -49,17 +49,16 @@ function getListingAudio(): HTMLAudioElement | null {
   return listingAudioEl;
 }
 
-// --- Preloaded HTMLAudioElement for the "my mesin" chat ringtone ---
-// TTS-generated voice saying "my mesin" at 2x speed. Styled after the Shopee
-// chat notification: a synthesized 3-note ascending major arpeggio chime
-// (C6→E6→G6) plays right before the fast voice. The `?v=6` query string
+// --- Preloaded HTMLAudioElement for the "mesinku" chat ringtone ---
+// TTS-generated Indonesian voice saying "mesinku" at 2x speed. No chime intro —
+// the voice plays directly on incoming chat messages. The `?v=7` query string
 // busts the cache.
 let chatAudioEl: HTMLAudioElement | null = null;
 function getChatAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
   if (chatAudioEl) return chatAudioEl;
   try {
-    const el = new Audio("/sounds/mesinku-chat.wav?v=6");
+    const el = new Audio("/sounds/mesinku-chat.wav?v=7");
     el.preload = "auto";
     el.volume = 0.9;
     chatAudioEl = el;
@@ -273,8 +272,8 @@ function playShopeeChime(startTime: number, peakGain: number) {
 }
 
 /**
- * Play the "my mesin" chat ringtone for incoming chat messages.
- * Plays the TTS voice saying "my mesin" (2x speed) directly — no chime intro.
+ * Play the "mesinku" chat ringtone for incoming chat messages.
+ * Plays the TTS voice saying "mesinku" (2x speed) directly — no chime intro.
  * Falls back to the synthesized coin drop if the audio file fails to load/play.
  * Respects the user's chat sound preference (localStorage "mesinku-chat-sound").
  */
@@ -332,7 +331,7 @@ export function playListingNotificationSound() {
 }
 
 /**
- * Play the "my mesin" chat ringtone (at lower volume) when a chat is
+ * Play the "mesinku" chat ringtone (at lower volume) when a chat is
  * currently open. Same TTS voice as playNotificationSound but quieter
  * since the user is already viewing the conversation. No chime intro.
  * Falls back to a soft synthesized clink if the audio file is unavailable.
