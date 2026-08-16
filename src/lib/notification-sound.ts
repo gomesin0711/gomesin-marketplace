@@ -50,15 +50,15 @@ function getListingAudio(): HTMLAudioElement | null {
 }
 
 // --- Preloaded HTMLAudioElement for the "mesinku" chat ringtone ---
-// TTS-generated Indonesian voice saying "mesinku" at 2x speed. No chime intro —
-// the voice plays directly on incoming chat messages. The `?v=7` query string
-// busts the cache.
+// TTS-generated Indonesian voice saying "mesinku!!!" (excited delivery, 2x
+// speed). No chime intro — the voice plays directly on incoming chat messages.
+// The `?v=8` query string busts the cache.
 let chatAudioEl: HTMLAudioElement | null = null;
 function getChatAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
   if (chatAudioEl) return chatAudioEl;
   try {
-    const el = new Audio("/sounds/mesinku-chat.wav?v=7");
+    const el = new Audio("/sounds/mesinku-chat.wav?v=8");
     el.preload = "auto";
     el.volume = 0.9;
     chatAudioEl = el;

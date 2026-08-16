@@ -4898,3 +4898,21 @@ Stage Summary:
 - Reverted from English "my mesin" back to Indonesian "mesinku"
 - Two volume variants preserved (chat closed 0.9, chat open 0.5)
 - Cache-bust v=7 forces browser refresh
+
+---
+Task ID: chat-ringtone-mesinku-excited
+Agent: Main
+Task: Regenerate chat ringtone with excited "mesinku!!!" delivery
+
+Work Log:
+- Backed up plain "mesinku" version to mesinku-chat.wav.bak7
+- Regenerated TTS with exclamation marks for excited prosody: `z-ai tts --input "mesinku!!!" --voice tongtong --speed 2.0 --format wav` (23992 bytes, 0.493s duration)
+- Exclamation marks (!!!) make TTS produce more energetic/excited voice delivery
+- Speed remains 2.0x, chime still removed (voice plays directly)
+- Updated notification-sound.ts: comment notes "excited delivery", bumped cache-bust from ?v=7 to ?v=8
+- Verified: "✓ Compiled in 184ms", audio HTTP 200 (new ETag/Content-Length)
+
+Stage Summary:
+- Chat ringtone now: "mesinku!!!" (excited Indonesian voice) at 2x speed, no chime intro
+- More energetic/enthusiastic delivery due to exclamation marks in TTS input
+- Cache-bust v=8 forces browser refresh
