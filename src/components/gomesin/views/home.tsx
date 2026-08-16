@@ -389,41 +389,8 @@ export function HomeView() {
 
   return (
     <div className="animate-fade-up">
-      {/* BANNER — mesin cetak image + CTA text */}
-      <section className="relative overflow-hidden">
-        <div className="relative mx-auto max-w-7xl">
-          <div className="relative h-52 w-full overflow-hidden sm:h-64 md:h-80">
-            <img
-              src="https://z-cdn.chatglm.cn/image-search-mcp/images-ppt/2a59f3618c60.jpg"
-              alt="Mesin Cetak Industri"
-              className="size-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/50 to-transparent" />
-            <div className="absolute inset-0 flex items-center">
-              <div className="mx-auto w-full max-w-7xl px-4">
-                <div className="max-w-xl">
-                  <h1 className="text-xl font-extrabold leading-tight text-white sm:text-3xl md:text-4xl">
-                    Bingung Jual mesin baru/bekas dimana?
-                  </h1>
-                  <p className="mt-2 text-base font-bold text-orange-400 sm:text-xl md:text-2xl">
-                    Pasang iklan di mesinKU saja!!!
-                  </p>
-                  <p className="mt-1 text-xs text-white/90 sm:text-sm md:text-base">
-                    Ada ribuan Mesin CETAK, Mesin CNC dan Mesin industri lainnya...
-                  </p>
-                  <Button
-                    onClick={goToPost}
-                    size="lg"
-                    className="mt-4 rounded-full bg-orange-600 px-6 font-bold text-white shadow-lg hover:bg-orange-700"
-                  >
-                    Pasang Iklan Sekarang
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* HERO BANNER — mesin cetak image + CTA text (editable from admin Banner Promosi) */}
+      <HeroBanner />
 
       {/* CATEGORY NAV — moved below banner per user request */}
       <div className="border-b border-border bg-background">
@@ -546,5 +513,93 @@ export function HomeView() {
           </section>
       </div>
     </div>
+  );
+}
+
+// ============ HERO BANNER (top of home page, editable from admin) ============
+type HeroConfig = {
+  title: string;
+  subtitle: string;
+  desc: string;
+  cta: string;
+  imageUrl: string;
+  active: boolean;
+};
+
+const DEFAULT_HERO: HeroConfig = {
+  title: "Bingung Jual mesin baru/bekas dimana?",
+  subtitle: "Pasang iklan di mesinKU saja!!!",
+  desc: "Ada ribuan Mesin CETAK, Mesin CNC dan Mesin industri lainnya...",
+  cta: "Pasang Iklan Sekarang",
+  imageUrl: "https://z-cdn.chatglm.cn/image-search-mcp/images-ppt/2a59f3618c60.jpg",
+  active: true,
+};
+
+function HeroBanner() {
+  const goToPost = useStore((s) => s.goToPost);
+
+  // Fetch admin-configured hero banner (title/subtitle/desc/cta/imageUrl)
+  const { data } = useQuery({
+    queryKey: ["hero-banner"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/hero-banner");
+      if (!res.ok) return { hero: null };
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  const hero: HeroConfig = { ...DEFAULT_HERO, ...(data?.hero || {}) };
+
+  // If admin deactivated the hero banner, don't render it
+  if (!hero.active) return null;
+
+  return (
+    <section className="relative overflow-hidden">
+      <div className="relative mx-auto max-w-7xl">
+        <div className="relative h-52 w-full overflow-hidden sm:h-64 md:h-80">
+          {hero.imageUrl ? (
+            <img
+              src={hero.imageUrl}
+              alt="Mesin Cetak Industri"
+              className="size-full object-cover"
+            />
+          ) : (
+            <div className="size-full bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/50 to-transparent" />
+          <div className="absolute inset-0 flex items-center">
+            <div className="mx-auto w-full max-w-7xl px-4">
+              <div className="max-w-xl">
+                {hero.title && (
+                  <h1 className="text-xl font-extrabold leading-tight text-white sm:text-3xl md:text-4xl">
+                    {hero.title}
+                  </h1>
+                )}
+                {hero.subtitle && (
+                  <p className="mt-2 text-base font-bold text-orange-400 sm:text-xl md:text-2xl">
+                    {hero.subtitle}
+                  </p>
+                )}
+                {hero.desc && (
+                  <p className="mt-1 text-xs text-white/90 sm:text-sm md:text-base">
+                    {hero.desc}
+                  </p>
+                )}
+                {hero.cta && (
+                  <Button
+                    onClick={goToPost}
+                    size="lg"
+                    className="mt-4 rounded-full bg-orange-600 px-6 font-bold text-white shadow-lg hover:bg-orange-700"
+                  >
+                    {hero.cta}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }

@@ -2268,6 +2268,277 @@ function LokasiTab() {
 }
 
 // ============ BANNER TAB ============
+// ============ HERO BANNER TAB (top of home page) ============
+function HeroBannerTab() {
+  const qc = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["hero-banner"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/hero-banner");
+      if (!res.ok) return { hero: null };
+      return res.json();
+    },
+    staleTime: 0,
+  });
+
+  const hero = data?.hero;
+  const [title, setTitle] = useState("");
+  const [subtitle, setSubtitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const [cta, setCta] = useState("Pasang Iklan Sekarang");
+  const [imageUrl, setImageUrl] = useState("");
+  const [active, setActive] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (hero && !loaded) {
+      setTitle(hero.title || "");
+      setSubtitle(hero.subtitle || "");
+      setDesc(hero.desc || "");
+      setCta(hero.cta || "Pasang Iklan Sekarang");
+      setImageUrl(hero.imageUrl || "");
+      setActive(hero.active !== false);
+      setLoaded(true);
+    }
+  }, [hero, loaded]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await fetch("/api/admin/hero-banner", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Gagal menyimpan hero banner");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Hero banner berhasil disimpan. Perubahan langsung tampil di beranda.");
+      qc.invalidateQueries({ queryKey: ["hero-banner"] });
+    },
+    onError: (e: any) => toast.error(e.message || "Gagal menyimpan hero banner"),
+  });
+
+  const handleSave = () => {
+    if (!title.trim()) { toast.error("Judul hero banner wajib diisi"); return; }
+    saveMutation.mutate({ title, subtitle, desc, cta, imageUrl, active });
+  };
+
+  // Compress + upload image as base64 data URL
+  const handleFile = async (file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast.error("File harus berupa gambar"); return; }
+    setUploading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            const maxW = 1600;
+            const scale = Math.min(1, maxW / img.width);
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) { reject(new Error("Canvas tidak didukung")); return; }
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            let q = 0.8;
+            let out = canvas.toDataURL("image/jpeg", q);
+            while (out.length > 280000 && q > 0.3) {
+              q -= 0.1;
+              out = canvas.toDataURL("image/jpeg", q);
+            }
+            resolve(out);
+          };
+          img.onerror = () => reject(new Error("Gagal memuat gambar"));
+          img.src = reader.result as string;
+        };
+        reader.onerror = () => reject(new Error("Gagal membaca file"));
+        reader.readAsDataURL(file);
+      });
+
+      const res = await fetch("/api/upload-banner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataUrl }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Gagal upload");
+      }
+      const result = await res.json();
+      setImageUrl(result.url);
+      toast.success("Foto hero banner berhasil diunggah");
+    } catch (e: any) {
+      toast.error(e.message || "Gagal mengunggah foto");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  if (isLoading) return <SkeletonGrid count={2} />;
+
+  return (
+    <div className="space-y-3 rounded-xl border-2 border-primary/30 bg-card p-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <ImageIcon className="size-5 text-primary" />
+          <h2 className="text-base font-bold">Hero Banner (Atas Beranda)</h2>
+        </div>
+        <Badge className={active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}>
+          {active ? "Aktif" : "Nonaktif"}
+        </Badge>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Banner besar di bagian paling atas beranda (dengan foto mesin cetak + overlay gelap). Ubah tulisan dan foto di sini.
+      </p>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* ===== FORM ===== */}
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs">Judul (H1) *</Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="mis. Bingung Jual mesin baru/bekas dimana?" className="mt-1" />
+          </div>
+          <div>
+            <Label className="text-xs">Sub-judul (teks oranye tebal)</Label>
+            <Input value={subtitle} onChange={(e) => setSubtitle(e.target.value)} placeholder="mis. Pasang iklan di mesinKU saja!!!" className="mt-1" />
+          </div>
+          <div>
+            <Label className="text-xs">Deskripsi</Label>
+            <textarea
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              placeholder="mis. Ada ribuan Mesin CETAK, Mesin CNC dan Mesin industri lainnya..."
+              rows={2}
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Teks Tombol (CTA)</Label>
+            <Input value={cta} onChange={(e) => setCta(e.target.value)} placeholder="Pasang Iklan Sekarang" className="mt-1" />
+          </div>
+
+          {/* Photo upload */}
+          <div>
+            <Label className="text-xs">Foto Background <span className="text-muted-foreground">(opsional)</span></Label>
+            <div className="mt-1 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="flex h-20 w-32 shrink-0 items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-border bg-secondary/50 hover:border-primary"
+              >
+                {imageUrl ? (
+                  <img src={imageUrl} alt="Preview" className="size-full object-cover" />
+                ) : uploading ? (
+                  <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                ) : (
+                  <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                    <ImageIcon className="size-6" />
+                    <span className="text-[10px]">Upload</span>
+                  </div>
+                )}
+              </button>
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="text-xs text-muted-foreground">Klik kotak untuk memilih foto. Disarankan rasio 16:9.</p>
+                {imageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setImageUrl("")}
+                    className="text-xs font-medium text-destructive hover:underline"
+                  >
+                    Hapus foto
+                  </button>
+                )}
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
+              />
+            </div>
+          </div>
+
+          {/* Active toggle */}
+          <label className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div>
+              <p className="text-sm font-medium">Tampilkan hero banner</p>
+              <p className="text-xs text-muted-foreground">Jika nonaktif, bagian atas beranda tidak menampilkan banner</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={active}
+              onClick={() => setActive(!active)}
+              className={cn("relative h-6 w-11 shrink-0 rounded-full transition", active ? "bg-primary" : "bg-muted")}
+            >
+              <span className={cn("absolute top-0.5 size-5 rounded-full bg-white shadow transition", active ? "left-[22px]" : "left-0.5")} />
+            </button>
+          </label>
+
+          <Button onClick={handleSave} disabled={saveMutation.isPending || uploading} className="w-full">
+            {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+            {saveMutation.isPending ? "Menyimpan..." : "Simpan Hero Banner"}
+          </Button>
+        </div>
+
+        {/* ===== LIVE PREVIEW ===== */}
+        <div className="space-y-2">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pratinjau (Preview)</Label>
+          <div className="relative h-52 w-full overflow-hidden rounded-2xl shadow-xl sm:h-64">
+            {imageUrl ? (
+              <img src={imageUrl} alt="" className="size-full object-cover" />
+            ) : (
+              <div className="size-full bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500" />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/50 to-transparent" />
+            <div className="absolute inset-0 flex items-center">
+              <div className="px-4">
+                <div className="max-w-xs">
+                  {title && (
+                    <h3 className="text-lg font-extrabold leading-tight text-white drop-shadow-sm">
+                      {title}
+                    </h3>
+                  )}
+                  {subtitle && (
+                    <p className="mt-1 text-sm font-bold text-orange-400">
+                      {subtitle}
+                    </p>
+                  )}
+                  {desc && (
+                    <p className="mt-1 text-xs text-white/90">
+                      {desc}
+                    </p>
+                  )}
+                  {cta && (
+                    <span className="mt-2 inline-flex items-center rounded-full bg-orange-600 px-4 py-1.5 text-xs font-bold text-white shadow-lg">
+                      {cta}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+          <p className="text-center text-[11px] text-muted-foreground">
+            Inilah yang akan tampil di bagian paling atas beranda.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ BANNER TAB (promo banner, below categories) ============
 function BannerTab() {
   const { t } = useLang();
   const mounted = useMounted();
@@ -2403,7 +2674,12 @@ function BannerTab() {
   if (isLoading) return <SkeletonGrid count={2} />;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* HERO BANNER editor (top of home page) */}
+      <HeroBannerTab />
+
+      {/* PROMO BANNER editor (below categories) */}
+      <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-bold">Banner Promosi Beranda</h2>
         <Badge className={active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}>
@@ -2563,6 +2839,7 @@ function BannerTab() {
             Inilah yang akan tampil di beranda setelah disimpan.
           </p>
         </div>
+      </div>
       </div>
     </div>
   );
