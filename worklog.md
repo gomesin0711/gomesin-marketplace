@@ -4774,3 +4774,25 @@ Stage Summary:
 - Chat ringtone now plays "mesin ku" at fast speech rate (1.5x vs previous 0.9x)
 - Cache-bust query string ensures browsers fetch the new version instead of stale cache
 - No code logic changes — only the audio asset + cache-bust version bump
+
+---
+Task ID: chat-ringtone-shopee
+Agent: Main
+Task: Change chat ringtone to "mesinku" sounding like Shopee notification
+
+Work Log:
+- Backed up previous fast-speed version to mesinku-chat.wav.bak2
+- Generated new cheerful TTS: `z-ai tts --input "mesin ku!" --voice tongtong --speed 1.3 --format wav` (47054 bytes, exclamation mark for upbeat prosody)
+- Added new `playShopeeChime()` function in notification-sound.ts: synthesizes two ascending sine-wave notes (E6=1318.51Hz then A6=1760Hz, perfect fourth interval) with bell-like fast decay + 2nd-harmonic overtone for sparkle — mimics the iconic Shopee "ding-ding" intro
+- Rewrote `playNotificationSound()`: plays chime immediately (gain 0.35), then delays voice 380ms via setTimeout so "mesin ku!" follows the chime — full Shopee jingle effect
+- Rewrote `playDingSound()` (chat-open variant): same chime+voice combo but quieter (chime gain 0.18, voice volume 0.5)
+- Bumped cache-bust query string from ?v=2 to ?v=3 so browsers fetch the new audio
+- Verified dev server compiles cleanly ("✓ Compiled in 192ms", no errors in dev.log)
+- Verified new audio served: HTTP 200, Content-Length matches new file, Cache-Control: max-age=0
+- eslint on notification-sound.ts: no errors
+
+Stage Summary:
+- Chat ringtone now plays Shopee-style: ascending "ding-ding" chime → cheerful "mesin ku!" voice
+- Two variants: full volume (chat closed) + soft (chat open)
+- Fallback chain preserved: if TTS audio fails, synthesized coin drop plays instead
+- Cache-bust v=3 ensures all users hear the new jingle immediately

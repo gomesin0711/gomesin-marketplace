@@ -50,15 +50,16 @@ function getListingAudio(): HTMLAudioElement | null {
 }
 
 // --- Preloaded HTMLAudioElement for the "mesinku" chat ringtone ---
-// TTS-generated Indonesian voice saying "mesin ku" (fast speech, speed 1.5) —
-// plays on incoming chat messages. The `?v=2` query string busts the browser
-// cache so users always hear the latest regenerated audio file.
+// TTS-generated Indonesian voice saying "mesin ku!" (cheerful, speed 1.3) —
+// styled after the iconic Shopee notification jingle. A synthesized two-note
+// ascending "ding-ding" chime plays right before the voice for the full
+// Shopee-style effect. The `?v=3` query string busts the browser cache.
 let chatAudioEl: HTMLAudioElement | null = null;
 function getChatAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
   if (chatAudioEl) return chatAudioEl;
   try {
-    const el = new Audio("/sounds/mesinku-chat.wav?v=2");
+    const el = new Audio("/sounds/mesinku-chat.wav?v=3");
     el.preload = "auto";
     el.volume = 0.9;
     chatAudioEl = el;
@@ -213,25 +214,97 @@ function playCoinDropSound(variant: "chat" | "listing" = "chat") {
 }
 
 /**
+ * Play a Shopee-style ascending two-note "ding-ding" chime using the Web Audio
+ * API. The first note is a bright mid-high tone (~1318 Hz = E6) and the second
+ * is a higher tone (~1760 Hz = A6) — a perfect fourth interval that mimics the
+ * cheerful, attention-grabbing Shopee notification intro.
+ *
+ * Each note is a quick sine-wave pluck with a bell-like fast decay.
+ *
+ * @param startTime  When to start the first note (seconds, ctx-relative).
+ * @param peakGain   Volume (0-1). Lower for the soft chat-open variant.
+ */
+function playShopeeChime(startTime: number, peakGain: number) {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  try {
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+    // Two ascending notes: E6 (1318.51 Hz) then A6 (1760.00 Hz).
+    // Each is a sine pluck with a tiny 2nd-harmonic overtone for sparkle.
+    const notes = [
+      { freq: 1318.51, t: 0.0, dur: 0.18 },
+      { freq: 1760.0, t: 0.14, dur: 0.26 },
+    ];
+    for (const n of notes) {
+      const t0 = startTime + n.t;
+      // Fundamental (sine) — pure, clean tone.
+      const osc1 = ctx.createOscillator();
+      const g1 = ctx.createGain();
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(n.freq, t0);
+      g1.gain.setValueAtTime(0.0001, t0);
+      g1.gain.exponentialRampToValueAtTime(peakGain, t0 + 0.004);
+      g1.gain.exponentialRampToValueAtTime(0.0001, t0 + n.dur);
+      osc1.connect(g1);
+      g1.connect(ctx.destination);
+      osc1.start(t0);
+      osc1.stop(t0 + n.dur + 0.02);
+
+      // Overtone (2x freq, sine) — adds a bell-like sparkle. Much quieter.
+      const osc2 = ctx.createOscillator();
+      const g2 = ctx.createGain();
+      osc2.type = "sine";
+      osc2.frequency.setValueAtTime(n.freq * 2, t0);
+      g2.gain.setValueAtTime(0.0001, t0);
+      g2.gain.exponentialRampToValueAtTime(peakGain * 0.25, t0 + 0.004);
+      g2.gain.exponentialRampToValueAtTime(0.0001, t0 + n.dur * 0.7);
+      osc2.connect(g2);
+      g2.connect(ctx.destination);
+      osc2.start(t0);
+      osc2.stop(t0 + n.dur * 0.7 + 0.02);
+    }
+  } catch {
+    // ignore — audio is best-effort
+  }
+}
+
+/**
  * Play the "mesinku" chat ringtone for incoming chat messages.
- * Uses a TTS-generated voice saying "mesinku". Falls back to the
- * synthesized coin drop if the audio file fails to load/play.
+ * Plays a Shopee-style ascending "ding-ding" chime immediately, then the
+ * cheerful TTS voice saying "mesin ku!" ~0.4s later — mimicking the iconic
+ * Shopee notification jingle. Falls back to the synthesized coin drop if the
+ * audio file fails to load/play.
  * Respects the user's chat sound preference (localStorage "mesinku-chat-sound").
  */
 export function playNotificationSound() {
   if (!isSoundEnabled()) return;
+  // Always play the Shopee-style chime intro first (synthesized, instant).
+  const ctx = getAudioCtx();
+  if (ctx) {
+    playShopeeChime(ctx.currentTime, 0.35);
+  }
   const el = getChatAudio();
   if (el) {
     try {
       el.currentTime = 0;
       el.volume = 0.9; // Full volume — chat is not open, user needs to be alerted.
-      const p = el.play();
-      if (p && typeof p.catch === "function") {
-        p.catch(() => {
-          // Autoplay blocked or decode error — fall back to synthesized sound.
+      // Delay the voice slightly so it follows the chime intro (Shopee-style).
+      window.setTimeout(() => {
+        try {
+          el.currentTime = 0;
+          const p = el.play();
+          if (p && typeof p.catch === "function") {
+            p.catch(() => {
+              // Autoplay blocked or decode error — fall back to synthesized sound.
+              playCoinDropSound("chat");
+            });
+          }
+        } catch {
           playCoinDropSound("chat");
-        });
-      }
+        }
+      }, 380);
       return;
     } catch {
       // fall through to synthesized fallback
@@ -273,23 +346,35 @@ export function playListingNotificationSound() {
 
 /**
  * Play the "mesinku" chat ringtone (at lower volume) when a chat is
- * currently open. Same TTS voice as playNotificationSound but quieter
- * since the user is already viewing the conversation.
+ * currently open. Plays a soft Shopee-style chime + the cheerful TTS voice
+ * at reduced volume since the user is already viewing the conversation.
  * Falls back to a soft synthesized clink if the audio file is unavailable.
  */
 export function playDingSound() {
   if (!isSoundEnabled()) return;
+  // Soft chime intro (quieter than the full notification).
+  const ctx = getAudioCtx();
+  if (ctx) {
+    playShopeeChime(ctx.currentTime, 0.18);
+  }
   const el = getChatAudio();
   if (el) {
     try {
       el.currentTime = 0;
       el.volume = 0.5; // Lower volume — user is already viewing the chat.
-      const p = el.play();
-      if (p && typeof p.catch === "function") {
-        p.catch(() => {
+      window.setTimeout(() => {
+        try {
+          el.currentTime = 0;
+          const p = el.play();
+          if (p && typeof p.catch === "function") {
+            p.catch(() => {
+              playClinkSoft();
+            });
+          }
+        } catch {
           playClinkSoft();
-        });
-      }
+        }
+      }, 380);
       return;
     } catch {
       // fall through to synthesized fallback
