@@ -4916,3 +4916,34 @@ Stage Summary:
 - Chat ringtone now: "mesinku!!!" (excited Indonesian voice) at 2x speed, no chime intro
 - More energetic/enthusiastic delivery due to exclamation marks in TTS input
 - Cache-bust v=8 forces browser refresh
+
+---
+Task ID: chat-input-keep-focus
+Agent: Main
+Task: Keep cursor in chat input box after sending a message
+
+Work Log:
+- Identified two chat input locations:
+  1. chat-widget.tsx (floating chat widget) — `<Input>` at line ~536, send() function
+  2. profile.tsx (Pesan panel) — `<input>` at line ~2345, sendChat() function
+- Both inputs have `disabled={sending}` / `disabled={chatSending}` — they get disabled during send, which would lose any focus set before/after. So focusing right after setInput("") would be lost when setSending(true) disables the input.
+- Solution: add a ref to each input, and refocus in the `finally` block (after setSending(false) re-enables the input) using requestAnimationFrame to wait one frame for React to re-render the input as enabled/focusable.
+
+chat-widget.tsx changes:
+- Added `const inputRef = useRef<HTMLInputElement>(null);` near other refs (line 107)
+- Added `ref={inputRef}` to the `<Input>` component (line 537)
+- In send() finally block: `setSending(false)` then `requestAnimationFrame(() => inputRef.current?.focus());`
+
+profile.tsx changes:
+- Added `const chatInputRef = useRef<HTMLInputElement>(null);` near other refs (line 338)
+- Added `ref={chatInputRef}` to the `<input>` element (line 2346)
+- In sendChat() finally block: `setChatSending(false)` then `requestAnimationFrame(() => chatInputRef.current?.focus());`
+
+- Verified: dev server compiles clean (no errors in dev.log), eslint clean on both files
+- Note: shadcn Input uses React 19 ComponentProps spread, so `ref` prop is passed through to underlying <input> automatically
+
+Stage Summary:
+- After sending a chat message (in both floating widget and Pesan panel), the cursor now stays/focuses in the chat input box
+- User can immediately type the next message without re-tapping/clicking the input
+- Focus is applied after send completes (input re-enabled) via requestAnimationFrame for reliability
+- Works for both Enter-to-send and button-click send paths (both call the same send/sendChat function)

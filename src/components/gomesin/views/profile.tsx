@@ -335,6 +335,7 @@ export function ProfileView() {
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
   const addPaymentRef = useRef<HTMLDivElement>(null);
   const [msgMenu, setMsgMenu] = useState<{ visible: boolean; x: number; y: number; msgIndex: number | null }>({ visible: false, x: 0, y: 0, msgIndex: null });
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -844,6 +845,12 @@ export function ProfileView() {
       toast.error(tr("chatSendFailed"));
     } finally {
       setChatSending(false);
+      // Refocus the chat input after sending completes so the cursor stays
+      // in the box — the user can immediately type the next message. We wait
+      // one frame because the input is `disabled` while chatSending=true; it
+      // only becomes focusable again after React re-renders with
+      // chatSending=false.
+      requestAnimationFrame(() => chatInputRef.current?.focus());
     }
   };
 
@@ -2339,6 +2346,7 @@ export function ProfileView() {
                             {/* Text field with paperclip + camera icons inside (right side) */}
                             <div className="relative flex-1">
                               <input
+                                ref={chatInputRef}
                                 value={chatInput}
                                 onChange={(e) => setChatInput(e.target.value)}
                                 placeholder="Tulis pesan..."

@@ -104,6 +104,7 @@ export function ChatInner({
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const imgFileRef = useRef<HTMLInputElement>(null);
   const imgCamRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const { t } = useLang();
   const mounted = useMounted();
   const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
@@ -251,7 +252,14 @@ export function ChatInner({
       queryClient.invalidateQueries({ queryKey: ["messages"] });
       queryClient.invalidateQueries({ queryKey: ["chat-history"] });
     } catch { toast.error(tr("chatSendFailed")); }
-    finally { setSending(false); }
+    finally {
+      setSending(false);
+      // Refocus the chat input after sending completes so the cursor stays
+      // in the box — the user can immediately type the next message. We wait
+      // one frame because the input is `disabled` while sending=true; it only
+      // becomes focusable again after React re-renders with sending=false.
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
   };
 
   // ===== Context menu actions =====
@@ -530,6 +538,7 @@ export function ChatInner({
           {imgSending ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
         </Button>
         <Input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={blocked ? "Pengguna diblokir" : tr("chatPlaceholder")}
