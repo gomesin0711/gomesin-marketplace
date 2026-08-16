@@ -23,8 +23,10 @@ interface DeferredPrompt extends Event {
 
 const DISMISSED_KEY = "gomesin-pwa-dismissed";
 const INSTALLED_KEY = "gomesin-pwa-installed";
-const DISMISS_MS = 60 * 60 * 1000; // 1 hour (was 24h — user wants auto-install prompt to reappear sooner)
-const SHOW_DELAY_MS = 800; // 0.8 second (was 1s — show popup faster)
+const DISMISS_MS = 60 * 60 * 1000; // 1 hour
+// iOS has no beforeinstallprompt event — show the instructions popup
+// after this delay. Chromium browsers wait for the event instead.
+const IOS_SHOW_DELAY_MS = 1500;
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -128,36 +130,81 @@ export function PwaInstallPrompt() {
   const browser: Browser = typeof window !== "undefined" ? detectBrowser() : "chrome";
   const chromium = isChromium(browser);
 
-  /* ------ Show popup after 1 second ------ */
+  /* ------ Core logic: listen for beforeinstallprompt in real-time ------
+   *
+   * PROBLEM (previous version):
+   *   The popup showed at 800ms via a setTimeout, but Chrome only fires
+   *   `beforeinstallprompt` AFTER its engagement heuristic is satisfied
+   *   (often 2-5+ seconds). So the popup appeared with a "Got it" button
+   *   (no native prompt captured yet), and clicking it dismissed the
+   *   popup for 1 hour — even when the event fired later the popup never
+   *   reappeared, so the user could never install via the in-app UI.
+   *
+   * FIX:
+   *   1. Add a REAL-TIME `beforeinstallprompt` listener. When the event
+   *      fires (at any time), we immediately set hasNativePrompt=true and
+   *      show the popup (if eligible). This guarantees the "Install
+   *      Sekarang" button is always wired to a working deferred prompt.
+   *   2. For Chromium (Android/Desktop): DON'T show the popup on a timer.
+   *      Wait for `beforeinstallprompt` to fire — if the site isn't
+   *      installable (e.g. SW not active yet), no popup is shown rather
+   *      than a broken one.
+   *   3. For iOS (no beforeinstallprompt event exists): show the
+   *      instructions popup after IOS_SHOW_DELAY_MS.
+   *   4. Only `markDismissed()` on explicit "Nanti Saja" or after the
+   *      native prompt outcome — NOT on "Got it".
+   */
   useEffect(() => {
-    if (isStandalone() || isInstalled() || !canShow()) return;
+    if (isStandalone() || isInstalled()) return;
 
-    // Check if early-captured prompt exists
-    const checkPrompt = () => {
-      if (window.__deferredInstallPrompt) {
+    // If the early <head> script already captured the event before React
+    // hydrated, pick it up. Deferred via microtask so we don't trigger a
+    // cascading render from inside the effect body.
+    if (window.__deferredInstallPrompt) {
+      Promise.resolve().then(() => {
         setHasNativePrompt(true);
+        if (canShow() && !isStandalone() && !isInstalled()) {
+          mountedRef.current = true;
+          setShowPopup(true);
+        }
+      });
+    }
+
+    // Real-time listener — fires whenever Chrome decides the app is
+    // installable, even if that's 5 seconds after page load.
+    const handleBIP = () => {
+      setHasNativePrompt(true);
+      // Show the popup now that we have a real install prompt to offer.
+      if (canShow() && !isStandalone() && !isInstalled()) {
+        mountedRef.current = true;
+        setShowPopup(true);
       }
     };
+    window.addEventListener("beforeinstallprompt", handleBIP);
 
-    // Check immediately + poll a few times (SW activates async)
-    checkPrompt();
-    const poll1 = setTimeout(checkPrompt, 500);
-    const poll2 = setTimeout(checkPrompt, 1000);
+    // For iOS (no beforeinstallprompt event ever) and non-Chromium
+    // desktop browsers without install support, show the instructions
+    // popup after a short delay.
+    let iosTimer: ReturnType<typeof setTimeout> | undefined;
+    if (platform === "ios" || (platform === "desktop" && !chromium)) {
+      iosTimer = setTimeout(() => {
+        if (canShow() && !isStandalone() && !isInstalled()) {
+          mountedRef.current = true;
+          setShowPopup(true);
+        }
+      }, IOS_SHOW_DELAY_MS);
+    }
 
-    // Show popup after delay
-    const timer = setTimeout(() => {
-      checkPrompt();
-      mountedRef.current = true;
-      setShowPopup(true);
-    }, SHOW_DELAY_MS);
-
-    return () => { clearTimeout(poll1); clearTimeout(poll2); clearTimeout(timer); };
-  }, []);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBIP);
+      if (iosTimer) clearTimeout(iosTimer);
+    };
+  }, [platform, chromium]);
 
   /* ------ Listen for appinstalled ------ */
   useEffect(() => {
     const handler = () => {
- window.__deferredInstallPrompt = null;
+      window.__deferredInstallPrompt = null;
       setHasNativePrompt(false);
       setShowPopup(false);
     };
@@ -167,7 +214,9 @@ export function PwaInstallPrompt() {
 
   /* ------ handle install button tap ------ */
   const handleInstall = useCallback(async () => {
-    // Use early-captured prompt (most reliable)
+    // Use the deferred prompt captured by the early <head> script or
+    // our real-time listener. This is the ONLY reliable way to trigger
+    // the native install dialog on Chromium browsers.
     const prompt = window.__deferredInstallPrompt;
 
     if (prompt) {
@@ -178,19 +227,23 @@ export function PwaInstallPrompt() {
         if (outcome === "accepted") {
           try { localStorage.setItem(INSTALLED_KEY, "1"); } catch {}
         } else {
+          // User dismissed the native install dialog — respect that and
+          // don't re-show our popup for the dismiss window.
           markDismissed();
         }
         window.__deferredInstallPrompt = null;
         setHasNativePrompt(false);
       } catch {
-        // User cancelled or error
+        // User cancelled or error — don't mark dismissed, let them retry.
       }
       setInstalling(false);
       setShowPopup(false);
       return;
     }
 
-    // iOS Safari: open share sheet
+    // iOS Safari: try to open the share sheet (which contains the
+    // "Add to Home Screen" action). This is the closest to "install"
+    // we can get on iOS.
     if (platform === "ios" && navigator.share) {
       try {
         await navigator.share({
@@ -199,19 +252,19 @@ export function PwaInstallPrompt() {
           url: window.location.href,
         });
       } catch {
-        // User cancelled
+        // User cancelled the share sheet — don't mark dismissed.
       }
       setShowPopup(false);
-      markDismissed();
       return;
     }
 
-    // Desktop/Android without native prompt: just dismiss, instructions already shown
+    // Desktop/Android without native prompt: just close the popup.
+    // Do NOT markDismissed — the user may not have had a chance to
+    // install yet (beforeinstallprompt hasn't fired).
     setShowPopup(false);
-    markDismissed();
   }, [platform]);
 
-  /* ------ dismiss ------ */
+  /* ------ explicit dismiss ("Nanti Saja") ------ */
   const handleDismiss = useCallback(() => {
     setShowPopup(false);
     markDismissed();
@@ -237,7 +290,10 @@ export function PwaInstallPrompt() {
       );
     }
 
-    // Chromium desktop/mobile without native install prompt (Edge, Chrome with dismissed prompt, etc.)
+    // Chromium desktop/mobile WITHOUT a captured native prompt yet.
+    // This branch is now rare because we only show the popup on
+    // Chromium when beforeinstallprompt has fired. But if the user
+    // navigated here from an iOS-style fallback path, show guidance.
     if (chromium && !hasNativePrompt) {
       return (
         <div className="mt-4 rounded-xl bg-primary/5 border border-primary/10 p-3">
@@ -270,6 +326,10 @@ export function PwaInstallPrompt() {
     platform === "android" ? <Smartphone className="size-5" /> :
     <Monitor className="size-5" />;
 
+  // Button label:
+  // - hasNativePrompt (Chromium + beforeinstallprompt fired) → "Install Sekarang"
+  // - iOS → "Install Sekarang" (triggers share sheet)
+  // - otherwise (desktop without prompt) → "Mengerti"
   const installBtnLabel = hasNativePrompt
     ? tr("install", lang)
     : (platform === "ios" ? tr("install", lang) : tr("gotIt", lang));

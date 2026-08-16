@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mesinKU-v9';
+const CACHE_NAME = 'mesinKU-v10';
 
 // Critical URLs to pre-cache for PWA installability
 const PRECACHE_URLS = [
