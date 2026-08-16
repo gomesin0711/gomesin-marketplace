@@ -50,16 +50,16 @@ function getListingAudio(): HTMLAudioElement | null {
 }
 
 // --- Preloaded HTMLAudioElement for the "my mesin" chat ringtone ---
-// TTS-generated voice saying "my mesin" at 3x speed (TTS max 2.0 + ffmpeg
-// atempo 1.5 = 3.0x total). Styled after the Shopee chat notification: a
-// synthesized 3-note ascending major arpeggio chime (C6→E6→G6) plays right
-// before the ultra-fast voice. The `?v=5` query string busts the cache.
+// TTS-generated voice saying "my mesin" at 2x speed. Styled after the Shopee
+// chat notification: a synthesized 3-note ascending major arpeggio chime
+// (C6→E6→G6) plays right before the fast voice. The `?v=6` query string
+// busts the cache.
 let chatAudioEl: HTMLAudioElement | null = null;
 function getChatAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
   if (chatAudioEl) return chatAudioEl;
   try {
-    const el = new Audio("/sounds/mesinku-chat.wav?v=5");
+    const el = new Audio("/sounds/mesinku-chat.wav?v=6");
     el.preload = "auto";
     el.volume = 0.9;
     chatAudioEl = el;

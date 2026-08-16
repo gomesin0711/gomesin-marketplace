@@ -4839,3 +4839,21 @@ Stage Summary:
 - TTS API speed limit (2.0) worked around using ffmpeg atempo=1.5 post-processing
 - Cache-bust v=5 forces browser to fetch new audio
 - Shopee-style chime preserved, voice is now English "my mesin" at hyper speed
+
+---
+Task ID: chat-ringtone-mymesin-2x
+Agent: Main
+Task: Change chat ringtone speed from 3x to 2x
+
+Work Log:
+- Backed up 3x version to mesinku-chat.wav.bak5
+- Regenerated directly at speed 2.0: `z-ai tts --input "my mesin" --voice tongtong --speed 2.0 --format wav` (no ffmpeg post-processing needed since 2.0 is within API range)
+- New file: 24038 bytes, duration 0.494s (vs 0.32s at 3x — clearer, less rushed)
+- Updated notification-sound.ts: comment changed "3x speed" → "2x speed", removed ffmpeg mention, bumped cache-bust from ?v=5 to ?v=6
+- Chime (C6→E6→G6) + 480ms voice delay preserved unchanged
+- Verified: "✓ Compiled in 227ms", audio HTTP 200 (new ETag), no errors
+
+Stage Summary:
+- Chat ringtone now: 3-note Shopee-style chime → "my mesin" voice at 2x speed (0.49s)
+- Speed reduced from 3x to 2x per user request — voice more intelligible while still fast/energetic
+- Cache-bust v=6 forces browser refresh
