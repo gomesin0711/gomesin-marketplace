@@ -19,7 +19,7 @@ export async function getPakets(): Promise<PaketData[]> {
   try {
     const rows = await db.paket.findMany({ orderBy: { sortOrder: "asc" } });
     cache = rows
-      .filter((p) => p.key !== "__site_banner__") // hide promo-banner config row
+      .filter((p) => !p.key.startsWith("__site_")) // hide __site_* banner config rows
       .map((p) => ({
         key: p.key,
         name: p.name,
@@ -41,6 +41,7 @@ export async function getPakets(): Promise<PaketData[]> {
   } catch {
     // Fallback: hardcoded default pakets (matches Supabase data)
     cache = [
+      { key: "gratis", name: "Gratis", price: 0, duration: 30, features: ["Maksimal 3 foto", "Badge Free", "Tampil 30 hari", "Support email"], active: true },
       { key: "colek", name: "Gold", price: 60000, duration: 30, features: ["Tampil di bagian Premium", "Badge Gold", "Maksimal 5 foto", "Prioritas pencarian"], active: true },
       { key: "sundul", name: "Boost", price: 30000, duration: 10, features: ["Iklan didorong ke posisi teratas", "Badge Boost", "Boost 1x posisi", "Prioritas pencarian"], active: true },
       { key: "highlight", name: "Platinum", price: 50000, duration: 7, features: ["Tampil di bagian Premium", "Badge Platinum", "Maksimal 10 foto", "Prioritas pencarian", "Highlight border"], active: true },

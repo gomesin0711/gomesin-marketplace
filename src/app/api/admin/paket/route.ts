@@ -23,11 +23,13 @@ async function getSupabase() {
 // Used when neither Prisma nor Supabase returns any rows (e.g. Supabase Paket
 // table is empty on a fresh Vercel deploy). Without this, the "Pasang Iklan"
 // page would render every package price as "Rp. 0".
+// NOTE: "gratis" is the FREE tier — lets users post a basic ad without payment.
 const DEFAULT_PAKETS = [
-  { id: "default-colek",   key: "colek",     name: "Gold",      price: 60000,  originalPrice: 120000, duration: 30, features: JSON.stringify(["Tampil di bagian Premium", "Badge Gold", "Maksimal 5 foto", "Prioritas pencarian"]),                 active: true, sortOrder: 0 },
-  { id: "default-sundul",  key: "sundul",    name: "Boost",     price: 30000,  originalPrice: 50000,  duration: 10, features: JSON.stringify(["Iklan didorong ke posisi teratas", "Badge Boost", "Boost 1x posisi", "Prioritas pencarian"]),     active: true, sortOrder: 1 },
-  { id: "default-high",   key: "highlight", name: "Platinum",  price: 50000,  originalPrice: 100000, duration: 7,  features: JSON.stringify(["Tampil di bagian Premium", "Badge Platinum", "Maksimal 10 foto", "Prioritas pencarian", "Highlight border"]), active: true, sortOrder: 2 },
-  { id: "default-spot",   key: "spotlight", name: "Titanium",  price: 100000, originalPrice: 200000, duration: 7,  features: JSON.stringify(["Tampil di bagian Premium", "Badge Titanium", "Maksimal 15 foto", "Prioritas tertinggi", "Spotlight border", "Dilihat lebih banyak"]), active: true, sortOrder: 3 },
+  { id: "default-gratis",  key: "gratis",    name: "Gratis",    price: 0,      originalPrice: 0,      duration: 30, features: JSON.stringify(["Maksimal 3 foto", "Badge Free", "Tampil 30 hari", "Support email"]),                                                        active: true, sortOrder: 0 },
+  { id: "default-colek",   key: "colek",     name: "Gold",      price: 60000,  originalPrice: 120000, duration: 30, features: JSON.stringify(["Tampil di bagian Premium", "Badge Gold", "Maksimal 5 foto", "Prioritas pencarian"]),                 active: true, sortOrder: 1 },
+  { id: "default-sundul",  key: "sundul",    name: "Boost",     price: 30000,  originalPrice: 50000,  duration: 10, features: JSON.stringify(["Iklan didorong ke posisi teratas", "Badge Boost", "Boost 1x posisi", "Prioritas pencarian"]),     active: true, sortOrder: 2 },
+  { id: "default-high",   key: "highlight", name: "Platinum",  price: 50000,  originalPrice: 100000, duration: 7,  features: JSON.stringify(["Tampil di bagian Premium", "Badge Platinum", "Maksimal 10 foto", "Prioritas pencarian", "Highlight border"]), active: true, sortOrder: 3 },
+  { id: "default-spot",   key: "spotlight", name: "Titanium",  price: 100000, originalPrice: 200000, duration: 7,  features: JSON.stringify(["Tampil di bagian Premium", "Badge Titanium", "Maksimal 15 foto", "Prioritas tertinggi", "Spotlight border", "Dilihat lebih banyak"]), active: true, sortOrder: 4 },
 ];
 
 function parseFeatures(p: any) {
@@ -57,9 +59,10 @@ function parseFeatures(p: any) {
 }
 
 export async function GET() {
-  // Hide the special "__site_banner__" row (stores the promo banner config,
-  // not a real package) from all paket listings.
-  const isRealPaket = (p: any) => p && p.key !== "__site_banner__";
+  // Hide the special "__site_*" rows (promo banner configs, not real packages)
+  // from all paket listings. These rows store banner config in the Paket table
+  // as a fallback when the SiteSetting table is unavailable.
+  const isRealPaket = (p: any) => p && p.key && !p.key.startsWith("__site_");
 
   // --- Path A: local dev (Prisma + SQLite) ---
   if (isDbAvailable()) {

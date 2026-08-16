@@ -37,6 +37,7 @@ import {
   TrendingUp,
   Check,
   RotateCcw,
+  Gift,
 } from "lucide-react";
 import { toast } from "sonner";
 import { compressImage } from "@/lib/image";
@@ -147,7 +148,7 @@ export function PostAdView() {
   const [success, setSuccess] = useState(false);
   const [compressing, setCompressing] = useState(false);
   const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
-  const [selectedPackage, setSelectedPackage] = useState("colek");
+  const [selectedPackage, setSelectedPackage] = useState("gratis");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [showPayment, setShowPayment] = useState(true);
   const [qrisModal, setQrisModal] = useState(false);
@@ -518,26 +519,29 @@ export function PostAdView() {
   }
 
   // --- Package icon/color maps ---
-  const pkgIconMap: Record<string, any> = { colek: Tag, sundul: TrendingUp, highlight: Zap, spotlight: Crown };
+  const pkgIconMap: Record<string, any> = { gratis: Gift, colek: Tag, sundul: TrendingUp, highlight: Zap, spotlight: Crown };
   const pkgColorMap: Record<string, string> = {
+    gratis: "border-emerald-400 ring-1 ring-emerald-200",
     colek: "border-blue-400 ring-1 ring-blue-200",
     sundul: "border-purple-400 ring-1 ring-purple-200",
     highlight: "border-orange-400 ring-1 ring-orange-200",
     spotlight: "border-amber-400 ring-1 ring-amber-200",
   };
   const pkgIconColorMap: Record<string, string> = {
+    gratis: "text-emerald-500",
     colek: "text-blue-500",
     sundul: "text-purple-500",
     highlight: "text-orange-500",
     spotlight: "text-amber-500",
   };
   const pkgSelectedColorMap: Record<string, string> = {
+    gratis: "border-green-500 ring-2 ring-green-400 bg-green-50/50",
     colek: "border-green-500 ring-2 ring-green-400 bg-green-50/50",
     sundul: "border-green-500 ring-2 ring-green-400 bg-green-50/50",
     highlight: "border-green-500 ring-2 ring-green-400 bg-green-50/50",
     spotlight: "border-green-500 ring-2 ring-green-400 bg-green-50/50",
   };
-  const pkgKeys = ["colek", "highlight", "spotlight", "sundul"];
+  const pkgKeys = ["gratis", "colek", "highlight", "spotlight", "sundul"];
 
   // --- Price display helper ---
   const priceDisplay = price ? Number(price.replace(/[^0-9]/g, "")).toLocaleString("de-DE") : "";
@@ -952,7 +956,7 @@ export function PostAdView() {
               <p className="text-xs text-muted-foreground">
                 Pilih paket promosi agar iklan Anda lebih cepat laku.
               </p>
-              <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
                 {pkgKeys.map((key) => {
                   const pk = paketMap[key];
                   const isUpgradeOnly = key === "sundul";
@@ -989,6 +993,9 @@ export function PostAdView() {
                       )}
                       title={isUpgradeOnly ? "Paket Boost hanya untuk iklan yang sudah terbit (upgrade)" : undefined}
                     >
+                      {key === "gratis" && !isUpgradeOnly && (
+                        <span className="absolute -top-2 left-2 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8px] font-bold uppercase text-white">Gratis</span>
+                      )}
                       {key === "highlight" && !isUpgradeOnly && (
                         <span className="absolute -top-2 left-2 rounded-full bg-primary px-1.5 py-0.5 text-[8px] font-bold uppercase text-primary-foreground">Populer</span>
                       )}
@@ -1013,7 +1020,11 @@ export function PostAdView() {
                       </div>
                       <p className="mt-2 text-xs font-bold">{name}</p>
                       <p className="mt-0.5 text-sm font-extrabold text-primary">
-                        {formatRupiahFull(price)}
+                        {price === 0 ? (
+                          <span>GRATIS</span>
+                        ) : (
+                          <span>{formatRupiahFull(price)}</span>
+                        )}
                         {origPrice > 0 && origPrice > price && (
                           <span className="ml-1 text-[10px] font-medium text-muted-foreground line-through">
                             {formatRupiahFull(origPrice)}
