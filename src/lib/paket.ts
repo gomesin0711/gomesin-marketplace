@@ -25,7 +25,17 @@ export async function getPakets(): Promise<PaketData[]> {
         name: p.name,
         price: p.price,
         duration: p.duration,
-        features: typeof p.features === 'string' ? JSON.parse(p.features) : (p.features || []),
+        features: (() => {
+          let f = typeof p.features === 'string' ? JSON.parse(p.features) : (p.features || []);
+          if (!Array.isArray(f)) {
+            if (f && typeof f === 'object') {
+              f = Object.entries(f).map(([k, v]) => `${k}: ${v}`);
+            } else {
+              f = [];
+            }
+          }
+          return f.map((item: any) => typeof item === 'string' ? item : String(item ?? ''));
+        })(),
         active: p.active,
       }));
   } catch {

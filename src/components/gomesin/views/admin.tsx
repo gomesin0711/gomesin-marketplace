@@ -3486,7 +3486,7 @@ function PaketTab() {
   };
   const openEdit = (p: any) => {
     setEditingId(p.id); setFormKey(p.key); setFormName(p.name); setFormPrice(String(p.price)); setFormOriginalPrice(String(p.originalPrice || 0)); setFormDuration(String(p.duration));
-    setFormFeatures((p.features || []).join("\n")); setFormActive(p.active !== false); setShowForm(true);
+    setFormFeatures((Array.isArray(p.features) ? p.features : []).join("\n")); setFormActive(p.active !== false); setShowForm(true);
   };
   const closeForm = () => { setShowForm(false); setEditingId(null); };
 
@@ -3542,7 +3542,7 @@ function PaketTab() {
                 <span className="text-xs font-normal text-muted-foreground">/{p.duration} hari</span>
               </p>
               <ul className="mt-3 space-y-1.5">
-                {(p.features || []).map((f: string, i: number) => (
+                {(Array.isArray(p.features) ? p.features : []).map((f: string, i: number) => (
                   <li key={i} className="flex items-start gap-2 text-xs text-foreground">
                     <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-primary" />{f}
                   </li>

@@ -31,10 +31,29 @@ const DEFAULT_PAKETS = [
 ];
 
 function parseFeatures(p: any) {
-  return {
-    ...p,
-    features: typeof p.features === 'string' ? JSON.parse(p.features) : (p.features || []),
-  };
+  let feats = p.features;
+  if (typeof feats === 'string') {
+    try {
+      feats = JSON.parse(feats);
+    } catch {
+      feats = [];
+    }
+  }
+  // Defensive: ensure features is ALWAYS an array of strings.
+  // The DB may have stored an object (e.g. {maxPhotos:3}) instead of an
+  // array (e.g. ["Maksimal 3 foto"]). Convert any non-array to [] or
+  // extract values if it's a plain object.
+  if (!Array.isArray(feats)) {
+    if (feats && typeof feats === 'object') {
+      // Convert object values to array of "key: value" strings (best effort).
+      feats = Object.entries(feats).map(([k, v]) => `${k}: ${v}`);
+    } else {
+      feats = [];
+    }
+  }
+  // Ensure every item is a string.
+  feats = feats.map((f: any) => (typeof f === 'string' ? f : String(f ?? '')));
+  return { ...p, features: feats };
 }
 
 export async function GET() {

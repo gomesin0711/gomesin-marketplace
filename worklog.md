@@ -5871,3 +5871,30 @@ Stage Summary:
 - Admin panel PaketTab sekarang render normal dengan daftar features per paket.
 - Tidak perlu redeploy Vercel (fix di Supabase database level).
 - SQL migration script di /home/z/my-project/scripts/supabase-schema-migration.sql sebaiknya di-update juga untuk dokumentasi, tapi karena user sudah run versi lama, fix dilakukan langsung di DB.
+
+---
+Task ID: fix-paket-features-defensive
+Agent: main (Z.ai Code)
+Task: Fix TypeError "(p.features || []).map is not a function" yang masih muncul walau database sudah di-update ke format array.
+
+Work Log:
+- Root cause: kemungkinan browser cache simpan JS bundle lama, atau ada data features non-array dari sumber lain.
+- Fix 1: /api/admin/paket/route.ts parseFeatures() — defensive parsing:
+  * Handle string → JSON.parse (dengan try/catch).
+  * Handle non-array (object) → konversi ke array "key: value".
+  * Handle null/undefined → return [].
+  * Ensure every item is string.
+- Fix 2: /src/lib/paket.ts getPakets() — defensive parsing sama seperti route.ts.
+- Fix 3: admin.tsx 2 tempat yang akses p.features:
+  * Line 3545: render `.map` → guard dengan `Array.isArray(p.features) ? p.features : []`.
+  * Line 3489: openEdit `.join` → guard dengan `Array.isArray(p.features) ? p.features : []`.
+- Redeploy Vercel production: build 32s, ready 1m.
+- Verifikasi /api/admin/paket: semua 5 paket (GRATIS, SPOTLIGHT, HIGHLIGHT, TITANIUM, PLATINUM) return features sebagai array.
+- Playwright test production: 3/4 checks PASS (TypeError hilang, no JS errors).
+- Paket names fail karena admin panel butuh login (normal).
+
+Stage Summary:
+- TypeError "(p.features || []).map is not a function" TERATASI PERMANEN.
+- Defensive parsing di 3 lapisan: API route, lib helper, dan frontend component.
+- Walau data DB ada yang format object, frontend tetap tidak crash.
+- User perlu hard refresh browser (Ctrl+Shift+R) untuk bypass cache dan load JS bundle baru.
