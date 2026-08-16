@@ -6251,3 +6251,26 @@ Stage Summary:
 - Files modified: 3 (`src/app/api/admin/paket/route.ts`, `src/lib/paket.ts`, `src/components/gomesin/views/post-ad.tsx`).
 - Database changes: 1 new row in Paket table (both local SQLite + production Supabase).
 - Production verified end-to-end: https://gomesin.vercel.app — login → Pasang Iklan → fill form → select GRATIS → submit → ad created with status=pending.
+
+---
+Task ID: supabase-migration
+Agent: main
+Task: Migrate Supabase from old project (nyyvmttbwlwqunigkrms) to new project (yzxeinqoryvprhuibtzn)
+
+Work Log:
+- Probed old project → HTTP 402 (exceed_egress_quota, locked)
+- Probed new project → schema already exists with matching tables (User, Seller, Category, Listing, Paket, Message, SiteSetting) + data (48 listings, 15 sellers, 13 categories, 8 pakets, 62 messages, 3 users)
+- Verified anon can read AND write on new project (RLS is open)
+- Verified paket data in new project matches synced offline values
+- Bulk sed-replaced old Supabase URL + anon key → new values across 27 API route files in src/app/api/
+- Updated Vercel env vars: NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY to new project
+- Redeployed to production (build 34s, ready in 1m)
+- Verified on production: categories (13), listings (5+), popular (8), most-searched (5), pakets (4), settings, hero banner, POST create listing (201), PUT edit paket (200), GET user profile (200) — all pass
+- Cleaned up test data
+
+Stage Summary:
+- Old project: nyyvmttbwlwqunigkrms.supabase.co (LOCKED — exceeded free-tier egress quota)
+- New project: yzxeinqoryvprhuibtzn.supabase.co (fully operational, schema + data migrated by user)
+- Code: 27 files updated with new hardcoded fallbacks
+- Vercel env vars: updated to new project
+- Production: https://gomesin.vercel.app — all CRUD operations verified working
