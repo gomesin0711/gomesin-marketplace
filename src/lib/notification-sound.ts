@@ -273,40 +273,25 @@ function playShopeeChime(startTime: number, peakGain: number) {
 }
 
 /**
- * Play the "mesinku" chat ringtone for incoming chat messages.
- * Plays a Shopee-style ascending "ding-ding" chime immediately, then the
- * cheerful TTS voice saying "mesin ku!" ~0.4s later — mimicking the iconic
- * Shopee notification jingle. Falls back to the synthesized coin drop if the
- * audio file fails to load/play.
+ * Play the "my mesin" chat ringtone for incoming chat messages.
+ * Plays the TTS voice saying "my mesin" (2x speed) directly — no chime intro.
+ * Falls back to the synthesized coin drop if the audio file fails to load/play.
  * Respects the user's chat sound preference (localStorage "mesinku-chat-sound").
  */
 export function playNotificationSound() {
   if (!isSoundEnabled()) return;
-  // Always play the Shopee-style chime intro first (synthesized, instant).
-  const ctx = getAudioCtx();
-  if (ctx) {
-    playShopeeChime(ctx.currentTime, 0.35);
-  }
   const el = getChatAudio();
   if (el) {
     try {
       el.currentTime = 0;
       el.volume = 0.9; // Full volume — chat is not open, user needs to be alerted.
-      // Delay the voice slightly so it follows the 3-note chime intro (Shopee-style).
-      window.setTimeout(() => {
-        try {
-          el.currentTime = 0;
-          const p = el.play();
-          if (p && typeof p.catch === "function") {
-            p.catch(() => {
-              // Autoplay blocked or decode error — fall back to synthesized sound.
-              playCoinDropSound("chat");
-            });
-          }
-        } catch {
+      const p = el.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          // Autoplay blocked or decode error — fall back to synthesized sound.
           playCoinDropSound("chat");
-        }
-      }, 480);
+        });
+      }
       return;
     } catch {
       // fall through to synthesized fallback
@@ -347,36 +332,24 @@ export function playListingNotificationSound() {
 }
 
 /**
- * Play the "mesinku" chat ringtone (at lower volume) when a chat is
- * currently open. Plays a soft Shopee-style chime + the cheerful TTS voice
- * at reduced volume since the user is already viewing the conversation.
+ * Play the "my mesin" chat ringtone (at lower volume) when a chat is
+ * currently open. Same TTS voice as playNotificationSound but quieter
+ * since the user is already viewing the conversation. No chime intro.
  * Falls back to a soft synthesized clink if the audio file is unavailable.
  */
 export function playDingSound() {
   if (!isSoundEnabled()) return;
-  // Soft chime intro (quieter than the full notification).
-  const ctx = getAudioCtx();
-  if (ctx) {
-    playShopeeChime(ctx.currentTime, 0.18);
-  }
   const el = getChatAudio();
   if (el) {
     try {
       el.currentTime = 0;
       el.volume = 0.5; // Lower volume — user is already viewing the chat.
-      window.setTimeout(() => {
-        try {
-          el.currentTime = 0;
-          const p = el.play();
-          if (p && typeof p.catch === "function") {
-            p.catch(() => {
-              playClinkSoft();
-            });
-          }
-        } catch {
+      const p = el.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
           playClinkSoft();
-        }
-      }, 480);
+        });
+      }
       return;
     } catch {
       // fall through to synthesized fallback

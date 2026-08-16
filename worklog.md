@@ -4857,3 +4857,23 @@ Stage Summary:
 - Chat ringtone now: 3-note Shopee-style chime → "my mesin" voice at 2x speed (0.49s)
 - Speed reduced from 3x to 2x per user request — voice more intelligible while still fast/energetic
 - Cache-bust v=6 forces browser refresh
+
+---
+Task ID: chat-ringtone-no-chime
+Agent: Main
+Task: Remove the "ding-ding-ding" chime from chat ringtone
+
+Work Log:
+- Removed playShopeeChime() call from playNotificationSound() — voice now plays directly with no intro
+- Removed playShopeeChime() call from playDingSound() (chat-open variant) — same, no intro
+- Removed the 480ms setTimeout delay (no longer needed since no chime to wait for) — voice plays instantly
+- Updated both function docstrings: "no chime intro", removed Shopee jingle references
+- Kept playShopeeChime() function definition in file (unused but harmless, can be re-enabled later if wanted)
+- Audio file unchanged: mesinku-chat.wav still "my mesin" at 2x speed, cache-bust ?v=6
+- Verified: "✓ Compiled in 190ms", eslint clean, no errors
+
+Stage Summary:
+- Chat ringtone now plays ONLY the "my mesin" voice (2x speed) — no chime intro
+- Instant playback (no 480ms delay) — more responsive
+- Two variants preserved: full volume (chat closed) + soft (chat open)
+- Fallback chain unchanged: if TTS audio fails → synthesized coin drop / soft clink
