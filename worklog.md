@@ -4997,3 +4997,26 @@ Stage Summary:
 - Plays when a new listing is published/detected
 - Cache-bust ?v=2 added (old version had none) — ensures browsers fetch the new audio
 - Fallback to synthesized coin drop preserved if audio fails to load
+
+---
+Task ID: listing-ringtone-coin-mp3
+Agent: Main
+Task: Replace listing notification ringtone with user-uploaded coin sound MP3
+
+Work Log:
+- Received uploaded file: /home/z/my-project/upload/the-sound-of-a-coin-on-a-hard-surface-3.mp3
+- Verified file: MP3, 256 kbps, 44.1 kHz, Stereo, duration 1.88s, 75485 bytes
+- Backed up previous "IKLAN MASUK!!!!!" TTS version to iklan-masuk.wav.bak2
+- Converted MP3 → WAV using ffmpeg: `ffmpeg -i input.mp3 -ac 1 -ar 24000 output.wav` (mono, 24kHz to match other sounds in the project)
+- New file: /home/z/my-project/public/sounds/iklan-masuk.wav (89846 bytes, 1.869s, mono 24kHz PCM 16-bit)
+- Updated notification-sound.ts:
+  - getListingAudio(): URL changed to /sounds/iklan-masuk.wav?v=3 (bumped from ?v=2)
+  - Comment: "IKLAN MASUK!!!!!" → "real recorded coin-on-hard-surface sound (converted from user-uploaded MP3)"
+  - playListingNotificationSound() docstring updated to reflect recorded coin sound (no longer TTS voice)
+- Verified: dev server compiles clean, audio HTTP 200 (new ETag/Content-Length=89846), eslint clean
+
+Stage Summary:
+- Listing notification ringtone now plays the user-uploaded real coin-on-hard-surface sound (1.87s)
+- Converted from MP3 to WAV (mono 24kHz) for consistency with other project sounds
+- Cache-bust bumped to ?v=3 so browsers fetch the new audio instead of cached TTS voice
+- Fallback to synthesized coin drop preserved if the audio file fails to load/play
