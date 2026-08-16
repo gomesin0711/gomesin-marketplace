@@ -2657,6 +2657,7 @@ function PromoBanner2Tab() {
   const GRADIENTS = [
     { value: "from-emerald-500 via-green-600 to-teal-600", label: "Hijau" },
     { value: "from-amber-500 via-orange-500 to-rose-500", label: "Jingga" },
+    { value: "from-orange-600 via-orange-600 to-cyan-600", label: "Oranye-Cyan" },
     { value: "from-blue-600 via-indigo-600 to-violet-600", label: "Biru" },
     { value: "from-rose-600 via-pink-600 to-fuchsia-600", label: "Merah Muda" },
     { value: "from-slate-700 via-slate-800 to-slate-900", label: "Gelap" },

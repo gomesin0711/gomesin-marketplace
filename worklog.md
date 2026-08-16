@@ -5595,3 +5595,63 @@ Stage Summary:
 - Both promo banners support optional photos (upload via clickable thumbnail, compressed to max ~200KB). Photo is optional — without photo, banner shows with selected gradient + decorative circles.
 - Banners are independent: each can be activated/deactivated separately. If both active, they stack vertically (banner 1 on top, banner 2 below).
 - Changes save instantly and reflect on the home page immediately (query invalidation on save).
+
+---
+Task ID: banner-cuan-verify
+Agent: general-purpose
+Task: Verify "Punya mesin? Ubah jadi cuan." banner with white CTA button
+
+Work Log:
+- Read worklog.md and ad-banner.tsx to understand the stacked AdBanner system (Banner 1 photo + Banner 2 text-only rendered when both admin banners are active)
+- Confirmed via `curl /api/admin/banner-2` that saved config matches the requested PUT payload: title="Punya mesin? Ubah jadi cuan.", desc="Pasang iklan mulai Rp 30.000...", cta="Mulai Pasang Iklan", imageUrl="", link="post", gradient="from-orange-600 via-orange-600 to-cyan-600", active=true. Banner 1 API returns "Promo Spesial Akhir Tahun" (amber/orange/rose, with photo).
+- Created `/home/z/my-project/tests/verify-banner-cuan-home.py` — Playwright script that navigates to home, locates the AdBanner `<section class="...space-y-4...">`, asserts 2 stacked banners, asserts Banner 2 title/desc/cta exact text, asserts orange-to-cyan gradient classes, asserts CTA button has `bg-white` + `text-black` classes AND computed backgroundColor=rgb(255,255,255) + color=rgb(0,0,0), takes screenshot.
+- Created `/home/z/my-project/tests/verify-banner-cuan-admin.py` — Playwright script that injects admin user into localStorage, opens admin-banner view, verifies all 3 headings (Hero / Banner Promosi 1 / Banner Promosi 2) exist in correct order, verifies Banner 2 form fields (title/desc/cta/link/gradient/active toggle/Simpan Banner 2 button), and verifies the live-preview CTA element is white.
+- Ran home test: ALL 19 checks PASS. Banner 2 CTA button confirmed WHITE (className contains `bg-white` + `text-black`, computed bgColor `rgb(255, 255, 255)`, color `rgb(0, 0, 0)`), text "Mulai Pasang Iklan", banner gradient orange-to-cyan, text-only (0 <img>).
+- First admin run revealed 2 issues:
+  (1) The PromoBanner2Tab GRADIENTS `<select>` dropdown only had 5 options (Hijau, Jingga, Biru, Merah Muda, Gelap) and did NOT include `from-orange-600 via-orange-600 to-cyan-600`. Because the saved gradient value was not among the `<option>`s, the select fell back to the first option ("Hijau" = emerald/green/teal) — meaning if admin clicked "Simpan Banner 2" without changing it, the gradient would be silently overwritten to Hijau.
+  (2) The live-preview CTA is rendered as a `<span>` (not a `<button>`), so the test's `querySelectorAll('button')` missed it.
+- FIX applied to `/home/z/my-project/src/components/gomesin/views/admin.tsx` (PromoBanner2Tab GRADIENTS array): added new option `{ value: "from-orange-600 via-orange-600 to-cyan-600", label: "Oranye-Cyan" }` so the saved gradient now displays correctly in the dropdown and won't be overwritten on next save.
+- Updated `verify-banner-cuan-admin.py` to search both `button` and `span` tags for the preview CTA (added `tag` field to its output).
+- Re-ran admin test: ALL 24 checks PASS. Gradient selector now shows "from-orange-600 via-orange-600 to-cyan-600" matching saved value. Live preview CTA confirmed as `<span>` with `bg-white` + `text-black`, computed white background, text "Mulai Pasang Iklan".
+- Re-ran home test after fix: still ALL 19 checks PASS (no regression — home rendering is unaffected since it uses the API-returned gradient string directly).
+- Screenshots saved:
+  - /home/z/my-project/tool-results/banner-cuan-home.png (414998 bytes) — home page AdBanner section showing both stacked banners, Banner 2 with orange-to-cyan gradient + white "Mulai Pasang Iklan" CTA
+  - /home/z/my-project/tool-results/banner-cuan-admin.png (270752 bytes) — admin Banner editor with Banner Promosi 2 section scrolled into view, form populated, live preview showing white CTA
+- Checked last 15 lines of /home/z/my-project/dev.log: all HTTP 200 responses (listings, messages, banner APIs), NO errors/warnings/exceptions.
+
+Stage Summary:
+- KEY REQUIREMENT MET: Banner Promosi 2 "Mulai Pasang Iklan" CTA button is WHITE (className `bg-white text-black`, computed bgColor rgb(255,255,255), color rgb(0,0,0)) on BOTH the home page and admin live preview.
+- Banner Promosi 2 renders on home page with EXACT requested text: title "Punya mesin? Ubah jadi cuan.", desc "Pasang iklan mulai Rp 30.000 dan jangkau ribuan pembeli industri se-Indonesia.", CTA "Mulai Pasang Iklan".
+- Banner 2 has the orange-to-cyan gradient (`from-orange-600 via-orange-600 to-cyan-600`), is text-only (no <img>), and sits below Banner 1 ("Promo Spesial Akhir Tahun") in the stacked AdBanner section.
+- Admin editor fully populated & editable: title, desc, cta, link (post), gradient (orange-to-cyan), active toggle ON, "Simpan Banner 2" button present and enabled.
+- Code change: added "Oranye-Cyan" gradient option to PromoBanner2Tab dropdown in src/components/gomesin/views/admin.tsx so the saved gradient is selectable/persistent in the admin UI (prevents silent overwrite to "Hijau" on next save).
+- New verification scripts: tests/verify-banner-cuan-home.py (19 checks) and tests/verify-banner-cuan-admin.py (24 checks), both PASS.
+- No errors in dev.log.
+
+---
+Task ID: banner-cuan
+Agent: Main
+Task: Set up editable Banner Promosi 2 with text "Punya mesin? Ubah jadi cuan." / "Pasang iklan mulai Rp 30.000..." and white "Mulai Pasang Iklan" CTA button
+
+Work Log:
+- Saved Banner Promosi 2 config via PUT /api/admin/banner-2 with the user's requested text:
+  * title: "Punya mesin? Ubah jadi cuan."
+  * desc: "Pasang iklan mulai Rp 30.000 dan jangkau ribuan pembeli industri se-Indonesia."
+  * cta: "Mulai Pasang Iklan"
+  * imageUrl: "" (text-only)
+  * link: "post"
+  * gradient: "from-orange-600 via-orange-600 to-cyan-600"
+  * active: true
+- Confirmed the CTA button in admin banner rendering (ad-banner.tsx line 234) is already white: `bg-white px-5 py-2.5 text-sm font-bold text-black` — white background, black text. No code change needed for the button color.
+- Subagent (banner-cuan-verify) discovered a bug: the saved gradient "from-orange-600 via-orange-600 to-cyan-600" was NOT in the PromoBanner2Tab GRADIENTS dropdown options (which only had Hijau/Jingga/Biru/Merah Muda/Gelap). This meant the <select> was silently falling back to "Hijau" and the next admin save would have overwritten the orange-cyan gradient. Subagent fixed this by adding { value: "from-orange-600 via-orange-600 to-cyan-600", label: "Oranye-Cyan" } to the GRADIENTS array in PromoBanner2Tab (admin.tsx line 2660).
+- Verified via Playwright browser automation (43/43 checks passed):
+  * Home page: Banner Promosi 2 renders with exact requested text, orange-to-cyan gradient, text-only (no image). CTA button "Mulai Pasang Iklan" confirmed WHITE (computed backgroundColor = rgb(255,255,255), color = rgb(0,0,0)).
+  * Admin editor: Banner Promosi 2 section fully populated and editable — title, desc, cta, link, gradient selector (now showing "Oranye-Cyan" correctly), active toggle ON, Simpan Banner 2 button present. Live preview CTA also white with black text.
+  * dev.log: all HTTP 200, no errors.
+  * Screenshots: banner-cuan-home.png, banner-cuan-admin.png.
+
+Stage Summary:
+- Banner Promosi 2 now displays "Punya mesin? Ubah jadi cuan." with desc "Pasang iklan mulai Rp 30.000 dan jangkau ribuan pembeli industri se-Indonesia." and a WHITE "Mulai Pasang Iklan" button (bg-white, text-black).
+- Banner is fully editable from admin panel → Banner menu → "Banner Promosi 2" section.
+- Gradient dropdown now includes "Oranye-Cyan" option (bug fix) so the saved gradient is preserved on future edits.
+- Home page now shows 2 stacked promo banners: Banner 1 "Promo Spesial Akhir Tahun" (with photo) + Banner 2 "Punya mesin? Ubah jadi cuan." (text-only, orange-cyan gradient, white CTA).
