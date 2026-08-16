@@ -119,6 +119,7 @@ model Paket {
   price        Int     @default(0)
   originalPrice Int    @default(0)
   duration     Int     @default(30)
+  maxPhotos    Int     @default(3)
   features     String
   active       Boolean @default(true)
   sortOrder    Int     @default(0)

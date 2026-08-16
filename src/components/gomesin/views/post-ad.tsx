@@ -99,9 +99,9 @@ export function PostAdView() {
     },
     staleTime: 0,
   });
-  const paketMap: Record<string, { price: number; originalPrice: number; duration: number; name: string; features: string[] }> = {};
+  const paketMap: Record<string, { price: number; originalPrice: number; duration: number; maxPhotos: number; name: string; features: string[] }> = {};
   (paketData?.pakets || []).forEach((p: any) => {
-    paketMap[p.key] = { price: p.price, originalPrice: p.originalPrice ?? 0, duration: p.duration, name: p.name, features: p.features };
+    paketMap[p.key] = { price: p.price, originalPrice: p.originalPrice ?? 0, duration: p.duration, maxPhotos: Number(p.maxPhotos) || 3, name: p.name, features: p.features };
   });
 
   const goToDetail = useStore((s) => s.goToDetail);
@@ -286,6 +286,18 @@ export function PostAdView() {
     };
   }, [qrisModal]);
 
+  // --- Trim photos when switching to a package with a lower maxPhotos limit ---
+  // If user uploaded 10 photos on Platinum (max 10) then switches to Gold
+  // (max 5), automatically trim to the new limit so the upload counter stays
+  // valid and submission won't be blocked.
+  useEffect(() => {
+    const max = paketMap[selectedPackage]?.maxPhotos;
+    if (typeof max === "number" && max > 0 && images.length > max) {
+      setImages((prev) => prev.slice(0, max));
+      toast.info(`Foto dipangkas ke ${max} sesuai paket ${paketMap[selectedPackage]?.name || selectedPackage}.`);
+    }
+  }, [selectedPackage, paketData]);
+
   // --- Fetch unique 3-digit code whenever selectedPackage changes ---
   // This ensures switching Gold → Platinum fetches a DIFFERENT unique code
   // (the API is idempotent per package, so switching back to Gold returns
@@ -368,9 +380,24 @@ export function PostAdView() {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+
+    // Enforce paket maxPhotos limit
+    const maxPhotos = paketMap[selectedPackage]?.maxPhotos ?? 3;
+    const remaining = Math.max(0, maxPhotos - images.length);
+    if (remaining === 0) {
+      toast.error(`Maksimal ${maxPhotos} foto untuk paket ${paketMap[selectedPackage]?.name || selectedPackage}. Hapus foto terlebih dahulu.`);
+      e.target.value = "";
+      return;
+    }
+    const fileList = Array.from(files);
+    const willAdd = fileList.slice(0, remaining);
+    if (fileList.length > remaining) {
+      toast.warning(`Hanya ${remaining} foto ditambahkan (maksimal ${maxPhotos} foto untuk paket ini).`);
+    }
+
     setCompressing(true);
     try {
-      for (const file of Array.from(files)) {
+      for (const file of willAdd) {
         const compressed = await compressImage(file);
         setImages((p) => [...p, compressed]);
       }
@@ -863,7 +890,7 @@ export function PostAdView() {
             )}
 
             <p className="text-center text-xs text-muted-foreground">
-              {images.length} foto diunggah {images.length < 1 && "(min. 1)"}
+              {images.length} / {paketMap[selectedPackage]?.maxPhotos ?? 3} foto diunggah {images.length < 1 && "(min. 1)"}
             </p>
 
             {/* Simpan Dulu button */}
@@ -1164,7 +1191,7 @@ export function PostAdView() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Foto</span>
-                  <span className="font-medium text-foreground">{images.length} foto</span>
+                  <span className="font-medium text-foreground">{images.length} / {paketMap[selectedPackage]?.maxPhotos ?? 3} foto</span>
                 </div>
               </div>
             </div>

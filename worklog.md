@@ -6364,3 +6364,47 @@ Stage Summary:
   * Old email mesinKU0711@gmail.com no longer works anywhere ✓
 - Admin login on production: mesinku711@gmail.com / admin123 → returns REAL admin account (with correct Supabase id, not the fallback placeholder).
 - Password unchanged: admin123.
+
+---
+Task ID: 6
+Agent: general-purpose (browser verifier)
+Task: Verify redesigned Paket Premium UI with maxPhotos field
+
+Work Log:
+- Read last 50 lines of worklog.md for context (admin email = mesinku711@gmail.com / admin123; dev server running on port 3000; chat-service on port 3003).
+- Inspected source code to understand the new PaketTab structure (src/components/gomesin/views/admin.tsx lines 3515-3715):
+  * Header bar with Crown icon + "Paket Iklan Premium" heading + "+ Tambah Paket" button.
+  * Summary stat bar (4 cards): Total Paket, Paket Aktif, Harga Termurah, Maks Foto Tertinggi.
+  * Card grid with gradient header (per-key gradientMap: colek=amber/yellow, sundul=purple/fuchsia, highlight=orange/red, spotlight=rose/pink) — header shows icon, "Aktif"/"Nonaktif" badge, name, key.
+  * Card body: price (large), originalPrice (strikethrough), duration w/ Clock icon, highlighted "Maksimal Foto di Iklan: N foto" box with Camera icon, features list (CheckCircle2 bullets), Edit + trash buttons.
+  * Add/Edit dialog has "Maksimal Foto di Iklan" number input (formMaxPhotos) with hint that "Maksimal N foto" feature line auto-syncs.
+- Wrote a Playwright (Python sync API) verification script at /home/z/my-project/verify-paket-premium.py. The script:
+  1. POSTs to /api/auth/login {email:mesinku711@gmail.com, password:admin123} → returns admin user (id=cmsv4ru2c0000q71dpo8ynqqi, role=admin). Injects the returned user into localStorage['gomesin-store'] with view='admin-paket', then reloads the page so the Zustand persist middleware rehydrates the admin session and renders AdminView(initialTab='paket') directly.
+  2. Dismisses the PWA install-prompt overlay (button[aria-label="Tutup"]) which intercepts clicks on the home page.
+  3. Verifies "Panel Administrator" heading appears.
+  4. Clicks the sidebar "Paket Premium" (Crown icon) button and verifies the "Paket Iklan Premium" heading renders (scoped via get_by_role("heading") to avoid strict-mode match on the subtitle paragraph).
+  5. Counts gradient-header elements (div[class*="bg-gradient-to-br"]) — found 6 (>=4 required).
+  6. Verifies all 4 summary-stat labels present: Total Paket, Paket Aktif, Harga Termurah, Maks Foto Tertinggi.
+  7. For each of Gold/colek, Boost/sundul, Platinum/highlight, Titanium/spotlight: locates the card via the key text in its header, then regex-matches "Maksimal Foto di Iklan N foto" inside the card body.
+  8. Opens Edit on the Gold (colek) card. Confirms the dialog has 4 number inputs (Harga, Harga Coret, Durasi, Maksimal Foto) + a Label with text "Maksimal Foto di Iklan". Confirms input value is 5. Changes it to 7, clicks "Simpan Perubahan", waits for refetch, then verifies the Gold card now shows "Maksimal Foto di Iklan: 7 foto" AND the features list contains "Maksimal 7 foto" (proving the syncMaxFotoInFeatures helper ran).
+  9. Clicks "+ Tambah Paket". Scopes all input queries to the dialog modal element (div.fixed.inset-0.z-[60]) to avoid picking up the header search input which is technically visible behind the overlay. Fills: Key=testbrowser, Name=Test Browser, Harga=15000, Harga Coret=0, Durasi=7, Maksimal Foto=4. Clicks "Tambah Paket". Verifies the new card appears with maxPhotos=4.
+ 10. Clicks the trash (icon-only) button on the Test Browser card, confirms deletion in the AlertDialog (clicked the "Hapus" button), verifies the card is removed.
+ 11. Cleanup: re-opens Edit on Gold (colek) and restores maxPhotos 7 → 5 to leave the DB in its original state.
+- Saved 8 screenshots to /home/z/my-project/screenshots/ (01-after-login, 02-paket-tab, 03-paket-cards, 05-after-edit, 06-add-form-filled, 06-after-add, 07-after-delete, 08-final-state) plus verification-results.json with all findings + console messages.
+- Verified final DB state via curl GET /api/admin/paket: exactly 4 pakets remain (colek=Gold maxPhotos=5, sundul=Boost maxPhotos=5, highlight=Platinum maxPhotos=10, spotlight=Titanium maxPhotos=15), all features arrays contain the matching "Maksimal N foto" line. The transient "Test Browser" paket was successfully created and deleted; no leftover test data.
+
+Stage Summary:
+- ALL 9 verification checks PASSED:
+  (a) Login works ✓ — admin user returned from /api/auth/login, "Panel Administrator" heading rendered.
+  (b) Paket Premium tab loads ✓ — sidebar "Paket Premium" button (Crown icon) clicked, "Paket Iklan Premium" heading rendered.
+  (c) New card design with gradient header renders ✓ — 6 elements with bg-gradient-to-br class (4 cards + header banner + accent); each card has gradient header (per-key color: amber for colek/Gold, purple for sundul/Boost, orange for highlight/Platinum, rose for spotlight/Titanium) with icon + active badge + name + key, then body with price, duration, highlighted "Maksimal Foto di Iklan" box (Camera icon + primary-tinted bg-primary/5), features list with CheckCircle2 bullets, Edit + trash buttons.
+  (d) Summary stat bar shows 4 stats ✓ — Total Paket, Paket Aktif, Harga Termurah, Maks Foto Tertinggi all present.
+  (e) maxPhotos values correct ✓ — Gold(colek)=5, Boost(sundul)=5, Platinum(highlight)=10, Titanium(spotlight)=15.
+  (f) Edit form has "Maksimal Foto di Iklan" input ✓ — Label with that text found; number input pre-filled with current value (5).
+  (g) Editing maxPhotos to 7 works + features synced ✓ — success toast appeared, card updated to "Maksimal Foto di Iklan: 7 foto", features list updated to "Maksimal 7 foto".
+  (h) Add paket with maxPhotos=4 works ✓ — "Test Browser" card appeared with maxPhotos=4 after submitting the Add form.
+  (i) Delete works ✓ — AlertDialog confirmation accepted ("Hapus" button), card removed from grid.
+- Console errors captured: only the expected WebSocket failures for the chat-service proxy (ws://localhost:3000/?XTransformPort=3003 — socket.io through Caddy). These are NOT related to the paket UI; they're pre-existing chat-service connection retries (chat-service may be idle). No React errors, no API errors, no unhandled promise rejections.
+- No visual issues found. Screenshots confirm colorful gradient headers (28% of pixels are non-gray, with amber/orange RGB values matching the per-key gradientMap).
+- DB left clean: 4 original pakets with correct maxPhotos values; the Test Browser paket was created and deleted; Gold (colek) maxPhotos was temporarily changed to 7 during the edit test then restored to 5.
+- No code was modified — this was a read-only verification. The redesigned Paket Premium UI is fully functional and ready for production.

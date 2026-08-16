@@ -16,7 +16,7 @@ import {
   TrendingUp, DollarSign, Eye, BarChart3, Loader2, Edit, Sparkle, Clock, RefreshCw,
   Mail, Phone, Calendar, Zap,
   MessageCircle, Search, ArrowLeft,
-  LayoutGrid, List, Gem, Shield, ArrowUpCircle, Timer, ImageIcon,
+  LayoutGrid, List, Gem, Shield, ArrowUpCircle, Timer, ImageIcon, Camera,
   AlertTriangle, Frown, Settings, Volume2, Save, Upload, Music,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -3460,6 +3460,7 @@ function PaketTab() {
   const [formPrice, setFormPrice] = useState("");
   const [formOriginalPrice, setFormOriginalPrice] = useState("");
   const [formDuration, setFormDuration] = useState("");
+  const [formMaxPhotos, setFormMaxPhotos] = useState("3");
   const [formFeatures, setFormFeatures] = useState("");
   const [formActive, setFormActive] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -3482,10 +3483,11 @@ function PaketTab() {
   });
 
   const openAdd = () => {
-    setEditingId(null); setFormKey(""); setFormName(""); setFormPrice(""); setFormOriginalPrice(""); setFormDuration("30"); setFormFeatures(""); setFormActive(true); setShowForm(true);
+    setEditingId(null); setFormKey(""); setFormName(""); setFormPrice(""); setFormOriginalPrice(""); setFormDuration("30"); setFormMaxPhotos("3"); setFormFeatures(""); setFormActive(true); setShowForm(true);
   };
   const openEdit = (p: any) => {
     setEditingId(p.id); setFormKey(p.key); setFormName(p.name); setFormPrice(String(p.price)); setFormOriginalPrice(String(p.originalPrice || 0)); setFormDuration(String(p.duration));
+    setFormMaxPhotos(String(p.maxPhotos ?? 3));
     setFormFeatures((Array.isArray(p.features) ? p.features : []).join("\n")); setFormActive(p.active !== false); setShowForm(true);
   };
   const closeForm = () => { setShowForm(false); setEditingId(null); };
@@ -3493,11 +3495,13 @@ function PaketTab() {
   const handleSave = () => {
     if (!formName.trim()) { toast.error("Nama paket wajib"); return; }
     if (!editingId && !formKey.trim()) { toast.error("Key paket wajib"); return; }
+    const maxPhotos = Math.max(1, Number(formMaxPhotos) || 3);
     const payload: any = {
       name: formName.trim(),
       price: Number(formPrice) || 0,
       originalPrice: Number(formOriginalPrice) || 0,
       duration: Number(formDuration) || 30,
+      maxPhotos,
       features: formFeatures.split("\n").map((f: string) => f.trim()).filter(Boolean),
       active: formActive,
     };
@@ -3509,48 +3513,127 @@ function PaketTab() {
   if (isLoading || !data) return <SkeletonGrid count={3} />;
 
   const pakets = data.pakets || [];
-  const iconMap: Record<string, any> = { colek: Tag, sundul: TrendingUp, highlight: Zap, spotlight: Crown, gold: Gem };
-  const colorMap: Record<string, string> = { colek: "border-blue-400", sundul: "border-purple-400", highlight: "border-orange-400", spotlight: "border-amber-400", gold: "border-yellow-400" };
-  const iconColorMap: Record<string, string> = { colek: "text-blue-500", sundul: "text-purple-500", highlight: "text-orange-500", spotlight: "text-amber-500", gold: "text-yellow-500" };
+  const iconMap: Record<string, any> = { colek: Tag, sundul: TrendingUp, highlight: Zap, spotlight: Crown, gold: Gem, gratis: Shield };
+  // Tailwind gradient classes per paket key — gives each card a distinctive premium look
+  const gradientMap: Record<string, string> = {
+    gratis: "from-slate-500 to-slate-600",
+    colek: "from-amber-500 to-yellow-600",
+    sundul: "from-purple-500 to-fuchsia-600",
+    highlight: "from-orange-500 to-red-600",
+    spotlight: "from-rose-500 to-pink-600",
+    gold: "from-yellow-400 to-amber-600",
+  };
+  const iconColorMap: Record<string, string> = { colek: "text-amber-500", sundul: "text-purple-500", highlight: "text-orange-500", spotlight: "text-rose-500", gold: "text-yellow-500", gratis: "text-slate-500" };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-bold">Paket Iklan Premium ({pakets.length})</h2>
-        <Button size="sm" onClick={openAdd}><Plus className="size-4" /> Tambah Paket</Button>
+    <div className="space-y-5">
+      {/* Header bar */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="flex items-center gap-2 text-lg font-bold">
+            <Crown className="size-5 text-primary" />
+            Paket Iklan Premium
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Kelola paket iklan premium. Atur batas maksimal foto yang diterapkan saat user pasang iklan.
+          </p>
+        </div>
+        <Button size="sm" onClick={openAdd} className="gap-1.5">
+          <Plus className="size-4" /> Tambah Paket
+        </Button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Summary stat bar */}
+      {pakets.length > 0 && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-lg border border-border bg-card p-3">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Total Paket</p>
+            <p className="mt-0.5 text-xl font-bold">{pakets.length}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-3">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Paket Aktif</p>
+            <p className="mt-0.5 text-xl font-bold text-emerald-600">{pakets.filter((p: any) => p.active !== false).length}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-3">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Harga Termurah</p>
+            <p className="mt-0.5 text-xl font-bold text-primary">
+              {pakets.length > 0 ? formatRupiahFull(Math.min(...pakets.map((p: any) => Number(p.price) || 0))) : "-"}
+            </p>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-3">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Maks Foto Tertinggi</p>
+            <p className="mt-0.5 text-xl font-bold">
+              {pakets.length > 0 ? Math.max(...pakets.map((p: any) => Number(p.maxPhotos) || 3)) : "-"}
+              <span className="ml-1 text-xs font-normal text-muted-foreground">foto</span>
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Card grid */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {pakets.map((p: any) => {
           const Icon = iconMap[p.key] || Tag;
+          const gradient = gradientMap[p.key] || "from-primary to-primary/80";
+          const maxPhotos = Number(p.maxPhotos) || 3;
           return (
-            <div key={p.id} className={cn("rounded-xl border-2 bg-card p-5 transition hover:shadow-md", colorMap[p.key] || "border-border")}>
-              <div className="flex items-center justify-between">
-                <span className="grid size-10 place-items-center rounded-lg bg-secondary">
-                  <Icon className={cn("size-5", iconColorMap[p.key] || "text-muted-foreground")} />
-                </span>
-                <div className="flex items-center gap-1">
-                  {p.active ? <Badge variant="secondary" className="text-[10px]">Aktif</Badge> : <Badge variant="destructive" className="text-[10px]">Nonaktif</Badge>}
+            <div key={p.id} className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:shadow-md">
+              {/* Gradient header */}
+              <div className={cn("relative bg-gradient-to-br p-4 text-white", gradient)}>
+                <div className="flex items-start justify-between">
+                  <span className="grid size-11 place-items-center rounded-xl bg-white/20 backdrop-blur-sm">
+                    <Icon className="size-6" />
+                  </span>
+                  {p.active ? (
+                    <Badge className="bg-white/25 text-white hover:bg-white/30">Aktif</Badge>
+                  ) : (
+                    <Badge variant="destructive">Nonaktif</Badge>
+                  )}
                 </div>
+                <p className="mt-3 text-lg font-bold">{p.name}</p>
+                <p className="text-[11px] uppercase tracking-wide text-white/80">{p.key}</p>
               </div>
-              <p className="mt-3 text-lg font-bold">{p.name}</p>
-              <p className="mt-1 text-2xl font-extrabold text-primary">
-                {formatRupiahFull(p.price)}
-                {p.originalPrice > 0 && p.originalPrice > p.price && (
-                  <span className="ml-2 text-sm font-medium text-muted-foreground line-through">{formatRupiahFull(p.originalPrice)}</span>
-                )}
-                <span className="text-xs font-normal text-muted-foreground">/{p.duration} hari</span>
-              </p>
-              <ul className="mt-3 space-y-1.5">
-                {(Array.isArray(p.features) ? p.features : []).map((f: string, i: number) => (
-                  <li key={i} className="flex items-start gap-2 text-xs text-foreground">
-                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-primary" />{f}
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-4 flex gap-2">
-                <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => openEdit(p)}><Edit className="size-3.5" /> Edit</Button>
-                <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive hover:text-white" onClick={() => setDeleteId(p.id)}><Trash2 className="size-3.5" /></Button>
+
+              {/* Body */}
+              <div className="flex flex-1 flex-col p-4">
+                {/* Price */}
+                <div className="flex items-baseline gap-2">
+                  <p className="text-2xl font-extrabold text-foreground">{formatRupiahFull(p.price)}</p>
+                  {p.originalPrice > 0 && p.originalPrice > p.price && (
+                    <span className="text-xs font-medium text-muted-foreground line-through">{formatRupiahFull(p.originalPrice)}</span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  <Clock className="mr-1 inline size-3" />Berlaku {p.duration} hari
+                </p>
+
+                {/* Max photos highlight */}
+                <div className="mt-3 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+                  <Camera className="size-4 shrink-0 text-primary" />
+                  <div className="flex-1">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Maksimal Foto di Iklan</p>
+                    <p className="text-sm font-bold text-primary">{maxPhotos} foto</p>
+                  </div>
+                </div>
+
+                {/* Features */}
+                <ul className="mt-3 space-y-1.5">
+                  {(Array.isArray(p.features) ? p.features : []).map((f: string, i: number) => (
+                    <li key={i} className="flex items-start gap-2 text-xs text-foreground">
+                      <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />{f}
+                    </li>
+                  ))}
+                </ul>
+
+                {/* Actions */}
+                <div className="mt-4 flex gap-2 pt-1">
+                  <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => openEdit(p)}>
+                    <Edit className="size-3.5" /> Edit
+                  </Button>
+                  <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive hover:text-white" onClick={() => setDeleteId(p.id)}>
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
               </div>
             </div>
           );
@@ -3569,8 +3652,11 @@ function PaketTab() {
       {/* ADD/EDIT DIALOG */}
       {showForm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={closeForm}>
-          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold">{editingId ? "Edit Paket" : "Tambah Paket Baru"}</h3>
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">{editingId ? "Edit Paket" : "Tambah Paket Baru"}</h3>
+              <button onClick={closeForm} className="rounded-md p-1 text-muted-foreground hover:bg-accent"><X className="size-4" /></button>
+            </div>
             <div className="mt-4 space-y-3">
               {!editingId && (
                 <div>
@@ -3599,16 +3685,22 @@ function PaketTab() {
                   <Input value={formDuration} onChange={(e) => setFormDuration(e.target.value)} type="number" placeholder="30" className="mt-1" />
                 </div>
                 <div>
-                  <Label className="text-xs">Status</Label>
-                  <div className="mt-2 flex items-center gap-2">
-                    <button type="button" onClick={() => setFormActive(true)} className={cn("flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition", formActive ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground")}>Aktif</button>
-                    <button type="button" onClick={() => setFormActive(false)} className={cn("flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition", !formActive ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground")}>Nonaktif</button>
-                  </div>
+                  <Label className="text-xs">Maksimal Foto di Iklan</Label>
+                  <Input value={formMaxPhotos} onChange={(e) => setFormMaxPhotos(e.target.value)} type="number" min={1} placeholder="3" className="mt-1" />
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">Jumlah foto maksimum yang bisa diunggah user untuk paket ini</p>
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Status</Label>
+                <div className="mt-2 flex items-center gap-2">
+                  <button type="button" onClick={() => setFormActive(true)} className={cn("flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition", formActive ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground")}>Aktif</button>
+                  <button type="button" onClick={() => setFormActive(false)} className={cn("flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition", !formActive ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground")}>Nonaktif</button>
                 </div>
               </div>
               <div>
                 <Label className="text-xs">Fitur (1 per baris)</Label>
                 <textarea value={formFeatures} onChange={(e) => setFormFeatures(e.target.value)} placeholder={"Tayang di halaman utama\nHighlight khusus\nBadge Premium"} rows={5} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary" />
+                <p className="mt-0.5 text-[10px] text-muted-foreground">Baris "Maksimal N foto" otomatis disinkronkan dengan kolom Maksimal Foto di atas.</p>
               </div>
             </div>
             <div className="mt-5 flex gap-2">
