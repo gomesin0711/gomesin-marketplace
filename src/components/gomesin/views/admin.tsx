@@ -2538,6 +2538,298 @@ function HeroBannerTab() {
   );
 }
 
+// ============ PROMO BANNER 2 TAB (second editable promo banner) ============
+function PromoBanner2Tab() {
+  const qc = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-banner-2"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/banner-2");
+      if (!res.ok) return { banner: null };
+      return res.json();
+    },
+    staleTime: 0,
+  });
+
+  const banner = data?.banner;
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const [cta, setCta] = useState("Pasang Iklan");
+  const [imageUrl, setImageUrl] = useState("");
+  const [link, setLink] = useState("post");
+  const [gradient, setGradient] = useState("from-emerald-500 via-green-600 to-teal-600");
+  const [active, setActive] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (banner && !loaded) {
+      setTitle(banner.title || "");
+      setDesc(banner.desc || "");
+      setCta(banner.cta || "Pasang Iklan");
+      setImageUrl(banner.imageUrl || "");
+      setLink(banner.link || "post");
+      setGradient(banner.gradient || "from-emerald-500 via-green-600 to-teal-600");
+      setActive(banner.active !== false && !!banner.title);
+      setLoaded(true);
+    }
+  }, [banner, loaded]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await fetch("/api/admin/banner-2", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Gagal menyimpan banner 2");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Banner 2 berhasil disimpan. Perubahan langsung tampil di beranda.");
+      qc.invalidateQueries({ queryKey: ["admin-banner-2"] });
+    },
+    onError: (e: any) => toast.error(e.message || "Gagal menyimpan banner 2"),
+  });
+
+  const handleSave = () => {
+    if (!title.trim()) { toast.error("Judul banner 2 wajib diisi"); return; }
+    saveMutation.mutate({ title, desc, cta, imageUrl, link, gradient, active });
+  };
+
+  const handleFile = async (file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast.error("File harus berupa gambar"); return; }
+    setUploading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            const maxW = 1600;
+            const scale = Math.min(1, maxW / img.width);
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) { reject(new Error("Canvas tidak didukung")); return; }
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            let q = 0.8;
+            let out = canvas.toDataURL("image/jpeg", q);
+            while (out.length > 280000 && q > 0.3) {
+              q -= 0.1;
+              out = canvas.toDataURL("image/jpeg", q);
+            }
+            resolve(out);
+          };
+          img.onerror = () => reject(new Error("Gagal memuat gambar"));
+          img.src = reader.result as string;
+        };
+        reader.onerror = () => reject(new Error("Gagal membaca file"));
+        reader.readAsDataURL(file);
+      });
+
+      const res = await fetch("/api/upload-banner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataUrl }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Gagal upload");
+      }
+      const result = await res.json();
+      setImageUrl(result.url);
+      toast.success("Foto banner 2 berhasil diunggah");
+    } catch (e: any) {
+      toast.error(e.message || "Gagal mengunggah foto");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const GRADIENTS = [
+    { value: "from-emerald-500 via-green-600 to-teal-600", label: "Hijau" },
+    { value: "from-amber-500 via-orange-500 to-rose-500", label: "Jingga" },
+    { value: "from-blue-600 via-indigo-600 to-violet-600", label: "Biru" },
+    { value: "from-rose-600 via-pink-600 to-fuchsia-600", label: "Merah Muda" },
+    { value: "from-slate-700 via-slate-800 to-slate-900", label: "Gelap" },
+  ];
+
+  if (isLoading) return <SkeletonGrid count={2} />;
+
+  return (
+    <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold">Banner Promosi 2</h2>
+        <Badge className={active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}>
+          {active ? "Aktif" : "Nonaktif"}
+        </Badge>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Banner promosi kedua yang tampil di beranda (di bawah banner promosi 1). Foto bersifat opsional — jika tanpa foto, banner akan tampil dengan background warna gradient.
+      </p>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* ===== FORM ===== */}
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs">Judul Banner *</Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="mis. Jual Mesin CNC Terlengkap" className="mt-1" />
+          </div>
+          <div>
+            <Label className="text-xs">Deskripsi</Label>
+            <textarea
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              placeholder="Deskripsi singkat banner..."
+              rows={3}
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Teks Tombol (CTA)</Label>
+              <Input value={cta} onChange={(e) => setCta(e.target.value)} placeholder="Pasang Iklan" className="mt-1" />
+            </div>
+            <div>
+              <Label className="text-xs">Tujuan Tombol</Label>
+              <select
+                value={link}
+                onChange={(e) => setLink(e.target.value)}
+                className="mt-1 h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
+              >
+                <option value="post">Halaman Pasang Iklan</option>
+                <option value="listings">Halaman Daftar Iklan</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Warna Background (saat tanpa foto)</Label>
+            <select
+              value={gradient}
+              onChange={(e) => setGradient(e.target.value)}
+              className="mt-1 h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
+            >
+              {GRADIENTS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+            </select>
+          </div>
+
+          {/* Photo upload */}
+          <div>
+            <Label className="text-xs">Foto Banner <span className="text-muted-foreground">(opsional)</span></Label>
+            <div className="mt-1 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="flex h-20 w-32 shrink-0 items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-border bg-secondary/50 hover:border-primary"
+              >
+                {imageUrl ? (
+                  <img src={imageUrl} alt="Preview" className="size-full object-cover" />
+                ) : uploading ? (
+                  <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                ) : (
+                  <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                    <ImageIcon className="size-6" />
+                    <span className="text-[10px]">Upload</span>
+                  </div>
+                )}
+              </button>
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="text-xs text-muted-foreground">Klik kotak untuk memilih foto. Disarankan rasio 16:9 (mis. 1600×900).</p>
+                {imageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setImageUrl("")}
+                    className="text-xs font-medium text-destructive hover:underline"
+                  >
+                    Hapus foto
+                  </button>
+                )}
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
+              />
+            </div>
+          </div>
+
+          {/* Active toggle */}
+          <label className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div>
+              <p className="text-sm font-medium">Tampilkan banner 2</p>
+              <p className="text-xs text-muted-foreground">Jika aktif, banner ini tampil di bawah banner promosi 1</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={active}
+              onClick={() => setActive(!active)}
+              className={cn("relative h-6 w-11 shrink-0 rounded-full transition", active ? "bg-primary" : "bg-muted")}
+            >
+              <span className={cn("absolute top-0.5 size-5 rounded-full bg-white shadow transition", active ? "left-[22px]" : "left-0.5")} />
+            </button>
+          </label>
+
+          <Button onClick={handleSave} disabled={saveMutation.isPending || uploading} className="w-full">
+            {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+            {saveMutation.isPending ? "Menyimpan..." : "Simpan Banner 2"}
+          </Button>
+        </div>
+
+        {/* ===== LIVE PREVIEW ===== */}
+        <div className="space-y-2">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pratinjau (Preview)</Label>
+          <div className={cn(
+            "relative overflow-hidden rounded-2xl bg-gradient-to-r p-6 text-white shadow-xl",
+            gradient
+          )}>
+            {imageUrl ? (
+              <>
+                <img src={imageUrl} alt="" className="absolute inset-0 size-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-black/10" />
+              </>
+            ) : (
+              <>
+                <div className="absolute -right-16 -top-16 size-48 rounded-full bg-white/10" />
+                <div className="absolute -bottom-20 right-32 size-40 rounded-full bg-white/10" />
+                <div className="absolute left-1/3 -top-10 size-24 rounded-full bg-white/5" />
+              </>
+            )}
+            <div className="relative flex flex-col items-start gap-3">
+              <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wider backdrop-blur">
+                Promo
+              </span>
+              <h3 className="text-xl font-extrabold leading-tight drop-shadow-sm sm:text-2xl">
+                {title || "Judul Banner 2 Anda"}
+              </h3>
+              {desc && (
+                <p className="max-w-md text-sm text-white/90">{desc}</p>
+              )}
+              <span className="mt-1 inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-black shadow-lg">
+                {cta || "Pasang Iklan"}
+              </span>
+            </div>
+          </div>
+          <p className="text-center text-[11px] text-muted-foreground">
+            Banner ini tampil di bawah banner promosi 1 pada beranda.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============ BANNER TAB (promo banner, below categories) ============
 function BannerTab() {
   const { t } = useLang();
@@ -2678,10 +2970,10 @@ function BannerTab() {
       {/* HERO BANNER editor (top of home page) */}
       <HeroBannerTab />
 
-      {/* PROMO BANNER editor (below categories) */}
+      {/* PROMO BANNER 1 editor (below categories) */}
       <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-bold">Banner Promosi Beranda</h2>
+        <h2 className="text-base font-bold">Banner Promosi 1</h2>
         <Badge className={active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}>
           {active ? "Aktif" : "Nonaktif"}
         </Badge>
@@ -2841,6 +3133,9 @@ function BannerTab() {
         </div>
       </div>
       </div>
+
+      {/* PROMO BANNER 2 editor (second editable banner, below banner 1) */}
+      <PromoBanner2Tab />
     </div>
   );
 }

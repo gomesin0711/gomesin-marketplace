@@ -133,7 +133,7 @@ export function AdBanner() {
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
 
-  // Fetch admin-configured promo banner (title + photo), replaces defaults when active
+  // Fetch admin-configured promo banner 1 (title + photo), replaces defaults when active
   const [adminBanner, setAdminBanner] = useState<AdminBanner | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -144,16 +144,29 @@ export function AdBanner() {
     return () => { cancelled = true; };
   }, []);
 
+  // Fetch admin-configured promo banner 2 (second editable banner)
+  const [adminBanner2, setAdminBanner2] = useState<AdminBanner | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/banner-2")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (!cancelled && d?.banner) setAdminBanner2(d.banner); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   const next = useCallback(() => setActive((p) => (p + 1) % BANNERS.length), []);
   const prev = useCallback(() => setActive((p) => (p - 1 + BANNERS.length) % BANNERS.length), []);
 
-  // auto-rotate every 5s, pause on hover — only for default rotating banners
+  // auto-rotate every 5s, pause on hover — only when NO admin banner is shown
+  const banner1Active = !!(adminBanner?.active && adminBanner.title?.trim());
+  const banner2Active = !!(adminBanner2?.active && adminBanner2.title?.trim());
   useEffect(() => {
     if (paused) return;
-    if (adminBanner?.active && adminBanner.title?.trim()) return; // admin banner shown, no rotation
+    if (banner1Active || banner2Active) return; // at least one admin banner shown, no rotation
     const id = setInterval(next, 5000);
     return () => clearInterval(id);
-  }, [next, paused, adminBanner]);
+  }, [next, paused, banner1Active, banner2Active]);
 
   const handleCta = (banner: Banner) => {
     if (banner.action === "post") goToPost();
@@ -164,37 +177,36 @@ export function AdBanner() {
     }
   };
 
-  const handleAdminCta = () => {
-    if (adminBanner?.link === "listings") goToListings({});
+  const handleAdminCta = (link?: string) => {
+    if (link === "listings") goToListings({});
     else goToPost();
   };
 
-  // ===== ADMIN BANNER (custom text + optional photo) =====
-  // Renders when the admin banner is active AND has a title.
-  // Photo is optional — when absent, the banner shows as a text-only banner
-  // with the configured gradient background + decorative circles.
-  if (adminBanner?.active && adminBanner.title?.trim()) {
-    const hasImage = !!adminBanner.imageUrl;
-    return (
-      <section className="mx-auto max-w-7xl px-4 py-4">
-        <div className={cn(
-          "relative overflow-hidden rounded-2xl bg-gradient-to-r p-6 text-white shadow-xl sm:p-8",
-          adminBanner.gradient || "from-amber-500 via-orange-500 to-rose-500"
-        )}>
+  // ===== ADMIN BANNERS (custom text + optional photo) =====
+  // Renders any active admin banner(s). Banner 1 and Banner 2 are stacked vertically.
+  // If at least one is active, the default rotating banners are hidden.
+  if (banner1Active || banner2Active) {
+    const renderAdminBanner = (b: AdminBanner, key: string) => {
+      const hasImage = !!b.imageUrl;
+      return (
+        <div
+          key={key}
+          className={cn(
+            "relative overflow-hidden rounded-2xl bg-gradient-to-r p-6 text-white shadow-xl sm:p-8",
+            b.gradient || "from-amber-500 via-orange-500 to-rose-500"
+          )}
+        >
           {hasImage ? (
             <>
-              {/* Background photo */}
               <img
-                src={adminBanner.imageUrl}
-                alt={adminBanner.title || "Promo"}
+                src={b.imageUrl}
+                alt={b.title || "Promo"}
                 className="absolute inset-0 size-full object-cover"
               />
-              {/* Dark overlay for text readability */}
               <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-black/10" />
             </>
           ) : (
             <>
-              {/* decorative circles (same style as default rotating banners) */}
               <div className="absolute -right-16 -top-16 size-48 rounded-full bg-white/10" />
               <div className="absolute -bottom-20 right-32 size-40 rounded-full bg-white/10" />
               <div className="absolute left-1/3 -top-10 size-24 rounded-full bg-white/5" />
@@ -210,23 +222,30 @@ export function AdBanner() {
                 </span>
               </div>
               <h3 className="text-xl font-extrabold leading-tight drop-shadow-sm sm:text-2xl md:text-3xl">
-                {adminBanner.title}
+                {b.title}
               </h3>
-              {adminBanner.desc && (
+              {b.desc && (
                 <p className="mt-2 max-w-xl text-sm text-white/90 sm:text-base">
-                  {adminBanner.desc}
+                  {b.desc}
                 </p>
               )}
               <button
-                onClick={handleAdminCta}
+                onClick={() => handleAdminCta(b.link)}
                 className="mt-4 inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-black shadow-lg transition hover:bg-white/90 hover:gap-3"
               >
-                {adminBanner.cta || "Pasang Iklan"}
+                {b.cta || "Pasang Iklan"}
                 <ArrowRight className="size-4 text-black" />
               </button>
             </div>
           </div>
         </div>
+      );
+    };
+
+    return (
+      <section className="mx-auto max-w-7xl space-y-4 px-4 py-4">
+        {banner1Active && renderAdminBanner(adminBanner!, "banner-1")}
+        {banner2Active && renderAdminBanner(adminBanner2!, "banner-2")}
       </section>
     );
   }
