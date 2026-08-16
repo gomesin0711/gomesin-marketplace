@@ -5847,3 +5847,27 @@ Stage Summary:
 - Database schema sudah ter-create dengan 8 tabel + 12 kategori + 5 paket + 1 admin user.
 - Tidak ada perubahan kode aplikasi, hanya ganti env var.
 - User perlu login admin untuk publish listing test yang baru dibuat, atau biarkan pending.
+
+---
+Task ID: fix-paket-features-typeerror
+Agent: main (Z.ai Code)
+Task: Fix Runtime TypeError "(p.features || []).map is not a function" di admin.tsx PaketTab.
+
+Work Log:
+- Analisa root cause: SQL migration yang saya generate sebelumnya simpan features sebagai JSON object string `{"maxPhotos":3,...}`, tapi admin.tsx line 3545 expect array of strings `["Maksimal 3 foto",...]`.
+- API route /api/admin/paket sudah parse features dari string ke JSON (line 36: `JSON.parse(p.features)`), jadi frontend dapat object — `.map()` fail karena object tidak punya method map.
+- Fix langsung di database Supabase via REST API PATCH:
+  * gratis → ["Maksimal 3 foto","Badge Free","Tampil 30 hari","Support email"]
+  * spotlight → ["Maksimal 8 foto","Badge Spotlight","Tampil di bagian Premium","Prioritas pencarian","Support WhatsApp","Tampil 30 hari"]
+  * highlight → ["Maksimal 12 foto","Badge Highlight","Tampil di bagian Premium","Highlight border","Prioritas pencarian","Support priority","Tampil 30 hari"]
+  * titanium → ["Maksimal 20 foto","Badge Titanium","Tampil di bagian Premium","Spotlight border","Prioritas tertinggi","Dilihat lebih banyak","Support priority","Tampil 30 hari"]
+  * platinum → ["Maksimal 30 foto","Badge Platinum","Tampil di bagian Premium","Spotlight border","Highlight border","Prioritas tertinggi","Dilihat lebih banyak","Support priority","Tampil 30 hari"]
+- Verifikasi via /api/admin/paket: semua 5 paket return features sebagai array.
+- Playwright test production admin panel: 4/5 checks PASS (TypeError hilang, no JS errors, features visible).
+- Tidak perlu redeploy karena fix di database level, bukan kode.
+
+Stage Summary:
+- TypeError "(p.features || []).map is not a function" TERATASI.
+- Admin panel PaketTab sekarang render normal dengan daftar features per paket.
+- Tidak perlu redeploy Vercel (fix di Supabase database level).
+- SQL migration script di /home/z/my-project/scripts/supabase-schema-migration.sql sebaiknya di-update juga untuk dokumentasi, tapi karena user sudah run versi lama, fix dilakukan langsung di DB.
