@@ -467,6 +467,9 @@ export function HomeView() {
             </div>
           </section>
 
+          {/* BANNER 3 — smaller banner above Brand New (editable from admin) */}
+          <SmallBanner />
+
           {/* BRAND NEW */}
           <section>
             <div className="mb-4 flex items-end justify-between">
@@ -601,5 +604,99 @@ function HeroBanner() {
         </div>
       </div>
     </section>
+  );
+}
+
+// ============ SMALL BANNER (above Brand New section, editable from admin) ============
+type SmallBannerConfig = {
+  title: string;
+  desc: string;
+  cta: string;
+  imageUrl: string;
+  link: string;
+  gradient: string;
+  active: boolean;
+};
+
+const DEFAULT_SMALL: SmallBannerConfig = {
+  title: "",
+  desc: "",
+  cta: "Lihat Semua",
+  imageUrl: "",
+  link: "listings",
+  gradient: "from-rose-600 via-pink-600 to-fuchsia-600",
+  active: false,
+};
+
+function SmallBanner() {
+  const goToPost = useStore((s) => s.goToPost);
+  const goToListings = useStore((s) => s.goToListings);
+
+  const { data } = useQuery({
+    queryKey: ["admin-banner-3"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/banner-3");
+      if (!res.ok) return { banner: null };
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  const b: SmallBannerConfig = { ...DEFAULT_SMALL, ...(data?.banner || {}) };
+
+  if (!b.active || !b.title?.trim()) return null;
+
+  const handleClick = () => {
+    if (b.link === "listings") goToListings({});
+    else goToPost();
+  };
+
+  const hasImage = !!b.imageUrl;
+
+  return (
+    <div
+      className={cn(
+        "relative flex items-center overflow-hidden rounded-xl bg-gradient-to-r p-4 text-white shadow-md sm:p-5",
+        b.gradient
+      )}
+    >
+      {hasImage ? (
+        <>
+          <img
+            src={b.imageUrl}
+            alt={b.title}
+            className="absolute inset-0 size-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
+        </>
+      ) : (
+        <>
+          <div className="absolute -right-8 -top-8 size-28 rounded-full bg-white/10" />
+          <div className="absolute -bottom-10 right-16 size-24 rounded-full bg-white/10" />
+        </>
+      )}
+
+      <div className="relative flex w-full items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-extrabold leading-tight drop-shadow-sm sm:text-base md:text-lg">
+            {b.title}
+          </h3>
+          {b.desc && (
+            <p className="mt-0.5 line-clamp-1 text-xs text-white/90 sm:text-sm">
+              {b.desc}
+            </p>
+          )}
+        </div>
+        {b.cta && (
+          <button
+            onClick={handleClick}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-bold text-black shadow transition hover:bg-white/90 sm:text-sm"
+          >
+            {b.cta}
+            <ChevronRight className="size-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

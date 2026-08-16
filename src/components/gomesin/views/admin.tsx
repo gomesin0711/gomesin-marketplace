@@ -2831,6 +2831,295 @@ function PromoBanner2Tab() {
   );
 }
 
+// ============ PROMO BANNER 3 TAB (smaller banner above Brand New) ============
+function Banner3Tab() {
+  const qc = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-banner-3"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/banner-3");
+      if (!res.ok) return { banner: null };
+      return res.json();
+    },
+    staleTime: 0,
+  });
+
+  const banner = data?.banner;
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const [cta, setCta] = useState("Lihat Semua");
+  const [imageUrl, setImageUrl] = useState("");
+  const [link, setLink] = useState("listings");
+  const [gradient, setGradient] = useState("from-rose-600 via-pink-600 to-fuchsia-600");
+  const [active, setActive] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (banner && !loaded) {
+      setTitle(banner.title || "");
+      setDesc(banner.desc || "");
+      setCta(banner.cta || "Lihat Semua");
+      setImageUrl(banner.imageUrl || "");
+      setLink(banner.link || "listings");
+      setGradient(banner.gradient || "from-rose-600 via-pink-600 to-fuchsia-600");
+      setActive(banner.active !== false && !!banner.title);
+      setLoaded(true);
+    }
+  }, [banner, loaded]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await fetch("/api/admin/banner-3", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Gagal menyimpan banner 3");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Banner 3 berhasil disimpan. Perubahan langsung tampil di beranda.");
+      qc.invalidateQueries({ queryKey: ["admin-banner-3"] });
+    },
+    onError: (e: any) => toast.error(e.message || "Gagal menyimpan banner 3"),
+  });
+
+  const handleSave = () => {
+    if (!title.trim()) { toast.error("Judul banner 3 wajib diisi"); return; }
+    saveMutation.mutate({ title, desc, cta, imageUrl, link, gradient, active });
+  };
+
+  const handleFile = async (file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast.error("File harus berupa gambar"); return; }
+    setUploading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            const maxW = 1600;
+            const scale = Math.min(1, maxW / img.width);
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) { reject(new Error("Canvas tidak didukung")); return; }
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            let q = 0.8;
+            let out = canvas.toDataURL("image/jpeg", q);
+            while (out.length > 280000 && q > 0.3) {
+              q -= 0.1;
+              out = canvas.toDataURL("image/jpeg", q);
+            }
+            resolve(out);
+          };
+          img.onerror = () => reject(new Error("Gagal memuat gambar"));
+          img.src = reader.result as string;
+        };
+        reader.onerror = () => reject(new Error("Gagal membaca file"));
+        reader.readAsDataURL(file);
+      });
+
+      const res = await fetch("/api/upload-banner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataUrl }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Gagal upload");
+      }
+      const result = await res.json();
+      setImageUrl(result.url);
+      toast.success("Foto banner 3 berhasil diunggah");
+    } catch (e: any) {
+      toast.error(e.message || "Gagal mengunggah foto");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const GRADIENTS = [
+    { value: "from-rose-600 via-pink-600 to-fuchsia-600", label: "Merah Muda" },
+    { value: "from-amber-500 via-orange-500 to-rose-500", label: "Jingga" },
+    { value: "from-emerald-500 via-green-600 to-teal-600", label: "Hijau" },
+    { value: "from-orange-600 via-orange-600 to-cyan-600", label: "Oranye-Cyan" },
+    { value: "from-blue-600 via-indigo-600 to-violet-600", label: "Biru" },
+    { value: "from-slate-700 via-slate-800 to-slate-900", label: "Gelap" },
+  ];
+
+  if (isLoading) return <SkeletonGrid count={2} />;
+
+  return (
+    <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold">Banner 3 (Kecil — di atas Iklan Brand New)</h2>
+        <Badge className={active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}>
+          {active ? "Aktif" : "Nonaktif"}
+        </Badge>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Banner kecil yang tampil di atas section &quot;Iklan Brand New&quot;. Lebih ringkas dari banner 1 & 2. Foto bersifat opsional — jika tanpa foto, banner tampil dengan background gradient.
+      </p>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* ===== FORM ===== */}
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs">Judul Banner *</Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="mis. Mesin Baru Garansi Resmi" className="mt-1" />
+          </div>
+          <div>
+            <Label className="text-xs">Deskripsi <span className="text-muted-foreground">(singkat, 1 baris)</span></Label>
+            <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="mis. Pilihan mesin baru bergaransi resmi" className="mt-1" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Teks Tombol (CTA)</Label>
+              <Input value={cta} onChange={(e) => setCta(e.target.value)} placeholder="Lihat Semua" className="mt-1" />
+            </div>
+            <div>
+              <Label className="text-xs">Tujuan Tombol</Label>
+              <select
+                value={link}
+                onChange={(e) => setLink(e.target.value)}
+                className="mt-1 h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
+              >
+                <option value="post">Halaman Pasang Iklan</option>
+                <option value="listings">Halaman Daftar Iklan</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Warna Background (saat tanpa foto)</Label>
+            <select
+              value={gradient}
+              onChange={(e) => setGradient(e.target.value)}
+              className="mt-1 h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
+            >
+              {GRADIENTS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+            </select>
+          </div>
+
+          {/* Photo upload */}
+          <div>
+            <Label className="text-xs">Foto Banner <span className="text-muted-foreground">(opsional)</span></Label>
+            <div className="mt-1 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="flex h-16 w-28 shrink-0 items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-border bg-secondary/50 hover:border-primary"
+              >
+                {imageUrl ? (
+                  <img src={imageUrl} alt="Preview" className="size-full object-cover" />
+                ) : uploading ? (
+                  <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                ) : (
+                  <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                    <ImageIcon className="size-6" />
+                    <span className="text-[10px]">Upload</span>
+                  </div>
+                )}
+              </button>
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="text-xs text-muted-foreground">Klik kotak untuk memilih foto. Disarankan rasio 16:9.</p>
+                {imageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setImageUrl("")}
+                    className="text-xs font-medium text-destructive hover:underline"
+                  >
+                    Hapus foto
+                  </button>
+                )}
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
+              />
+            </div>
+          </div>
+
+          {/* Active toggle */}
+          <label className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div>
+              <p className="text-sm font-medium">Tampilkan banner 3</p>
+              <p className="text-xs text-muted-foreground">Jika aktif, banner kecil tampil di atas Iklan Brand New</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={active}
+              onClick={() => setActive(!active)}
+              className={cn("relative h-6 w-11 shrink-0 rounded-full transition", active ? "bg-primary" : "bg-muted")}
+            >
+              <span className={cn("absolute top-0.5 size-5 rounded-full bg-white shadow transition", active ? "left-[22px]" : "left-0.5")} />
+            </button>
+          </label>
+
+          <Button onClick={handleSave} disabled={saveMutation.isPending || uploading} className="w-full">
+            {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+            {saveMutation.isPending ? "Menyimpan..." : "Simpan Banner 3"}
+          </Button>
+        </div>
+
+        {/* ===== LIVE PREVIEW ===== */}
+        <div className="space-y-2">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pratinjau (Preview)</Label>
+          <div className={cn(
+            "relative flex items-center overflow-hidden rounded-xl bg-gradient-to-r p-4 text-white shadow-md sm:p-5",
+            gradient
+          )}>
+            {imageUrl ? (
+              <>
+                <img src={imageUrl} alt="" className="absolute inset-0 size-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
+              </>
+            ) : (
+              <>
+                <div className="absolute -right-8 -top-8 size-28 rounded-full bg-white/10" />
+                <div className="absolute -bottom-10 right-16 size-24 rounded-full bg-white/10" />
+              </>
+            )}
+            <div className="relative flex w-full items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-extrabold leading-tight drop-shadow-sm sm:text-base md:text-lg">
+                  {title || "Judul Banner 3 Anda"}
+                </h3>
+                {desc && (
+                  <p className="mt-0.5 line-clamp-1 text-xs text-white/90 sm:text-sm">
+                    {desc}
+                  </p>
+                )}
+              </div>
+              {cta && (
+                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-bold text-black shadow">
+                  {cta}
+                </span>
+              )}
+            </div>
+          </div>
+          <p className="text-center text-[11px] text-muted-foreground">
+            Banner kecil ini tampil di atas section &quot;Iklan Brand New&quot;.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============ BANNER TAB (promo banner, below categories) ============
 function BannerTab() {
   const { t } = useLang();
@@ -3137,6 +3426,9 @@ function BannerTab() {
 
       {/* PROMO BANNER 2 editor (second editable banner, below banner 1) */}
       <PromoBanner2Tab />
+
+      {/* BANNER 3 editor (smaller banner above Brand New section) */}
+      <Banner3Tab />
     </div>
   );
 }
