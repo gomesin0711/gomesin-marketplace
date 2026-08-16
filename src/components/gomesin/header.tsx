@@ -92,8 +92,12 @@ export function Header() {
     // socket.io (e.g. on Vercel production where there is no WebSocket
     // server). The socket invalidation (when available) provides instant
     // updates; polling is the universal fallback.
+    // IMPORTANT: refetchIntervalInBackground=true so the ringtone plays
+    // EVEN WHEN the user is on another browser tab. Without this, polling
+    // stops when the tab is backgrounded and incoming messages are silently
+    // missed (no sound notification).
     refetchInterval: 3000,
-    refetchIntervalInBackground: false,
+    refetchIntervalInBackground: true,
   });
   const unreadCount = messagesData?.conversations?.reduce((a: number, c: any) => a + (c.unread || 0), 0) ?? 0;
 

@@ -373,9 +373,24 @@ function playShopeeChime(startTime: number, peakGain: number) {
  * Plays the TTS voice saying "mesinku" (2x speed) directly — no chime intro.
  * Falls back to the synthesized coin drop if the audio file fails to load/play.
  * Respects the user's chat sound preference (localStorage "mesinku-chat-sound").
+ *
+ * IMPORTANT: Browser autoplay policy requires a user gesture before audio can
+ * play. We try multiple strategies to maximize the chance the sound plays:
+ *   1. Resume AudioContext (in case it's suspended) on every play attempt
+ *   2. Try the HTMLAudioElement first (real recorded sound)
+ *   3. If it fails/rejects, immediately play the synthesized coin drop fallback
+ *   4. If BOTH fail, the AudioContext resume in step 1 ensures the synthesized
+ *      sound has the best chance of being heard
  */
 export function playNotificationSound() {
   if (!isSoundEnabled()) return;
+  // Always try to resume the AudioContext — it may have been suspended by the
+  // browser (e.g. after tab went background → foreground). This is critical:
+  // without an active AudioContext, the synthesized fallback also fails.
+  const ctx = getAudioCtx();
+  if (ctx && ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
   const el = getChatAudio();
   if (el) {
     try {
@@ -408,6 +423,11 @@ export function playNotificationSound() {
  */
 export function playListingNotificationSound() {
   if (!isSoundEnabled()) return;
+  // Always try to resume the AudioContext — see playNotificationSound for details.
+  const ctx = getAudioCtx();
+  if (ctx && ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
   const el = getListingAudio();
   if (el) {
     try {
@@ -436,6 +456,11 @@ export function playListingNotificationSound() {
  */
 export function playDingSound() {
   if (!isSoundEnabled()) return;
+  // Always try to resume the AudioContext — see playNotificationSound for details.
+  const ctx = getAudioCtx();
+  if (ctx && ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
   const el = getChatAudio();
   if (el) {
     try {
@@ -514,6 +539,11 @@ let globalListenersAttached = false;
 /**
  * Attach one-time global listeners to unlock audio on first user interaction.
  * Safe to call multiple times — only attaches once.
+ *
+ * ALSO attaches a visibilitychange listener so the AudioContext is re-resumed
+ * every time the user returns to the tab. Browsers suspend AudioContext when
+ * a tab goes to the background — without re-resuming, the synthesized sound
+ * fallback would fail after the user switches tabs and comes back.
  */
 export function setupNotificationSoundUnlock() {
   if (typeof window === "undefined") return;
@@ -530,4 +560,25 @@ export function setupNotificationSoundUnlock() {
   window.addEventListener("click", unlock, { capture: true, once: true });
   window.addEventListener("touchstart", unlock, { capture: true, once: true });
   window.addEventListener("keydown", unlock, { capture: true, once: true });
+
+  // Re-resume AudioContext when the tab becomes visible again. Browsers
+  // suspend AudioContext on background tabs — without this, sounds won't
+  // play after the user returns to the tab.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      const ctx = getAudioCtx();
+      if (ctx && ctx.state === "suspended") {
+        ctx.resume().catch(() => {});
+      }
+    }
+  }, { passive: true });
+
+  // Also re-resume on window focus (catches cases where visibilitychange
+  // doesn't fire, e.g. clicking on the tab bar).
+  window.addEventListener("focus", () => {
+    const ctx = getAudioCtx();
+    if (ctx && ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+  }, { passive: true });
 }
