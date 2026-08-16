@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+import { useTheme } from "next-themes";
+import { useMounted } from "@/lib/use-mounted";
 
 export type ChatBgPreset = {
   key: string;
@@ -46,6 +48,15 @@ export function useChatBg() {
   // (chat dialogs / panels), never to initial visible DOM.
   const [bgKey, setBgKey] = useState<string>(readStoredBg);
 
+  // Detect dark mode via next-themes. Compute directly (no useState/useEffect)
+  // to avoid the "setState in effect" lint warning and unnecessary re-renders.
+  // `mounted` ensures we only read theme after hydration (avoids SSR mismatch).
+  const mounted = useMounted();
+  const { theme, resolvedTheme } = useTheme();
+  // resolvedTheme handles "system" preference; fall back to theme.
+  const activeTheme = mounted ? (resolvedTheme || theme) : undefined;
+  const isDarkMode = activeTheme === "dark";
+
   const setBg = (key: string) => {
     setBgKey(key);
     try {
@@ -56,7 +67,12 @@ export function useChatBg() {
   const preset =
     CHAT_BG_PRESETS.find((p) => p.key === bgKey) || CHAT_BG_PRESETS[0];
 
-  const bgStyle: React.CSSProperties = preset.pattern
+  // In dark mode, ALWAYS use pure black background — overrides user preset.
+  // This ensures the chat area is black in dark mode regardless of the
+  // user's chat-bg preset selection (matching profile.tsx behavior).
+  const bgStyle: React.CSSProperties = isDarkMode
+    ? { backgroundColor: "#000000" }
+    : preset.pattern
     ? {
         backgroundColor: preset.color,
         backgroundImage:
@@ -65,7 +81,8 @@ export function useChatBg() {
       }
     : { backgroundColor: preset.color };
 
-  const isDark = !!preset.dark;
+  // In dark mode, treat the background as "dark" so text renders in white.
+  const isDark = isDarkMode || !!preset.dark;
 
   return { bgKey, setBg, preset, bgStyle, isDark, presets: CHAT_BG_PRESETS };
 }

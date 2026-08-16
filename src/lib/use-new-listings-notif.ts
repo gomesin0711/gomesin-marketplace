@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { playListingNotificationSound } from "@/lib/notification-sound";
 import { useChatSocket } from "@/lib/use-chat-socket";
@@ -18,17 +18,21 @@ import { useChatSocket } from "@/lib/use-chat-socket";
  *      broadcastListings() helper after delete/publish/violation toggle).
  *    On either event, the `["new-listings-notif"]` query is invalidated
  *    immediately → refetches → new listing shows up in the bell + the
- *    "Iklan baru nih" ringtone plays.
+ *    "Iklan baru" ringtone plays.
  *
  * 2. Polling fallback (10-second interval):
  *    If the socket is disconnected (chat-service down, network blocks
  *    WebSocket), we still poll every 10 seconds so the badge stays
  *    reasonably fresh.
  *
- * 3. localStorage `seenAt`:
+ * 3. localStorage `seenAt` (SHARED across all component instances):
  *    - Stores `lastSeenAt` (epoch ms) in localStorage so the badge persists
  *      across tabs/sessions.
- *    - `markAllSeen()` updates `seenAt` to "now" — clears the badge.
+ *    - `markAllSeen()` updates `seenAt` to "now" — clears the badge
+ *      INSTANTLY in ALL components (bell + notification list) via a
+ *      module-level store with useSyncExternalStore.
+ *    - This fixes the bug where the bell badge wouldn't clear in real-time
+ *      when notifications were read in the profile panel.
  *
  * The list of new listings itself is returned so the bell dropdown and the
  * profile "notifikasi" panel can display them.
@@ -36,22 +40,53 @@ import { useChatSocket } from "@/lib/use-chat-socket";
 
 const STORAGE_KEY = "gomesin-new-listings-seen-at";
 
-function getSeenAt(): number {
-  if (typeof window === "undefined") return Date.now();
+// ── Shared seenAt store (module-level) ──────────────────────────────────
+// This ensures ALL components using useNewListingsNotif share the SAME
+// seenAt value. When markAllSeen() is called in one component (e.g. the
+// notification list), the bell badge in the header updates INSTANTLY
+// without needing a re-fetch or page refresh.
+//
+// Uses useSyncExternalStore for React 18+ concurrent-safe subscription.
+
+let sharedSeenAt: number = 0;
+const listeners = new Set<() => void>();
+
+function initSharedSeenAt() {
+  if (typeof window === "undefined") {
+    sharedSeenAt = Date.now();
+    return;
+  }
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
     // First-ever visit: seed with "now" so we don't surface every existing ad.
     const now = Date.now();
     localStorage.setItem(STORAGE_KEY, String(now));
-    return now;
+    sharedSeenAt = now;
+  } else {
+    const n = Number(raw);
+    sharedSeenAt = Number.isFinite(n) ? n : Date.now();
   }
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : Date.now();
 }
 
-function setSeenAt(ts: number) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, String(ts));
+function getSharedSeenAt(): number {
+  if (sharedSeenAt === 0) initSharedSeenAt();
+  return sharedSeenAt;
+}
+
+function setSharedSeenAt(ts: number) {
+  sharedSeenAt = ts;
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(STORAGE_KEY, String(ts));
+    } catch {}
+  }
+  // Notify all subscribed components to re-render with the new seenAt.
+  listeners.forEach((fn) => fn());
+}
+
+function subscribeSeenAt(callback: () => void): () => void {
+  listeners.add(callback);
+  return () => listeners.delete(callback);
 }
 
 async function fetchNewest(): Promise<{ listings: any[] }> {
@@ -62,15 +97,20 @@ async function fetchNewest(): Promise<{ listings: any[] }> {
 
 export function useNewListingsNotif() {
   const qc = useQueryClient();
-  const [seenAt, setSeenAtState] = useState<number>(() => getSeenAt());
+  // useSyncExternalStore ensures ALL components share the same seenAt value.
+  // When markAllSeen() updates sharedSeenAt, every subscribed component
+  // re-renders immediately with the new value → badge clears in real-time.
+  const seenAt = useSyncExternalStore(
+    subscribeSeenAt,
+    getSharedSeenAt,
+    () => Date.now() // SSR snapshot — won't be used on client after hydration
+  );
   const { subscribe } = useChatSocket();
 
   const { data } = useQuery({
     queryKey: ["new-listings-notif"],
     queryFn: fetchNewest,
     // Poll every 10 seconds as a fallback when socket.io is unavailable.
-    // (Was 60s — caused the "iklan baru tidak masuk notifikasi sampai
-    // di-refresh" complaint. Now realtime via socket + 10s poll backup.)
     refetchInterval: 10_000,
     refetchOnWindowFocus: true,
     staleTime: 5_000,
@@ -101,7 +141,17 @@ export function useNewListingsNotif() {
   // Keep seenAt in sync if it changes in another tab.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) setSeenAtState(getSeenAt());
+      if (e.key === STORAGE_KEY) {
+        // Update the shared store so all components re-render.
+        const raw = e.newValue;
+        if (raw) {
+          const n = Number(raw);
+          if (Number.isFinite(n)) {
+            sharedSeenAt = n;
+            listeners.forEach((fn) => fn());
+          }
+        }
+      }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -117,7 +167,7 @@ export function useNewListingsNotif() {
 
   const count = newListings.length;
 
-  // Play the "Iklan baru nih" ringtone when NEW listings appear.
+  // Play the "Iklan baru masuk" ringtone when NEW listings appear.
   // We track the previous count in a ref — only play when the count
   // INCREASES (not on first load, and not when it drops to 0 after markAllSeen).
   const prevCountRef = useRef<number>(0);
@@ -139,8 +189,9 @@ export function useNewListingsNotif() {
 
   const markAllSeen = () => {
     const now = Date.now();
-    setSeenAt(now);
-    setSeenAtState(now);
+    // Update the shared store → ALL subscribed components re-render
+    // instantly → bell badge clears in real-time.
+    setSharedSeenAt(now);
   };
 
   return { count, newListings, markAllSeen, seenAt };

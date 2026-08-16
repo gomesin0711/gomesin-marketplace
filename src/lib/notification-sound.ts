@@ -32,14 +32,14 @@ let unlocked = false;
 let chatOpen = false;
 
 // --- Preloaded HTMLAudioElement for the "iklan masuk" (new listing) ringtone ---
-// Uses the user-supplied mp3 file (the-sound-of-a-coin-on-a-hard-surface-3.mp3)
-// instead of the synthesized coin drop.
+// TTS-generated Indonesian voice saying "iklan baru masuk" — plays when a
+// new listing is published. Falls back to synthesized coin drop on error.
 let listingAudioEl: HTMLAudioElement | null = null;
 function getListingAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
   if (listingAudioEl) return listingAudioEl;
   try {
-    const el = new Audio("/sounds/iklan-masuk.mp3");
+    const el = new Audio("/sounds/iklan-masuk.wav");
     el.preload = "auto";
     el.volume = 0.9;
     listingAudioEl = el;
@@ -50,7 +50,7 @@ function getListingAudio(): HTMLAudioElement | null {
 }
 
 // --- Preloaded HTMLAudioElement for the "mesinku" chat ringtone ---
-// TTS-generated voice saying "mesinku" — plays on incoming chat messages.
+// TTS-generated Indonesian voice saying "mesin ku" — plays on incoming chat messages.
 let chatAudioEl: HTMLAudioElement | null = null;
 function getChatAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
@@ -239,13 +239,11 @@ export function playNotificationSound() {
 }
 
 /**
- * Play the "iklan masuk" ringtone when a NEW listing is detected.
+ * Play the "iklan baru masuk" ringtone when a NEW listing is detected.
  *
- * Uses the user-supplied mp3 file (`/public/sounds/iklan-masuk.mp3`,
- * sourced from "the-sound-of-a-coin-on-a-hard-surface-3.mp3") —
- * a real coin-on-hard-surface recording — instead of the synthesized
- * coin drop. Falls back to the synthesized "listing" variant if the
- * audio element fails to load/play.
+ * Uses the TTS-generated Indonesian voice file (`/public/sounds/iklan-masuk.wav`)
+ * saying "iklan baru masuk". Falls back to the synthesized "listing" variant
+ * if the audio element fails to load/play.
  *
  * Respects the user's chat sound preference (same toggle).
  */

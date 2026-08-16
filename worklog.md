@@ -4456,3 +4456,303 @@ Stage Summary:
 - Green brand color (#16A34A header, send button, FAB, accents) preserved in both modes.
 - Deployed and verified live at https://gomesin.vercel.app.
 - Files modified: src/components/gomesin/views/profile.tsx (103 dark: variants added), src/components/gomesin/chat-widget.tsx (2 dark: variants added).
+
+---
+Task ID: 1-explore
+Agent: Explore
+Task: Research chat, notification, ringtone, category icon systems
+
+Work Log:
+- Read last 100 lines of worklog.md to understand previous work context (chat realtime, dark mode chat page, jasa category not yet documented).
+- Listed files in src/components/gomesin/, src/app/api/, mini-services/chat-service/, public/, public/cat-icons/.
+- Read full content of:
+  - src/components/gomesin/notification-bell.tsx
+  - src/lib/use-new-listings-notif.ts
+  - src/lib/notification-sound.ts
+  - src/components/gomesin/category-icon.tsx
+  - mini-services/chat-service/index.ts
+  - src/lib/use-chat-socket.ts
+  - src/app/api/messages/route.ts (GET/POST/PATCH/DELETE)
+  - src/app/api/admin/chat/route.ts (admin oversight view)
+  - src/app/api/categories/route.ts (categories endpoint)
+- Grep'd for dark mode, theme, bg classes in chat-widget.tsx + profile.tsx.
+- Grep'd for jasa / HardHat across codebase; found 17 files referencing jasa.
+- Read scripts/seed-jasa.mjs (creates Jasa category) and scripts/fix-jasa.mjs.
+- Read prisma/seed.ts (categories array — only 12 categories, NO jasa entry).
+- Read prisma/schema.prisma (Category model).
+- Read src/lib/seed-data.json preview — contains 13 categories including Jasa/HardHat (sortOrder 13).
+- Read src/components/gomesin/views/profile.tsx chat panel section (lines 1490–1515, 2700–2712, 3320–3350) + dark mode styling refs (lines 340–351, 1580–2470).
+- Read src/components/gomesin/chat-widget.tsx ChatInner messages area (lines 440–545) + setChatOpen call (lines 198–207).
+- Read src/components/gomesin/header.tsx (lines 100–160) for the global message:new sound handler.
+- Listed public/cat-icons/ contents with file sizes (14 PNGs; jasa.png and jasa-v2.png are byte-identical 555344-byte files).
+
+Stage Summary:
+
+=== 1. CHAT PAGE / COMPONENT ===
+Two chat surfaces exist:
+
+A) **profile.tsx "Pesan" panel** — the main mesinKU-style chat page (conversation list + chat view, inline).
+   - File: /home/z/my-project/src/components/gomesin/views/profile.tsx
+   - Panel state: `panel === "pesan"` (line 1492)
+   - Dark mode: uses `next-themes` `useTheme()` (imported line 109); `isDarkMode = mounted && theme === "dark"` (line 347); `effectiveChatBgStyle` override to pure black #000000 when dark (lines 349–351).
+   - Dark mode strategy: Tailwind `dark:` class strategy (class is applied on `<html>` by next-themes). All hardcoded light colors have `dark:` variants applied.
+   - Background colors used (light → dark):
+     * Conversation list panel: `bg-[#FFFFFF] dark:bg-black` (line 1494)
+     * Search pill: `bg-[#F5F7F6] dark:bg-[#1F1F1F]` (line 1585)
+     * Conversation items hover: `hover:bg-[#F5F7F6] dark:hover:bg-white/5` (line 1656)
+     * Active conversation: `bg-[#DCFCE7]/60 dark:bg-[#0A3D23]/60` (line 1657)
+     * Message area bg: `effectiveChatBgStyle` (chat-bg preset OR #000000 in dark mode), wrapper `bg-[#F5F7F6] dark:bg-black` (line 1848)
+     * Message bubble "me": `bg-[#DCFCE7] dark:bg-[#0A3D23]` (line 2099)
+     * Message bubble "them": `bg-white dark:bg-[#1F1F1F]` (line 2100)
+     * Listing bubbles: `bg-white dark:bg-[#1F1F1F]` (line 1995, 2048, 2162)
+     * Input bar: `bg-[#F5F7F6] dark:bg-black` (line 2326), input field `bg-white dark:bg-[#1F1F1F]` (line 2345)
+     * Empty state bg: `bg-[#F5F7F6] dark:bg-black` (line 2435)
+   - Brand green (#16A34A) header preserved in both modes.
+
+B) **chat-widget.tsx ChatInner** — the modal/page chat used from listing detail.
+   - File: /home/z/my-project/src/components/gomesin/chat-widget.tsx
+   - Exports: `ChatInner` (variant "modal" | "page") + `ChatWidget` (Dialog wrapper).
+   - Dark mode: uses semantic tokens (bg-card, bg-primary, text-foreground) for most chrome — these already inherit dark mode from globals.css token system.
+   - Hardcoded colors with `dark:` variants:
+     * "Hari ini" badge: `bg-white/80 dark:bg-white/10` (line 458)
+     * Assistant bubble (m.role === "assistant"): `bg-white dark:bg-[#1F1F1F] text-black dark:text-white` (line 474)
+   - User bubble: `bg-primary text-primary-foreground` (semantic, line 473) — no dark: variant needed.
+   - Header: `bg-primary text-primary-foreground` (semantic, line 375).
+   - Messages area bg: `style={bgStyle}` (from `useChatBg` hook) — does NOT have explicit dark-mode override (uses user's preset).
+   - Does NOT use `useTheme()` directly; relies on Tailwind `dark:` classes for the hardcoded white bubbles.
+
+=== 2. NOTIFICATION SYSTEM ===
+A) **NotificationBell** (badge button) — /home/z/my-project/src/components/gomesin/notification-bell.tsx
+   - Clicking the bell navigates to profile's "notifikasi" panel via `goToProfilePanel("notifikasi")` (NOT a popover).
+   - Badge count logic (lines 22, 37–43):
+     ```tsx
+     const { count } = useNewListingsNotif();
+     {count > 0 && (
+       <span className="absolute -right-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white shadow">
+         {count > 99 ? "99+" : count}
+       </span>
+     )}
+     ```
+   - Badge bg color: `bg-rose-500` (NOT primary green) — sits on a `size-9` bell button.
+
+B) **useNewListingsNotif hook** — /home/z/my-project/src/lib/use-new-listings-notif.ts
+   - THREE mechanisms (instant → 10s poll → localStorage):
+     1. Socket.io push (instant): subscribes to `listing:new` (line 82) and `listings:invalidate` (line 92) — invalidates `["new-listings-notif"]` query → refetch → badge updates + ringtone plays.
+     2. Polling fallback every 10s: `refetchInterval: 10_000` (line 74).
+     3. localStorage `gomesin-new-listings-seen-at` (lines 37–55): `seenAt` timestamp; `markAllSeen()` sets seenAt=now → clears badge.
+   - "New listings" filter (lines 113–116): `allListings.filter(l => new Date(l.createdAt).getTime() > seenAt)`.
+   - API endpoint fetched: `GET /api/listings?sort=newest&limit=24` (line 58).
+   - Ringtone trigger (lines 126–138): `playListingNotificationSound()` when `count > prevCountRef.current` (skips first load).
+
+C) **NewListingsNotificationList** — /home/z/my-project/src/components/gomesin/notification-bell.tsx (exported, lines 54–147)
+   - Renders the REAL new listings (not mock) inside profile's "notifikasi" panel.
+   - Mark-as-read: `markAllSeen()` (line 55) — updates localStorage seenAt to "now".
+   - Each row: thumbnail + title + city + seller + price + time-ago; click → goToDetail(slug) + markAllSeen.
+   - "Tandai semua dibaca" button calls `markAllSeen()`.
+
+D) **Profile "notifikasi" panel mount** — /home/z/my-project/src/components/gomesin/views/profile.tsx (line 2710–2712):
+   ```tsx
+   {panel === "notifikasi" && (
+     <NewListingsNotificationList />
+   )}
+   ```
+
+E) **Chat message read-status**:
+   - API: PATCH /api/messages with `{userId, partnerId}` marks `read=true` for all messages from partnerId to userId (/home/z/my-project/src/app/api/messages/route.ts lines 478–516).
+   - Socket event: `message:read` (chat-service index.ts lines 175–206) — emits `message:read-update` to the partner.
+   - Client: `markRead(userId, partnerId)` in /home/z/my-project/src/lib/use-chat-socket.ts (lines 190–196).
+
+F) **Real-time**: socket.io via chat-service on port 3003 (path "/"), Caddy gateway with `XTransformPort=3003` query param. transports=["websocket","polling"] (websocket first). 10s polling fallback for notifications; 2s polling fallback for messages in chat-widget.tsx and profile.tsx.
+
+=== 3. RINGTONE / SOUND SYSTEM ===
+A) **Sound utility** — /home/z/my-project/src/lib/notification-sound.ts
+   - Two preloaded HTMLAudioElement singletons:
+     * `getChatAudio()` (lines 54–67): preloads `/sounds/mesinku-chat.wav` (volume 0.9). TTS voice saying "mesinku" (47376-byte WAV).
+     * `getListingAudio()` (lines 38–50): preloads `/sounds/iklan-masuk.mp3` (volume 0.9). Coin-on-hard-surface recording (75485-byte MP3).
+   - Both preloaded in `unlockNotificationSound()` (lines 89–104) — called on first user interaction via `setupNotificationSoundUnlock()` (lines 361–376).
+   - Chat ringtone functions:
+     * `playNotificationSound()` (lines 219–239): plays `/sounds/mesinku-chat.wav` at volume 0.9 when chat is NOT open. Falls back to `playCoinDropSound("chat")` synthesized coin drop on failure.
+     * `playDingSound()` (lines 280–299): plays `/sounds/mesinku-chat.wav` at volume 0.5 (quieter) when chat IS open. Falls back to `playClinkSoft()` synthesized clink.
+   - Listing ringtone function:
+     * `playListingNotificationSound()` (lines 252–272): plays `/sounds/iklan-masuk.mp3`. Falls back to `playCoinDropSound("listing")` synthesized variant on failure.
+   - `setChatOpen(isOpen)` (lines 343–345): module-level flag, queried by `isChatOpen()` (lines 351–353).
+   - Sound toggle: localStorage key `mesinku-chat-sound` (legacy: `gomesin-chat-sound`). `isSoundEnabled()` returns true unless explicitly "off". `setChatSoundEnabled(enabled)` writes "on"/"off".
+
+B) **Chat ringtone triggers** — /home/z/my-project/src/components/gomesin/header.tsx:
+   - Global socket listener at lines 144–165: on `subscribe("message:new", ...)`:
+     ```tsx
+     if (msg && msg.senderId !== user.id) {
+       if (msg.id) seenMsgIdsRef.current.add(msg.id);
+       if (isChatOpen()) { playDingSound(); }
+       else { playNotificationSound(); }
+     }
+     ```
+   - Polling-based fallback at lines 112–141: watches `messagesData.conversations`, plays `playDingSound()` or `playNotificationSound()` when new incoming (sent=false) message ids appear that aren't in `seenMsgIdsRef`.
+   - `setChatOpen(true)` called from ChatInner on mount (chat-widget.tsx line 203); `setChatOpen(false)` on unmount (line 205).
+   - Profile.tsx "Pesan" panel calls `setChatOpen(false)` on unmount (line 756) — NOTE: it never calls `setChatOpen(true)` when an active chat is selected, so the full ringtone always plays for incoming messages when the Pesan panel is open. (Possible bug to flag.)
+
+C) **Listing ringtone triggers** — /home/z/my-project/src/lib/use-new-listings-notif.ts (lines 126–138):
+   - On count increase: `playListingNotificationSound()` plays `/sounds/iklan-masuk.mp3`.
+
+D) **Sound assets** in /home/z/my-project/public/sounds/:
+   - `mesinku-chat.wav` (47376 bytes) — TTS voice "mesinku", used for chat ringtone.
+   - `iklan-masuk.mp3` (75485 bytes) — coin-on-hard-surface, used for new-listing ringtone.
+
+=== 4. CATEGORY ICONS ===
+A) **public/cat-icons/ folder** (14 PNG files, all flat cartoon machine illustrations):
+   - alatberat.png (181676 bytes)
+   - jasa.png (555344 bytes) ← UNUSED in current code
+   - jasa-v2.png (555344 bytes) ← byte-identical to jasa.png; used for HardHat
+   - kompressor.png (149565 bytes)
+   - mescnc.png (62734 bytes)
+   - mesinbubut.png (52957 bytes)
+   - mesincetak.png (131729 bytes)
+   - mesindigitalprinting.png (73949 bytes)
+   - mesinkayu.png (130230 bytes)
+   - mesinkemasan.png (68360 bytes)
+   - mesinmakanan.png (162927 bytes)
+   - mesinplastik.png (65429 bytes)
+   - mesintekstil.png (125320 bytes)
+   - sparepart.png (158551 bytes)
+   - NOTE: there is NO file for "laser" — the Mesin CNC & Laser category uses `Cog → mescnc.png`.
+
+B) **Category model** — /home/z/my-project/prisma/schema.prisma (lines 12–20):
+   ```prisma
+   model Category {
+     id        String    @id @default(cuid())
+     name      String
+     slug      String    @unique
+     icon      String
+     color     String
+     sortOrder Int       @default(0)
+     listings  Listing[]
+   }
+   ```
+   The `icon` field stores a LUCIDE ICON NAME (e.g. "Printer", "HardHat", "Truck") — NOT a file path.
+
+C) **CategoryIcon component** — /home/z/my-project/src/components/gomesin/category-icon.tsx (lines 1–46):
+   - Maps lucide icon name → PNG path:
+     ```tsx
+     const MAP: Record<string, string> = {
+       Printer: "/cat-icons/mesincetak.png",
+       MonitorPrinter: "/cat-icons/mesindigitalprinting.png",
+       Cog: "/cat-icons/mescnc.png",
+       Disc3: "/cat-icons/mesinbubut.png",
+       TreePine: "/cat-icons/mesinkayu.png",
+       CookingPot: "/cat-icons/mesinmakanan.png",
+       FlaskConical: "/cat-icons/mesinplastik.png",
+       Zap: "/cat-icons/kompressor.png",
+       Shirt: "/cat-icons/mesintekstil.png",
+       Package: "/cat-icons/mesinkemasan.png",
+       Truck: "/cat-icons/alatberat.png",
+       Wrench: "/cat-icons/sparepart.png",
+       HardHat: "/cat-icons/jasa-v2.png",   // ← jasa category uses HardHat → jasa-v2.png
+     };
+     const FALLBACK = "/cat-icons/mescnc.png";
+     ```
+   - Renders `<Image src={MAP[name] ?? FALLBACK} width={120} height={120} unoptimized />`.
+
+D) **prisma/seed.ts** — /home/z/my-project/prisma/seed.ts (lines 87–100):
+   - 12 categories ONLY — NO jasa entry. The jasa category is NOT in the main seed file.
+
+E) **scripts/seed-jasa.mjs** — /home/z/my-project/scripts/seed-jasa.mjs (lines 5–13):
+   - SEPARATE one-off script that creates the Jasa category:
+     ```js
+     const jasaCat = await db.category.create({
+       data: { name: 'Jasa', slug: 'jasa', icon: 'HardHat', color: 'amber', sortOrder: 13 },
+     });
+     ```
+   - Then creates 6 jasa listings (cetak offset, service mesin cetak, sewa excavator, CNC routing, laser cutting, installasi packaging). All have `condition: 'jasa'`.
+   - scripts/fix-jasa.mjs flips jasa listings to `status: 'active', paymentStatus: 'paid'`.
+
+F) **Where jasa is referenced**:
+   - Home page: `/home/z/my-project/src/components/gomesin/views/home.tsx` (lines 369–373, 520–534) — fetches `/api/listings?condition=jasa&sort=newest&limit=24` and renders a "JASA" section.
+   - Listings API: `/home/z/my-project/src/app/api/listings/route.ts` (lines 81–84, 158–162) — special-cases `category === "jasa-teknisi"` to filter by `condition: "jasa"`.
+   - Post-ad wizard: `/home/z/my-project/src/components/gomesin/views/post-ad.tsx` (lines 134, 444, 447, 478, 481) — `adType: "mesin" | "jasa"` toggle; sets `condition: "jasa"` when adType is jasa.
+   - Fallback data: `/home/z/my-project/src/lib/fallback-data.ts` (lines 127–129) — `jasa-teknisi` slug maps to condition=jasa listings.
+   - i18n: `/home/z/my-project/src/lib/i18n.ts` — has translation keys for "jasa" labels.
+   - seed-data.json: `/home/z/my-project/src/lib/seed-data.json` — contains 13 categories including `{name:"Jasa", slug:"jasa", icon:"HardHat", color:"amber", sortOrder:13}` (id: cms66vc0t0000tfxva8mje21q).
+
+G) **Jasa category icon current setup**: icon="HardHat" in DB → category-icon.tsx MAP → `/cat-icons/jasa-v2.png` (a 555344-byte PNG, byte-identical to the unused `/cat-icons/jasa.png`).
+
+=== 5. SOCKET.IO INTEGRATION ===
+A) **chat-service** — /home/z/my-project/mini-services/chat-service/index.ts (336 lines)
+   - Socket.io server on port 3003 (path "/"), CORS: origin '*'.
+   - Tiny HTTP control server on port 3004 (localhost-only) for server-side broadcasts via `POST /internal/broadcast { event, payload }`.
+   - maxHttpBufferSize: 25MB (for base64 image payloads).
+   - Events the server LISTENS to (client → server):
+     * `user:join` { userId } → joins socket room `user:${userId}` (line 98)
+     * `message:send` { senderId, receiverId, content, image?, listingId?, listingTitle? } → saves to DB + emits `message:new` to both sender (sent:true) and receiver (sent:false) (lines 111–172)
+     * `message:read` { userId, partnerId } → marks messages read in DB + emits `message:read-update` to partner (lines 175–206)
+     * `typing:start` / `typing:stop` { senderId, receiverId } → emits `typing:update` to receiver (lines 208–216)
+     * `call:request`, `call:accept`, `call:reject`, `call:end`, `call:signal` — WebRTC call signaling relay (lines 222–269)
+     * `listings:broadcast` { kind?: 'invalidate' } → fans out `listings:invalidate` to ALL clients (lines 274–282)
+     * `listing:broadcast-new` { listing } → fans out `listing:new` to ALL clients (lines 291–295) — REDUNDANCY for server-side /internal/broadcast
+     * `listing:broadcast-pending` { ... } → fans out `listing:pending` to ALL clients (lines 297–301)
+   - Events the server EMITS (server → client): `message:new`, `message:read-update`, `typing:update`, `listings:invalidate`, `listing:new`, `listing:pending`, `call:incoming`, `call:accepted`, `call:rejected`, `call:ended`, `call:signal`.
+
+B) **Frontend client** — /home/z/my-project/src/lib/use-chat-socket.ts (348 lines)
+   - Singleton socket.io manager. Connects to relative path "/" with `query: { XTransformPort: "3003" }` (Caddy gateway routing).
+   - transports: `["websocket", "polling"]` — websocket first for true realtime.
+   - Subscribed events (lines 101–112): `message:new`, `message:read-update`, `typing:update`, `listings:invalidate`, `listing:new`, `listing:pending`, `call:incoming`, `call:accepted`, `call:rejected`, `call:ended`, `call:signal`.
+   - Emits: `user:join`, `message:send`, `message:read`, `typing:start`, `typing:stop`, `call:request`, `call:accept`, `call:reject`, `call:end`, `call:signal`, `listings:broadcast`, `listing:broadcast-new`.
+   - Exposes `subscribe(event, cb)` for components to listen to specific events.
+
+C) **Notification-related socket events**:
+   - `listing:new` — emitted when admin publishes a listing (via /api/admin/listings PATCH → /internal/broadcast, OR via client `listing:broadcast-new`). Subscribed in `use-new-listings-notif.ts` (line 82) → invalidates `["new-listings-notif"]` query → badge count updates + ringtone plays.
+   - `listings:invalidate` — emitted on listing delete/publish/violation. Subscribed in `use-new-listings-notif.ts` (line 92).
+   - `listing:pending` — emitted when a new pending listing is submitted (not yet published).
+   - **NO dedicated chat-message notification event** — the chat sound is triggered by the `message:new` event itself (subscribed in header.tsx line 146) plus a polling-based fallback (header.tsx lines 112–141).
+
+---
+Task ID: 8-verify
+Agent: Browser-Verify
+Task: Verify chat dark mode, notification badge, jasa icon
+
+Work Log:
+- Read worklog.md (last ~80 lines) for context — confirmed setup: chat-service on :3003, category-icon.tsx MAPs HardHat → /cat-icons/jasa-new.png, use-new-listings-notif.ts uses useSyncExternalStore for real-time badge clearing.
+- Confirmed Playwright 1.57 + chromium installed locally (no Agent Browser skill available, used Python Playwright instead).
+- Wrote /home/z/my-project/verify.py — drives 3 separate browser contexts (chat / notif / jasa) plus a static-file context. Pre-seeds localStorage (gomesin-store, gomesin-new-listings-seen-at, gomesin-pwa-dismissed) via add_init_script so the PWA install modal doesn't intercept clicks and the chat panel opens directly.
+- Discovered the SQLite DB (db/custom.db) was missing the Jasa category entirely (only 12 of 13 categories). Ran `node scripts/seed-jasa.mjs` to create the Jasa category (icon=HardHat, sortOrder=13) + 6 jasa listings, then `node scripts/fix-jasa.mjs` to flip them to status=active, paymentStatus=paid. After seeding, /api/categories returns 13 categories including Jasa.
+- For the dark-mode chat test: seeded store with view=profile, profilePanel=pesan so the chat page opens immediately. Toggled theme via the header sun/moon button. Sampled pixel colors at 4 points inside the chat view pane and read computed backgroundColor of every element with class dark:bg-black.
+- For the notif test: seeded seenAt=0 so all 24 newest listings count as "new" (badge=24). Clicked bell → notifikasi panel → clicked "Tandai semua dibaca" → re-read bell badge DOM immediately, 300ms, and 1s later.
+- For the jasa icon test: navigated to homepage, walked DOM to find the "Jasa" text node, then walked up to find the associated <img>. Listed every /cat-icons/*.png image actually rendered on the homepage.
+- Screenshots saved to /home/z/my-project/verify-shots/: 01-chat-initial-light, 02-chat-darkmode, 03-chat-lightmode, 04-notif-before, 05-notif-panel, 06-notif-after, 07-jasa-icon-area, 08-homepage-full. JSON dump at results.json.
+
+Stage Summary:
+- **1. Chat page black background in dark mode** ✅ WORKING
+  - HTML class correctly switches to 'dark' on toggle click.
+  - 4 visible chat-pane elements with `dark:bg-black` all computed to `rgb(0, 0, 0)` (pure #000000):
+    * Conversation-list panel 360×756 — `bg-[#FFFFFF] dark:bg-black`
+    * Conversation-list scroll area 359×600 — `bg-[#FFFFFF] dark:bg-black`
+    * Chat view container 734×756 — `bg-[#F5F7F6] dark:bg-black` (profile.tsx line 1848)
+    * Chat placeholder 734×756 — `bg-[#F5F7F6] dark:bg-black`
+  - Pixel sampling at 4 points inside the dark-mode chat pane all returned (0,0,0).
+  - In light mode the same pane samples as (245,247,246) = #F5F7F6 (matches `bg-[#F5F7F6]`).
+  - Screenshots: 02-chat-darkmode.png vs 03-chat-lightmode.png.
+
+- **2. Notification badge real-time clearing** ✅ WORKING
+  - Bell badge BEFORE clicking "Tandai semua dibaca": has_badge=True, count=24, badge_text="24".
+  - Badge IMMEDIATELY after click (next microtask): has_badge=False, count=0, badge_text=None.
+  - Badge 300ms after click: still 0 / no badge.
+  - Badge 1s after click: still 0 / no badge — no page refresh needed.
+  - The useSyncExternalStore mechanism in use-new-listings-notif.ts (setSharedSeenAt → listeners.forEach(fn)) correctly propagates the seenAt update from the notifikasi panel's markAllSeen() to the bell's useNewListingsNotif() subscription in real-time.
+  - Screenshots: 04-notif-before.png (badge visible) → 06-notif-after.png (badge gone).
+
+- **3. Jasa category icon** ✅ WORKING (after re-seeding DB)
+  - "Jasa" text node found on homepage category nav.
+  - Associated <img> src = http://localhost:3000/cat-icons/jasa-new.png, naturalWidth=1024, naturalHeight=1024, complete=True.
+  - 13 cat-icons total rendered on homepage (12 machine categories + jasa-new.png).
+  - The HardHat lucide icon name in the Category table → category-icon.tsx MAP entry `HardHat: "/cat-icons/jasa-new.png"` → renders the new technician-with-orange-hard-hat image.
+  - NOTE: Required running `node scripts/seed-jasa.mjs` + `node scripts/fix-jasa.mjs` first because the DB had only 12 categories (Jasa category + listings were missing). After seeding, /api/categories returns 13 entries.
+  - Screenshots: 07-jasa-icon-area.png (clip of category nav), 08-homepage-full.png.
+
+- **4. Static sound/image files** ✅ ALL HTTP 200
+  - /sounds/mesinku-chat.wav → HTTP 200 (file exists, 1 sound asset)
+  - /sounds/iklan-masuk.wav → HTTP 200 (file exists, 1 sound asset)
+  - /cat-icons/jasa-new.png → HTTP 200 (1024×1024 PNG)
+
+- **Issues found / actions taken**:
+  - The Jasa category was missing from the SQLite DB (only 12 categories present). Re-ran scripts/seed-jasa.mjs + scripts/fix-jasa.mjs to add it. Recommend adding these scripts to the DB provisioning step (or to prisma/seed.ts) so a fresh DB always includes the Jasa category.
+  - The chat "Pesan" button is actually labeled "Chat" in the UI (header.tsx uses tr("chat") which returns "Chat" in Indonesian, not "Pesan"). The task description's hint to look for a "Pesan" button was slightly off — the visible/aria-label is "Chat". Not a bug, just a naming note.
+  - No other issues. All 4 verification points pass.

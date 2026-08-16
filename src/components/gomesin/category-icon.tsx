@@ -19,7 +19,7 @@ const MAP: Record<string, string> = {
   Package: "/cat-icons/mesinkemasan.png",
   Truck: "/cat-icons/alatberat.png",
   Wrench: "/cat-icons/sparepart.png",
-  HardHat: "/cat-icons/jasa-v2.png",
+  HardHat: "/cat-icons/jasa-new.png",
 };
 
 const FALLBACK = "/cat-icons/mescnc.png";
