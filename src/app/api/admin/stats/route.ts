@@ -117,6 +117,10 @@ export async function GET() {
       omzet: { today: omzetToday, week: omzetWeek, month: omzetMonth, all: omzetAll },
       topCategories,
       last7Days,
+    }, {
+      // Admin-only, private cache 10s. Was polled every 3s = 20 req/min = 28K/day.
+      // With 30s polling + 10s private cache, requests drop to ~2/min = 3K/day.
+      headers: { 'Cache-Control': 'private, max-age=10, stale-while-revalidate=30' },
     });
   } catch (error) {
     console.error("[admin/stats] Prisma error, trying Supabase:", error);
@@ -220,6 +224,8 @@ async function getStatsFromSupabase() {
       omzet: { today: omzetToday, week: omzetWeek, month: omzetMonth, all: omzetAll },
       topCategories,
       last7Days,
+    }, {
+      headers: { 'Cache-Control': 'private, max-age=10, stale-while-revalidate=30' },
     });
   } catch (error) {
     console.error("[admin/stats] Supabase fallback error:", error);

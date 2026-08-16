@@ -144,8 +144,12 @@ export function ChatInner({
       return res.json();
     },
     enabled: !!currentUser && !!ownerId,
-    refetchInterval: 2000,
+    // Polling is a SAFETY NET only — primary realtime delivery is via
+    // socket.io `message:new` event which triggers immediate invalidation.
+    // 15s interval (was 2s) reduces Supabase egress by ~87% per chat session.
+    refetchInterval: 15_000,
     refetchIntervalInBackground: false,
+    staleTime: 5_000,
   });
 
   // Merge history data into local messages state. On the FIRST load we

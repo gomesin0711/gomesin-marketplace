@@ -64,7 +64,9 @@ export async function GET(req: NextRequest) {
   // --- Path A: local dev (Prisma + SQLite) ---
   if (isDbAvailable()) {
     try {
-      return NextResponse.json(await getMessagesPrisma(userId));
+      return NextResponse.json(await getMessagesPrisma(userId), {
+        headers: { 'Cache-Control': 'private, max-age=5, stale-while-revalidate=15' },
+      });
     } catch (error) {
       console.error("[messages] Prisma GET error, falling back to Supabase:", error);
     }
@@ -72,7 +74,9 @@ export async function GET(req: NextRequest) {
 
   // --- Path B: Vercel (raw Supabase) ---
   try {
-    return NextResponse.json(await getMessagesSupabase(userId));
+    return NextResponse.json(await getMessagesSupabase(userId), {
+      headers: { 'Cache-Control': 'private, max-age=5, stale-while-revalidate=15' },
+    });
   } catch (e: any) {
     console.error("GET /api/messages Supabase error", e);
     return NextResponse.json({ error: e.message }, { status: 500 });

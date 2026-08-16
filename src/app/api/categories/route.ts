@@ -20,9 +20,13 @@ export async function GET() {
       listingCount: countMap[c.id] ?? 0,
     }));
 
-    return NextResponse.json({ categories: result });
+    return NextResponse.json({ categories: result }, {
+      headers: { 'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200' },
+    });
   } catch (error) {
     console.error("GET /api/categories DB error, falling back to seed data", error);
-    return NextResponse.json(getFallbackCategories());
+    return NextResponse.json(getFallbackCategories(), {
+      headers: { 'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200' },
+    });
   }
 }

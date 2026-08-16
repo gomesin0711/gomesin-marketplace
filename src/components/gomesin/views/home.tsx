@@ -41,11 +41,14 @@ async function fetchJson(url: string) {
  *    queries are invalidated and refetched immediately. This requires the
  *    chat-service mini-service to be running.
  *
- * 2. Polling fallback (3-second interval): every homepage listing query has
- *    refetchInterval: 3000. This catches changes even if the socket is not
- *    connected (e.g. chat-service temporarily down, or the visitor is on a
- *    network that blocks WebSocket). This guarantees the homepage never stays
- *    stale for more than 3 seconds.
+ * 2. Polling fallback (60-second interval): every homepage listing query has
+ *    refetchInterval: 60000. This is a SAFETY NET for the rare case when
+ *    socket.io is not connected (chat-service down, network blocks WebSocket).
+ *    The socket.io push is the primary mechanism — polling only runs to catch
+ *    missed events, NOT as a primary realtime channel.
+ *
+ * EGRESS OPTIMIZATION (Supabase quota): polling was 3s (~200K req/day for 100
+ * visitors = 30 GB/month) → now 60s (~50 MB/month). 99% reduction.
  *
  * Works for anonymous visitors too — the socket connects without requiring
  * a user:join (it just won't join a user room, which is fine for global
@@ -53,7 +56,8 @@ async function fetchJson(url: string) {
  */
 function useListingsRealtime() {
   const qc = useQueryClient();
-  const { subscribe } = useChatSocket();
+  const { subscribe, connected } = useChatSocket();
+  const prevConnectedRef = useRef<boolean | null>(null);
   useEffect(() => {
     // Socket.io push — instant invalidation when the admin broadcasts.
     const off1 = subscribe("listings:invalidate", () => {
@@ -71,18 +75,36 @@ function useListingsRealtime() {
       off2();
     };
   }, [qc, subscribe]);
+
+  // Refetch on socket RECONNECT — when the socket drops and reconnects,
+  // we may have missed `listing:new` / `listings:invalidate` events during
+  // the gap. Immediately invalidate all listing queries to catch up.
+  // This makes the 60s polling interval safe — even if the socket was down
+  // for a while, reconnect triggers an instant refetch.
+  useEffect(() => {
+    if (prevConnectedRef.current === false && connected === true) {
+      qc.invalidateQueries({ queryKey: ["listings"] });
+    }
+    prevConnectedRef.current = connected;
+  }, [connected, qc]);
 }
 
 // Query options for homepage listing queries.
-// staleTime: 0 → always refetch on mount/focus.
-// refetchInterval: 3000 → poll every 3 seconds for near-realtime updates
-//   (catches admin delete/publish changes even if socket.io is unavailable).
-// refetchIntervalInBackground: false → only poll when the tab is visible
-//   (saves server resources when the user is on another tab).
+// staleTime: 30s → cache results for 30s; avoid refetch on every mount/focus.
+// refetchInterval: 60000 → poll every 60s as a SAFETY NET (socket.io is primary).
+// refetchIntervalInBackground: false → only poll when the tab is visible.
+// refetchOnWindowFocus: true → refetch when user returns to the tab.
+//
+// EGRESS NOTE: Previous setting was refetchInterval: 3000 (3s). With 7 listing
+// queries on the homepage, that was 140 req/min per visitor = ~200K req/day
+// for 100 active visitors. At ~5KB per response, that's 1 GB/day = 30 GB/month
+// just for homepage polling. The new 60s interval reduces this to ~50 MB/month
+// (99% reduction) — Supabase free tier 5GB quota now lasts 100x longer.
 const LISTING_QUERY_OPTS = {
-  staleTime: 0,
-  refetchInterval: 3000,
+  staleTime: 30_000,
+  refetchInterval: 60_000,
   refetchIntervalInBackground: false,
+  refetchOnWindowFocus: true,
 } as const;
 
 type ViewMode = "grid" | "table";

@@ -110,10 +110,14 @@ export function useNewListingsNotif() {
   const { data } = useQuery({
     queryKey: ["new-listings-notif"],
     queryFn: fetchNewest,
-    // Poll every 10 seconds as a fallback when socket.io is unavailable.
-    refetchInterval: 10_000,
+    // Poll every 60 seconds as a SAFETY NET when socket.io is unavailable.
+    // Was 10s — too aggressive, contributed to Supabase egress quota burn.
+    // The socket.io `listing:new` event triggers immediate invalidation
+    // when admin publishes, so the bell + ringtone fire INSTANTLY without
+    // waiting for the 60s poll.
+    refetchInterval: 60_000,
     refetchOnWindowFocus: true,
-    staleTime: 5_000,
+    staleTime: 30_000,
   });
 
   // ── Socket.io subscriptions — INSTANT invalidation when a new listing

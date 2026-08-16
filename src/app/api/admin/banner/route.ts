@@ -69,7 +69,9 @@ export async function GET() {
       const row = await db.paket.findFirst({ where: { key: BANNER_KEY } });
       if (row) {
         const banner = parseBanner(row.features);
-        if (banner) return NextResponse.json({ banner });
+        if (banner) return NextResponse.json({ banner }, {
+          headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' },
+        });
       }
       // No banner row yet — fall through to Supabase / default
     } catch (error) {
@@ -87,7 +89,9 @@ export async function GET() {
       .maybeSingle();
     if (!error && data) {
       const banner = parseBanner(data.features);
-      if (banner) return NextResponse.json({ banner });
+      if (banner) return NextResponse.json({ banner }, {
+        headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' },
+      });
     }
     if (error) {
       console.error("[admin/banner] Supabase GET error:", error);
@@ -97,7 +101,9 @@ export async function GET() {
   }
 
   // --- Path C: no banner configured yet ---
-  return NextResponse.json({ banner: DEFAULT_BANNER });
+  return NextResponse.json({ banner: DEFAULT_BANNER }, {
+    headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' },
+  });
 }
 
 // PUT — admin: upsert the banner config

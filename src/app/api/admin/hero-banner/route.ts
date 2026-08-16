@@ -67,7 +67,9 @@ export async function GET() {
       const row = await db.paket.findFirst({ where: { key: HERO_KEY } });
       if (row) {
         const hero = parseHero(row.features);
-        if (hero) return NextResponse.json({ hero });
+        if (hero) return NextResponse.json({ hero }, {
+          headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' },
+        });
       }
     } catch (error) {
       console.error("[admin/hero-banner] Prisma GET error, falling back to Supabase:", error);
@@ -84,7 +86,9 @@ export async function GET() {
       .maybeSingle();
     if (!error && data) {
       const hero = parseHero(data.features);
-      if (hero) return NextResponse.json({ hero });
+      if (hero) return NextResponse.json({ hero }, {
+        headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' },
+      });
     }
     if (error) {
       console.error("[admin/hero-banner] Supabase GET error:", error);
@@ -94,7 +98,9 @@ export async function GET() {
   }
 
   // --- Path C: no hero banner configured yet — return default ---
-  return NextResponse.json({ hero: DEFAULT_HERO });
+  return NextResponse.json({ hero: DEFAULT_HERO }, {
+    headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' },
+  });
 }
 
 // PUT — admin: upsert the hero banner config

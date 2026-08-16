@@ -68,7 +68,9 @@ export async function GET() {
       const row = await db.paket.findFirst({ where: { key: BANNER2_KEY } });
       if (row) {
         const banner = parseBanner(row.features);
-        if (banner) return NextResponse.json({ banner });
+        if (banner) return NextResponse.json({ banner }, {
+          headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' },
+        });
       }
     } catch (error) {
       console.error("[admin/banner-2] Prisma GET error, falling back to Supabase:", error);
@@ -84,7 +86,9 @@ export async function GET() {
       .maybeSingle();
     if (!error && data) {
       const banner = parseBanner(data.features);
-      if (banner) return NextResponse.json({ banner });
+      if (banner) return NextResponse.json({ banner }, {
+        headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' },
+      });
     }
     if (error) {
       console.error("[admin/banner-2] Supabase GET error:", error);
@@ -93,7 +97,9 @@ export async function GET() {
     console.error("[admin/banner-2] Supabase GET exception:", error);
   }
 
-  return NextResponse.json({ banner: DEFAULT_BANNER2 });
+  return NextResponse.json({ banner: DEFAULT_BANNER2 }, {
+    headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' },
+  });
 }
 
 // PUT — admin: upsert the banner-2 config

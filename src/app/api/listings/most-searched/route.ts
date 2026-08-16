@@ -65,9 +65,13 @@ export async function GET(req: Request) {
       page: 1,
       limit,
       totalPages: 1,
+    }, {
+      headers: { 'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300' },
     });
   } catch (error) {
     console.error("GET /api/listings/most-searched DB error, falling back to seed data", error);
-    return NextResponse.json(getFallbackMostSearchedListings(limit));
+    return NextResponse.json(getFallbackMostSearchedListings(limit), {
+      headers: { 'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300' },
+    });
   }
 }

@@ -137,6 +137,12 @@ export async function GET(req: NextRequest) {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+    }, {
+      headers: {
+        // CDN cache 30s, serve stale up to 60s while revalidating.
+        // Reduces Supabase egress: cache hit = no DB query at all.
+        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',
+      },
     });
   } catch (error) {
     console.error("GET /api/listings Prisma error, trying Supabase:", error);
@@ -316,6 +322,10 @@ export async function GET(req: NextRequest) {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+    }, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',
+      },
     });
   } catch (error) {
     console.error("GET /api/listings Supabase error, falling back to seed data:", error);

@@ -50,11 +50,22 @@ const fetchJson = async (url: string) => {
 };
 
 // Shared query options for realtime admin polling.
-// Polls every 3s (was 500ms — too aggressive, caused 8 Supabase queries/sec
-// on production and contributed to the perceived delete delay).
-// Combined with optimistic updates on mutations, actions appear instant while
-// polling catches changes from other users/devices.
-const RT = { staleTime: 0, refetchInterval: 3000, refetchIntervalInBackground: true } as const;
+// Polls every 30s (was 3s — too aggressive, caused 8 Supabase queries/sec
+// on production and contributed to egress quota exhaustion).
+// Combined with optimistic updates on mutations, actions appear instant.
+// The 30s interval is a SAFETY NET for cross-device sync; mutations themselves
+// trigger immediate invalidation via TanStack Query's invalidateQueries().
+//
+// EGRESS NOTE: At 3s interval with ~8 admin queries, that's ~160 req/min =
+// ~9600 req/hour = ~230K req/day for one admin session = ~700 MB/day =
+// 21 GB/month just for admin polling. The new 30s interval reduces this to
+// ~2 GB/month (90% reduction). Mutations still feel instant because we use
+// optimistic updates + query invalidation on action.
+const RT = {
+  staleTime: 10_000,
+  refetchInterval: 30_000,
+  refetchIntervalInBackground: false,
+} as const;
 
 // Format biaya pasang iklan (angka dari server) → "Rp X".
 // `adFee` sudah dihitung di sisi server (/api/admin/listings) dari tabel Paket,
