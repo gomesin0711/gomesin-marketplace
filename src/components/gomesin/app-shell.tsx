@@ -21,6 +21,7 @@ import { LoginView } from "./views/login";
 import { UpgradeView } from "./views/upgrade";
 import { SellerView } from "./views/seller";
 import { AdminView } from "./views/admin";
+import { PwaInstallButton } from "./pwa-install-button";
 
 const ADMIN_VIEWS = ["admin", "admin-sellers", "admin-categories", "admin-listings", "admin-new-listings", "admin-expired-listings", "admin-rejected-listings", "admin-transactions", "admin-reports", "admin-monthly-report", "admin-users", "admin-paket", "admin-merek", "admin-lokasi", "admin-banner", "admin-audit", "admin-pengaturan"];
 
@@ -165,6 +166,10 @@ export function AppShell() {
       {/* Spacer so the fixed bottom nav (mobile) doesn't cover footer content */}
       <div className="h-[4.25rem] shrink-0 md:hidden" aria-hidden="true" />
       <BottomNav />
+      {/* Persistent floating PWA install button — appears whenever the app
+          is installable (beforeinstallprompt captured). Visible on all
+          views so the user can always install. */}
+      <PwaInstallButton />
       {/* In-app voice/video call overlay — renders on top of everything */}
       <CallOverlay
         callState={call.callState}

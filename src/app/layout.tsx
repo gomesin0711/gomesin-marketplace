@@ -67,26 +67,41 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              // Capture beforeinstallprompt IMMEDIATELY before React hydrates
+              // Capture beforeinstallprompt IMMEDIATELY before React hydrates.
+              // This event fires at unpredictable times on mobile (requires SW
+              // active + Chrome engagement heuristic), so we must be ready
+              // whenever it arrives.
               window.__deferredInstallPrompt = null;
               window.addEventListener('beforeinstallprompt', function(e) {
                 e.preventDefault();
                 window.__deferredInstallPrompt = e;
-                console.log('[PWA] beforeinstallprompt captured early');
+                console.log('[PWA] beforeinstallprompt captured — app is installable');
               });
               window.addEventListener('appinstalled', function() {
                 window.__deferredInstallPrompt = null;
                 try { localStorage.setItem('gomesin-pwa-installed', '1'); } catch(ex) {}
-                console.log('[PWA] app installed');
+                console.log('[PWA] app installed successfully');
               });
-              // Register SW
+              // Register SW early (don't wait for load) so it activates ASAP.
+              // On mobile Chrome, the SW must be ACTIVE and controlling the
+              // page before beforeinstallprompt can fire — registering on
+              // 'load' can delay this by several seconds.
               if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(function(reg) {
-                    console.log('SW registered:', reg.scope);
-                  }).catch(function(err) {
-                    console.warn('SW registration failed:', err);
+                navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                  .then(function(reg) {
+                    console.log('[PWA] SW registered:', reg.scope, 'active:', !!reg.active);
+                    // If there's a waiting SW, force it to activate immediately
+                    // so the page is controlled on THIS visit (not the next).
+                    if (reg.waiting) {
+                      reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                    }
+                  })
+                  .catch(function(err) {
+                    console.warn('[PWA] SW registration failed:', err);
                   });
+                // Log when the controller changes (new SW took over)
+                navigator.serviceWorker.addEventListener('controllerchange', function() {
+                  console.log('[PWA] SW controller changed — page now controlled');
                 });
               }
             `,
