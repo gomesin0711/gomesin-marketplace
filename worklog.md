@@ -5020,3 +5020,27 @@ Stage Summary:
 - Converted from MP3 to WAV (mono 24kHz) for consistency with other project sounds
 - Cache-bust bumped to ?v=3 so browsers fetch the new audio instead of cached TTS voice
 - Fallback to synthesized coin drop preserved if the audio file fails to load/play
+
+---
+Task ID: qris-image-replace
+Agent: Main
+Task: Replace QRIS payment image with user-uploaded mesinku.jpeg
+
+Work Log:
+- Received uploaded file: /home/z/my-project/upload/mesinku.jpeg (163885 bytes, JPEG 1136x1600)
+- Searched codebase for QRIS image references — found 2 locations both using src="/qris-mesinKU.jpeg":
+  1. src/components/gomesin/views/post-ad.tsx (line 1487) — post-ad QRIS payment modal
+  2. src/components/gomesin/package-activate-dialog.tsx (line 828) — upgrade package QRIS payment modal
+- Backed up existing image: /home/z/my-project/public/qris-mesinKU.jpeg → qris-mesinKU.jpeg.bak (old was 164679 bytes)
+- Replaced the file in-place: `cp upload/mesinku.jpeg public/qris-mesinKU.jpeg` — both pages automatically pick up the new image since they reference the same path
+- Verified md5 match: new public file (2598b6fb...) === uploaded file (2598b6fb...), differs from backup (d0e842c...)
+- Added cache-bust query string `?v=2` to both <img> src attributes so browsers fetch the new image instead of serving cached old version
+- Verified: dev server compiles clean, image HTTP 200 (ETag W/"2802d-..." = 163885 bytes matches new file), eslint clean (only 1 pre-existing unrelated warning)
+
+Stage Summary:
+- QRIS payment image replaced with user-uploaded mesinku.jpeg in BOTH payment pages:
+  1. Post-ad QRIS modal (when posting a new paid ad)
+  2. Package-activate/upgrade QRIS modal (when upgrading an existing listing)
+- Old image backed up to qris-mesinKU.jpeg.bak
+- Cache-bust ?v=2 ensures browsers fetch the new image immediately
+- No code logic changes — only the image asset + cache-bust version bump

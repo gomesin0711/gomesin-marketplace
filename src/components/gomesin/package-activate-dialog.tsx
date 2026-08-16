@@ -825,7 +825,7 @@ export function PackageActivateDialog({
                 {/* QR code */}
                 <div className="rounded-2xl border-2 border-border bg-white p-4 shadow-lg sm:p-6">
                   <img
-                    src="/qris-mesinKU.jpeg"
+                    src="/qris-mesinKU.jpeg?v=2"
                     alt="QRIS mesinKU"
                     className="h-auto w-full max-w-[250px] object-contain"
                   />
