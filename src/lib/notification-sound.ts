@@ -31,15 +31,16 @@ let unlocked = false;
 // --- Module-level flag: is the user currently viewing an open chat? ---
 let chatOpen = false;
 
-// --- Preloaded HTMLAudioElement for the "iklan masuk" (new listing) ringtone ---
-// TTS-generated Indonesian voice saying "iklan baru masuk" — plays when a
-// new listing is published. Falls back to synthesized coin drop on error.
+// --- Preloaded HTMLAudioElement for the "IKLAN MASUK!!!!!" (new listing) ringtone ---
+// TTS-generated Indonesian voice saying "IKLAN MASUK!!!!!" (excited delivery,
+// 2x speed) — plays when a new listing is published. Falls back to synthesized
+// coin drop on error. The `?v=2` query string busts the browser cache.
 let listingAudioEl: HTMLAudioElement | null = null;
 function getListingAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
   if (listingAudioEl) return listingAudioEl;
   try {
-    const el = new Audio("/sounds/iklan-masuk.wav");
+    const el = new Audio("/sounds/iklan-masuk.wav?v=2");
     el.preload = "auto";
     el.volume = 0.9;
     listingAudioEl = el;
@@ -300,11 +301,11 @@ export function playNotificationSound() {
 }
 
 /**
- * Play the "iklan baru masuk" ringtone when a NEW listing is detected.
+ * Play the "IKLAN MASUK!!!!!" ringtone when a NEW listing is detected.
  *
  * Uses the TTS-generated Indonesian voice file (`/public/sounds/iklan-masuk.wav`)
- * saying "iklan baru masuk". Falls back to the synthesized "listing" variant
- * if the audio element fails to load/play.
+ * saying "IKLAN MASUK!!!!!" (excited delivery, 2x speed). Falls back to the
+ * synthesized "listing" variant if the audio element fails to load/play.
  *
  * Respects the user's chat sound preference (same toggle).
  */

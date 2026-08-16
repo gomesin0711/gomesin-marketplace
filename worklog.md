@@ -4975,3 +4975,25 @@ Stage Summary:
 - useEffect approach is deterministic: fires after React commits the re-render where sending=false (input re-enabled), so focus() always succeeds
 - Works for both floating chat widget and Pesan panel
 - No timing/race issues — reliable every single time
+
+---
+Task ID: listing-ringtone-iklan-masuk
+Agent: Main
+Task: Change listing notification ringtone to "IKLAN MASUK!!!!!"
+
+Work Log:
+- Backed up old "iklan baru masuk" version to iklan-masuk.wav.bak
+- Regenerated TTS with excited delivery: `z-ai tts --input "IKLAN MASUK!!!!!" --voice tongtong --speed 2.0 --format wav` (44946 bytes, 0.929s duration)
+- Five exclamation marks (!!!!!) make TTS produce highly energetic/excited voice delivery
+- Speed 2.0x for fast, attention-grabbing alert (matches chat ringtone style)
+- Updated notification-sound.ts:
+  - getListingAudio(): changed URL to /sounds/iklan-masuk.wav?v=2 (was no query string before — old version had no cache-bust)
+  - Comment updated: "iklan baru masuk" → "IKLAN MASUK!!!!!" (excited delivery, 2x speed)
+  - playListingNotificationSound() docstring updated to reflect new text
+- Verified: dev server compiles clean, audio HTTP 200 (new ETag/Content-Length), eslint clean
+
+Stage Summary:
+- Listing notification ringtone now: "IKLAN MASUK!!!!!" (excited Indonesian voice, 2x speed, 0.93s)
+- Plays when a new listing is published/detected
+- Cache-bust ?v=2 added (old version had none) — ensures browsers fetch the new audio
+- Fallback to synthesized coin drop preserved if audio fails to load
