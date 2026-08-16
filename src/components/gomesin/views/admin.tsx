@@ -17,7 +17,7 @@ import {
   Mail, Phone, Calendar, Zap,
   MessageCircle, Send, Search, ArrowLeft,
   LayoutGrid, List, Gem, Shield, ArrowUpCircle, Timer, ImageIcon,
-  AlertTriangle, Frown,
+  AlertTriangle, Frown, Settings, Volume2, Save,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
@@ -37,7 +37,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useChatSocket, type ChatMessage } from "@/lib/use-chat-socket";
 import { normalizeImageUrl } from "@/lib/image";
 
-type Tab = "dashboard" | "iklan" | "iklanbaru" | "iklanexpired" | "iklanditolak" | "penjual" | "kategori" | "merek" | "lokasi" | "banner" | "paket" | "transaksi" | "laporan" | "laporanbulanan" | "audit" | "pengguna" | "chat";
+type Tab = "dashboard" | "iklan" | "iklanbaru" | "iklanexpired" | "iklanditolak" | "penjual" | "kategori" | "merek" | "lokasi" | "banner" | "paket" | "transaksi" | "laporan" | "laporanbulanan" | "audit" | "pengguna" | "chat" | "pengaturan";
 
 // ============ FETCHERS ============
 const fetchJson = async (url: string) => {
@@ -118,6 +118,7 @@ export function AdminView({ initialTab }: { initialTab?: Tab }) {
     { id: "laporan", label: tr("admReports"), icon: FileText },
     { id: "audit", label: tr("admAuditTitle"), icon: ScrollText },
     { id: "chat", label: "Pesan", icon: MessageCircle },
+    { id: "pengaturan", label: "Pengaturan", icon: Settings },
   ];
 
   return (
@@ -186,6 +187,7 @@ export function AdminView({ initialTab }: { initialTab?: Tab }) {
       {tab === "laporanbulanan" && <MonthlyReportTab />}
       {tab === "audit" && <AuditTab />}
       {tab === "chat" && <ChatTab />}
+      {tab === "pengaturan" && <PengaturanTab />}
 
     </div>
   );
@@ -3861,4 +3863,290 @@ function SkeletonGrid({ count = 4 }: { count?: number }) {
 }
 function BadgeCheck({ className }: { className?: string }) {
   return <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M12 1l3.09 6.26L22 8.27l-5 4.87 1.18 6.88L12 16.77l-6.18 3.25L7 13.14 2 8.27l6.91-1.01L12 1z" /></svg>;
+}
+
+// ============ PENGATURAN TAB ============
+// Site-wide settings editable by admin: payment details (BCA account, QRIS
+// image preview), contact info (WhatsApp, email), and notification sound
+// testing/toggle. Persists to /api/admin/settings (SiteSetting key-value table).
+function PengaturanTab() {
+  const queryClient = useQueryClient();
+  const user = useStore((s) => s.user);
+  const [form, setForm] = useState<Record<string, string>>({
+    bcaAccount: "",
+    bcaName: "",
+    whatsappNumber: "",
+    supportEmail: "",
+    chatSoundEnabled: "on",
+  });
+  const [saving, setSaving] = useState(false);
+
+  // Fetch current settings.
+  const { data, isLoading } = useQuery<Record<string, string>>({
+    queryKey: ["admin-settings"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/settings");
+      if (!res.ok) throw new Error("Failed to load settings");
+      return res.json();
+    },
+    staleTime: 0,
+  });
+
+  // Sync fetched settings into the form (once per load).
+  useEffect(() => {
+    if (data) setForm((prev) => ({ ...prev, ...data }));
+  }, [data]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, userId: user?.id }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Gagal menyimpan");
+      }
+      toast.success("Pengaturan berhasil disimpan");
+      queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
+    } catch (e: any) {
+      toast.error(e.message || "Gagal menyimpan pengaturan");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Test sounds — plays the current chat + listing ringtones so admin can
+  // preview what users hear.
+  const [testingChat, setTestingChat] = useState(false);
+  const [testingListing, setTestingListing] = useState(false);
+  const testChatSound = () => {
+    setTestingChat(true);
+    try {
+      const el = new Audio("/sounds/mesinku-chat.wav?v=8");
+      el.volume = 0.9;
+      el.onended = () => setTestingChat(false);
+      el.onerror = () => setTestingChat(false);
+      el.play().catch(() => setTestingChat(false));
+    } catch {
+      setTestingChat(false);
+    }
+  };
+  const testListingSound = () => {
+    setTestingListing(true);
+    try {
+      const el = new Audio("/sounds/iklan-masuk.wav?v=3");
+      el.volume = 0.9;
+      el.onended = () => setTestingListing(false);
+      el.onerror = () => setTestingListing(false);
+      el.play().catch(() => setTestingListing(false));
+    } catch {
+      setTestingListing(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <div className="h-8 w-48 animate-pulse rounded bg-muted" />
+        <div className="h-40 animate-pulse rounded-xl bg-muted" />
+        <div className="h-40 animate-pulse rounded-xl bg-muted" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="flex items-center gap-2 text-xl font-bold">
+          <Settings className="size-5" /> Pengaturan Situs
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Kelola pengaturan pembayaran, kontak, dan notifikasi suara untuk seluruh situs.
+        </p>
+      </div>
+
+      {/* ===== PENGATURAN PEMBAYARAN ===== */}
+      <section className="rounded-xl border border-border bg-card p-5">
+        <h3 className="flex items-center gap-2 text-base font-semibold">
+          <Receipt className="size-4 text-primary" /> Pembayaran
+        </h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Detail rekening BCA ditampilkan di halaman pembayaran transfer.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="bcaAccount">Nomor Rekening BCA</Label>
+            <Input
+              id="bcaAccount"
+              value={form.bcaAccount}
+              onChange={(e) => setForm((p) => ({ ...p, bcaAccount: e.target.value }))}
+              placeholder="8770338221"
+              inputMode="numeric"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="bcaName">Nama Pemilik Rekening</Label>
+            <Input
+              id="bcaName"
+              value={form.bcaName}
+              onChange={(e) => setForm((p) => ({ ...p, bcaName: e.target.value }))}
+              placeholder="Lina Listiawati"
+            />
+          </div>
+        </div>
+        {/* QRIS image preview */}
+        <div className="mt-4 flex items-center gap-4 rounded-lg border border-border bg-background p-3">
+          <div className="size-20 shrink-0 overflow-hidden rounded-lg border border-border bg-white">
+            <img
+              src="/qris-mesinKU.jpeg?v=2"
+              alt="QRIS mesinKU"
+              className="size-full object-contain"
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Gambar QRIS</p>
+            <p className="text-xs text-muted-foreground">
+              Gambar QR code yang ditampilkan di halaman pembayaran QRIS.
+              Untuk mengganti, letakkan file baru di <code className="rounded bg-muted px-1 py-0.5 text-[10px]">public/qris-mesinKU.jpeg</code>.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ===== PENGATURAN KONTAK ===== */}
+      <section className="rounded-xl border border-border bg-card p-5">
+        <h3 className="flex items-center gap-2 text-base font-semibold">
+          <Mail className="size-4 text-primary" /> Kontak & Dukungan
+        </h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Kontak WhatsApp dan email yang ditampilkan di halaman bantuan.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="whatsappNumber">Nomor WhatsApp</Label>
+            <Input
+              id="whatsappNumber"
+              value={form.whatsappNumber}
+              onChange={(e) => setForm((p) => ({ ...p, whatsappNumber: e.target.value }))}
+              placeholder="6285888082208"
+              inputMode="numeric"
+            />
+            <p className="text-[11px] text-muted-foreground">Format internasional tanpa "+", contoh: 6285888082208</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="supportEmail">Email Dukungan</Label>
+            <Input
+              id="supportEmail"
+              type="email"
+              value={form.supportEmail}
+              onChange={(e) => setForm((p) => ({ ...p, supportEmail: e.target.value }))}
+              placeholder="mesinKU0711@gmail.com"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ===== PENGATURAN SUARA ===== */}
+      <section className="rounded-xl border border-border bg-card p-5">
+        <h3 className="flex items-center gap-2 text-base font-semibold">
+          <Volume2 className="size-4 text-primary" /> Notifikasi Suara
+        </h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Tes dan kelola suara notifikasi yang didengar pengguna.
+        </p>
+
+        {/* Chat ringtone */}
+        <div className="mt-4 flex flex-col gap-3 rounded-lg border border-border bg-background p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Ringtone Chat</p>
+            <p className="text-xs text-muted-foreground">
+              Suara "mesinku!!!" saat pesan chat masuk (2x speed).
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={testChatSound}
+            disabled={testingChat}
+            className="shrink-0"
+          >
+            {testingChat ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Volume2 className="mr-1.5 size-3.5" />}
+            {testingChat ? "Memutar..." : "Tes Suara"}
+          </Button>
+        </div>
+
+        {/* Listing ringtone */}
+        <div className="mt-3 flex flex-col gap-3 rounded-lg border border-border bg-background p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Ringtone Iklan Masuk</p>
+            <p className="text-xs text-muted-foreground">
+              Suara koin jatuh saat iklan baru terdeteksi.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={testListingSound}
+            disabled={testingListing}
+            className="shrink-0"
+          >
+            {testingListing ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Volume2 className="mr-1.5 size-3.5" />}
+            {testingListing ? "Memutar..." : "Tes Suara"}
+          </Button>
+        </div>
+
+        {/* Sound toggle */}
+        <div className="mt-3 flex items-center justify-between rounded-lg border border-border bg-background p-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Aktifkan Suara Notifikasi</p>
+            <p className="text-xs text-muted-foreground">
+              Matikan untuk menonaktifkan semua suara notifikasi secara global.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={form.chatSoundEnabled === "on"}
+            onClick={() =>
+              setForm((p) => ({
+                ...p,
+                chatSoundEnabled: p.chatSoundEnabled === "on" ? "off" : "on",
+              }))
+            }
+            className={cn(
+              "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+              form.chatSoundEnabled === "on" ? "bg-primary" : "bg-muted-foreground/30"
+            )}
+          >
+            <span
+              className={cn(
+                "inline-block size-4 transform rounded-full bg-white shadow transition-transform",
+                form.chatSoundEnabled === "on" ? "translate-x-6" : "translate-x-1"
+              )}
+            />
+          </button>
+        </div>
+      </section>
+
+      {/* ===== SAVE BUTTON ===== */}
+      <div className="flex justify-end gap-2">
+        <Button
+          variant="outline"
+          onClick={() => data && setForm((prev) => ({ ...prev, ...data }))}
+          disabled={saving}
+        >
+          Batal
+        </Button>
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Save className="mr-1.5 size-4" />}
+          Simpan Pengaturan
+        </Button>
+      </div>
+    </div>
+  );
 }

@@ -22,7 +22,7 @@ import { UpgradeView } from "./views/upgrade";
 import { SellerView } from "./views/seller";
 import { AdminView } from "./views/admin";
 
-const ADMIN_VIEWS = ["admin", "admin-sellers", "admin-categories", "admin-listings", "admin-new-listings", "admin-expired-listings", "admin-rejected-listings", "admin-transactions", "admin-reports", "admin-monthly-report", "admin-users", "admin-paket", "admin-merek", "admin-lokasi", "admin-banner", "admin-audit", "admin-chat"];
+const ADMIN_VIEWS = ["admin", "admin-sellers", "admin-categories", "admin-listings", "admin-new-listings", "admin-expired-listings", "admin-rejected-listings", "admin-transactions", "admin-reports", "admin-monthly-report", "admin-users", "admin-paket", "admin-merek", "admin-lokasi", "admin-banner", "admin-audit", "admin-chat", "admin-pengaturan"];
 
 export function AppShell() {
   const view = useStore((s) => s.view);
@@ -142,6 +142,7 @@ export function AppShell() {
               {view === "admin-banner" && <AdminView key={view} initialTab="banner" />}
               {view === "admin-audit" && <AdminView key={view} initialTab="audit" />}
               {view === "admin-chat" && <AdminView key={view} initialTab="chat" />}
+              {view === "admin-pengaturan" && <AdminView key={view} initialTab="pengaturan" />}
             </div>
           </main>
         </div>

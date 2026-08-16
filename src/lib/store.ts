@@ -31,7 +31,8 @@ export type View =
   | "admin-banner"
   | "admin-audit"
   | "admin-monthly-report"
-  | "admin-chat";
+  | "admin-chat"
+  | "admin-pengaturan";
 
 export type ListingFilters = {
   q?: string;
@@ -122,7 +123,7 @@ type NavState = {
   pendingCall: { partnerId: string; partnerName: string; partnerImage: string | null; type: "voice" | "video" } | null;
   setPendingCall: (call: { partnerId: string; partnerName: string; partnerImage: string | null; type: "voice" | "video" } | null) => void;
   goToAdmin: () => void;
-  goToAdminSub: (sub: "admin-sellers" | "admin-categories" | "admin-listings" | "admin-new-listings" | "admin-expired-listings" | "admin-rejected-listings" | "admin-transactions" | "admin-reports" | "admin-users" | "admin-paket" | "admin-merek" | "admin-lokasi" | "admin-banner" | "admin-audit" | "admin-monthly-report" | "admin-chat") => void;
+  goToAdminSub: (sub: "admin-sellers" | "admin-categories" | "admin-listings" | "admin-new-listings" | "admin-expired-listings" | "admin-rejected-listings" | "admin-transactions" | "admin-reports" | "admin-users" | "admin-paket" | "admin-merek" | "admin-lokasi" | "admin-banner" | "admin-audit" | "admin-monthly-report" | "admin-chat" | "admin-pengaturan") => void;
   goBack: () => void;
   _popBack: () => void;
   setFilters: (f: ListingFilters) => void;
@@ -329,7 +330,7 @@ export const useStore = create<NavState>()(
           return state;
         }),
 
-      goToAdminSub: (sub: "admin-sellers" | "admin-categories" | "admin-listings" | "admin-new-listings" | "admin-expired-listings" | "admin-rejected-listings" | "admin-transactions" | "admin-reports" | "admin-monthly-report" | "admin-users" | "admin-paket" | "admin-merek" | "admin-lokasi" | "admin-banner" | "admin-audit" | "admin-chat") =>
+      goToAdminSub: (sub: "admin-sellers" | "admin-categories" | "admin-listings" | "admin-new-listings" | "admin-expired-listings" | "admin-rejected-listings" | "admin-transactions" | "admin-reports" | "admin-monthly-report" | "admin-users" | "admin-paket" | "admin-merek" | "admin-lokasi" | "admin-banner" | "admin-audit" | "admin-chat" | "admin-pengaturan") =>
         set((s) => {
           const state = {
             view: sub,

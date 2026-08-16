@@ -140,3 +140,13 @@ model UniqueCode {
   used        Boolean  @default(false)
   usedAt      DateTime?
 }
+
+// Key-value store for site-wide settings editable from the admin panel
+// (Pengaturan tab). Examples: BCA account number/name, WhatsApp contact,
+// email contact, sound toggle, etc. Using a generic key-value table keeps
+// the schema flexible — new settings can be added without migrations.
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

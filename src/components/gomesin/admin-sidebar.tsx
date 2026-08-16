@@ -26,6 +26,7 @@ import {
   XCircle,
   Calendar,
   MessageCircle,
+  Settings,
 } from "lucide-react";
 
 const ADMIN_MENU = [
@@ -41,6 +42,7 @@ const ADMIN_MENU = [
   { view: "admin-users" as const, labelKey: "adminUsers", icon: Users },
   { view: "admin-paket" as const, labelKey: "adminPackages", icon: Crown },
   { view: "admin-chat" as const, labelKey: "adminMessages", icon: MessageCircle },
+  { view: "admin-pengaturan" as const, labelKey: "adminSettings", icon: Settings },
 ];
 
 // sub menu items (open via tab state in AdminView)
