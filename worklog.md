@@ -5284,3 +5284,106 @@ Stage Summary:
 - "Pesan" menu removed from admin sidebar + all related code (ChatTab, ChatMsgBubble, timeAgoShort, admin-chat view) deleted.
 - All asset URLs are now dynamic (fetched from /api/admin/settings with cache-bust versions), so uploading a new file via the admin panel instantly updates every page that uses the asset (post-ad, package-activate-dialog, notification sounds) without code changes or server restart.
 - notification-sound.ts exports refreshAssetUrls() so the in-memory Audio elements get recreated with new URLs immediately after upload.
+
+---
+Task ID: banner-text-verify
+Agent: general-purpose
+Task: Verify text-only banner renders on home page
+
+Work Log:
+- Read worklog.md to load prior context. The most recent related work (Task admin-settings-assets) added full edit/upload capabilities for QRIS image, chat ringtone, listing ringtone in the admin Pengaturan tab. The banner system (Banner tab in admin panel) stores config in a special row of the Paket table (key="__site_banner__", features JSON = {title,desc,cta,imageUrl,link,gradient,active}). AdBanner component was just modified to render text-only (no image) when `adminBanner?.active && adminBanner.title?.trim()` is truthy, switching between image mode and decorative-circles mode based on `hasImage = !!imageUrl`.
+- Pre-flight source verification of src/components/gomesin/ad-banner.tsx:
+    * Line 137-145: useEffect fetches GET /api/admin/banner and stores result in adminBanner state.
+    * Line 153: auto-rotate effect skipped when `adminBanner?.active && adminBanner.title?.trim()` is truthy.
+    * Line 176: same condition guards the admin-banner render branch (matches the task spec exactly).
+    * Line 177: `const hasImage = !!adminBanner.imageUrl;` — correctly detects empty-string imageUrl.
+    * Lines 184-202: when hasImage, renders an <img> with object-cover + dark overlay; otherwise renders 3 decorative circles (`<div className="absolute ... rounded-full bg-white/10" />` x2 + `bg-white/5` x1) for the text-only mode.
+    * Line 180-183: gradient applied as `adminBanner.gradient || "from-amber-500 via-orange-500 to-rose-500"`.
+    * Line 212-219: title rendered as `<h3 className="text-xl font-extrabold ...">`, description rendered as `<p className="mt-2 max-w-xl text-sm text-white/90 ...">` (conditional on `adminBanner.desc` being non-empty).
+    * Line 220-226: CTA button renders `{adminBanner.cta || "Pasang Iklan"}` with an ArrowRight icon, bg-white text-black.
+- Pre-flight source verification of src/app/api/admin/banner/route.ts:
+    * GET handler reads the __site_banner__ row from Paket table via Prisma (Path A, local dev) with a Supabase fallback (Path B). Returns {banner: config} on success.
+    * parseBanner() merges stored config over DEFAULT_BANNER (active=false, title="", gradient="from-amber-500 via-orange-500 to-rose-500", cta="Pasang Iklan", link="post", imageUrl="").
+- Confirmed browser automation tool available: Playwright is installed in the Python venv at /home/z/.venv/bin/playwright (chromium). This is the same tool used by the prior verify-admin-pengaturan-2.py / verify-admin-pengaturan-3.py verification tasks. (No Playwright/Puppeteer in node_modules — the project uses the Python Playwright binding exclusively.)
+- Pre-flight curl verification of the banner API:
+    * `curl http://localhost:3000/api/admin/banner` returns HTTP 200 with body:
+      `{"banner":{"title":"Promo Akhir Tahun - Mesin Diskon 20%","desc":"Pasang iklan mesin Anda sekarang dan dapatkan diskon spesial akhir tahun. Tayang 30 hari hanya Rp 50.000.","cta":"Pasang Iklan Sekarang","imageUrl":"","link":"post","gradient":"from-amber-500 via-orange-500 to-rose-500","active":true}}`
+    * All 6 fields match the test banner spec: title (exact match), desc (exact match), cta (exact match), imageUrl="" (empty — text-only mode), gradient="from-amber-500 via-orange-500 to-rose-500" (exact match), active=true.
+- Pre-flight curl of the home page:
+    * `curl http://localhost:3000/` returns HTTP 200, size=84918 bytes. The banner title is NOT present in the raw HTML (count=0) because AdBanner fetches /api/admin/banner via useEffect on the client — the banner DOM only appears after JS hydration. This confirms a curl-only check would be insufficient and a browser tool is required (which is available).
+- Checked /home/z/my-project/dev.log for runtime errors:
+    * Most recent entries show: `GET /api/admin/banner 200 in 8ms`, `PUT /api/admin/banner 200 in 18ms` (the save of the test banner), `GET / 200 in 550ms`.
+    * One non-critical Supabase fallback error: `[admin/banner] Supabase GET error: { message: 'Service for this project is restricted due to the following violations: exceed_egress_quota. ...' }` — this fired ONCE when the local Prisma lookup missed (before the test banner was saved). The endpoint correctly fell through to the default BannerConfig and still returned 200. After the test banner was saved, subsequent GETs return 200 in 6-9ms with NO Supabase error (the local Prisma row now satisfies the lookup). This is unrelated to the rendering bug being verified.
+    * NO TypeError, NO 500 errors, NO 404s on /api/admin/banner, NO image 404s.
+- Wrote /home/z/my-project/tests/verify-banner-text-only.py — Playwright (headless Chromium, 1366x900 viewport, locale id-ID) verification harness with 13 checks covering: homepage HTTP 200, banner title/desc/CTA visible, gradient class on inner div, bg-gradient-to-r class present, computed background-image is a linear-gradient (not none), banner has NO <img> (text-only mode), 3 decorative circles present, 'Promo' badge present, banner section has non-zero size, banner section is visible, no banner-related failed requests. Includes console/pageerror/failed-request listeners and a network-response watcher.
+- Ran the script: 13/13 checks PASSED, 0 FAILED.
+
+Browser-observed PASS items (in order):
+  * Homepage loads (HTTP 200) — status=200, response from `page.goto(URL, wait_until="networkidle")` succeeded
+  * Banner title visible: 'Promo Akhir Tahun - Mesin Diskon 20%' — exactly 1 match in the rendered DOM
+  * Banner description visible — exactly 1 match ("Pasang iklan mesin Anda sekarang dan dapatkan diskon spesial akhir tahun. Tayang 30 hari hanya Rp 50.000.")
+  * Banner CTA visible: 'Pasang Iklan Sekarang' — 2 matches (the button label + the ArrowRight icon's aria-label or duplicate; this is expected because the CTA text appears both as the button label and may be matched inside the parent text node)
+  * Gradient class 'from-amber-500 via-orange-500 to-rose-500' present on inner div — full inner-div className captured: "relative overflow-hidden rounded-2xl bg-gradient-to-r p-6 text-white shadow-xl sm:p-8 from-amber-500 via-orange-500 to-rose-500" (exact match with the configured gradient + bg-gradient-to-r direction class)
+  * Background uses bg-gradient-to-r — confirmed via class inspection
+  * Computed background-image is a gradient (linear-gradient present) — window.getComputedStyle(innerDiv).backgroundImage = "linear-gradient(to right, lab(72.7183 31.8672 97.9407) 0%, lab(64.272 57.1788 90.3583) 50%, lab(56.101 79.4328 31.4532) 100%)" — the browser resolved the Tailwind amber-500/orange-500/rose-500 stops into lab() color space (amber at 0%, orange at 50%, rose at 100%), proving the gradient is actually rendered, not just present in the className
+  * Banner has NO <img> (text-only, no broken image) — img_count=0 inside the banner <section>. This is the critical check: even though imageUrl is an empty string, the component correctly skipped the <img> element entirely instead of rendering <img src=""> (which would have produced a broken-image icon)
+  * Text-only decorative circles present — decorative_circle_count=3 (matching the 3 expected `<div className="absolute ... rounded-full bg-white/10|bg-white/5" />` divs in the text-only branch: top-right size-48, bottom-right size-40, top-left-1/3 size-24)
+  * 'Promo' badge present — a <span> with textContent "Promo" was found inside the banner section (this is the small Sparkles + "Promo" pill at the top of the banner)
+  * Banner section has non-zero size — bounding box width=1248px, height=282px (banner takes up visible real estate near the top of the page, well-formed)
+  * Banner section is visible — Playwright `is_visible()` returned true (not display:none, not visibility:hidden, not 0-size)
+  * No banner-related failed requests — zero HTTP >=400 responses observed on any URL containing "banner"
+
+Console / page errors:
+  * pageerror events: 0 (no uncaught JS exceptions)
+  * console.error messages: 3 — all are the PRE-EXISTING chat-service WebSocket connection failures: `WebSocket connection to 'ws://localhost:3000/?XTransformPort=3003&EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response`. These are unrelated to the banner (the same noise appears in verify-admin-pengaturan-2 and verify-admin-pengaturan-3 runs).
+  * console.warning messages: 0
+  * HTTP >=400 responses: 0 (no broken images, no failed API calls, no 404s)
+
+Screenshots saved:
+  * /home/z/my-project/tool-results/verify-banner-text-only-full.png (4,704,572 bytes, 1366x~3000+ full-page) — full home page with banner visible at top
+  * /home/z/my-project/tool-results/verify-banner-text-only-viewport.png (507,497 bytes, 1366x900 viewport) — banner in viewport at top of page
+  * /home/z/my-project/tool-results/verify-banner-text-only-element.png (79,261 bytes) — element-only screenshot of the banner <section> itself (clean crop of the gradient banner with title, description, CTA button, decorative circles, "Promo" badge)
+
+Stage Summary:
+- The text-only admin banner RENDERS CORRECTLY on the home page. All 13 verification checks passed via headless Chromium. The banner is visible at the top of http://localhost:3000 with the title "Promo Akhir Tahun - Mesin Diskon 20%", the full description text, and the white "Pasang Iklan Sekarang" CTA button (with ArrowRight icon). The 'Promo' badge with Sparkles icon is present at the top-left of the banner.
+- Banner state confirmed: active=true, title="Promo Akhir Tahun - Mesin Diskon 20%" (non-empty, .trim() truthy), hasImage=false (imageUrl=""). The rendering condition `adminBanner?.active && adminBanner.title?.trim()` evaluates to true, so the admin banner branch is taken (not the default rotating banners).
+- Text-only mode is correctly triggered: the banner <section> contains ZERO <img> elements. This proves the `hasImage ? <img.../> : <decorative-circles/>` ternary correctly handled the empty-string imageUrl case (an empty string is falsy in JS, so hasImage=false, so the decorative circles branch was taken). No broken-image icon, no 404 on an empty src.
+- Gradient background is correctly applied: the inner div has the className "from-amber-500 via-orange-500 to-rose-500" + "bg-gradient-to-r", and window.getComputedStyle confirmed the actual rendered background-image is a real linear-gradient (amber->orange->rose, in lab() color space). The banner has a visible orange/rose gradient background as required.
+- Three decorative circles (the text-only-mode visual flourish) are present in the banner section, matching the 3 divs in the `else` branch of the `hasImage ? ... : ...` ternary.
+- The banner takes up visible real estate (1248x282px bounding box) and is properly visible.
+- API endpoint GET /api/admin/banner returns HTTP 200 with the exact test banner config (all 6 fields match: title, desc, cta, imageUrl="", gradient, active=true).
+- dev.log shows no errors related to the banner: NO TypeError, NO 500, NO 404 on /api/admin/banner, NO broken-image 404. The only Supabase egress_quota error fired ONCE before the test banner was saved to local Prisma (and the endpoint still returned 200 via the default fallback). After the test banner was saved, all subsequent GETs return 200 in 6-9ms with no Supabase error.
+- Console errors: only the 3 pre-existing chat-service WebSocket connection failures (XTransformPort=3003), unrelated to the banner and present in every prior verification run. Zero pageerror events.
+- Task verdict: PASS — the text-only banner (no image) renders correctly on the home page with the configured gradient background, the title/desc/CTA text, and no broken image.
+
+---
+Task ID: banner-text-only
+Agent: Main
+Task: Add ability to change banner text (text-only banner without requiring a photo)
+
+Work Log:
+- Analyzed existing banner system: BannerTab in admin.tsx already had title/desc/cta text editing, BUT it required an image (form validation line 2335 rejected save if no imageUrl, and ad-banner.tsx line 173 only rendered admin banner when `active && imageUrl`).
+- Updated src/components/gomesin/views/admin.tsx BannerTab:
+  * Removed the `if (!imageUrl) { toast.error("Foto banner wajib diunggah"); return; }` validation — now only title is required.
+  * Updated the description text to explain: "Foto bersifat opsional — jika tanpa foto, banner akan tampil dengan background warna gradient."
+  * Changed the "Foto Banner *" label to "Foto Banner (opsional)".
+  * Updated the live preview to show decorative circles (instead of dark overlay) when there's no image, matching the default rotating banner style.
+- Updated src/components/gomesin/ad-banner.tsx:
+  * Changed the admin banner render condition from `adminBanner?.active && adminBanner.imageUrl` to `adminBanner?.active && adminBanner.title?.trim()` — banner now shows whenever it's active and has a title, with OR without a photo.
+  * Added `hasImage` flag: when true, renders background photo + dark overlay; when false, renders 3 decorative circles + gradient background (same style as default rotating banners).
+  * Updated the auto-rotation pause condition to match: `adminBanner?.active && adminBanner.title?.trim()`.
+- Saved a test text-only banner via PUT /api/admin/banner (title="Promo Akhir Tahun - Mesin Diskon 20%", desc=..., cta="Pasang Iklan Sekarang", imageUrl="", active=true) — returned success.
+- Verified via Playwright browser automation (13/13 checks passed):
+  * Homepage loads HTTP 200, banner title/desc/cta all visible in rendered DOM
+  * Gradient background painted correctly (amber/orange/rose linear-gradient)
+  * 0 <img> elements inside banner (text-only mode, no broken image)
+  * 3 decorative circles rendered, "Promo" badge with Sparkles icon present
+  * No errors in dev.log (only pre-existing chat-service WebSocket noise)
+- Ran `bun run lint` — no new errors (only pre-existing .cjs/unrelated warnings).
+
+Stage Summary:
+- Admin can now change banner text and have it display WITHOUT uploading a photo — text-only banner shows with gradient background + decorative circles.
+- Photo is still optional: if admin uploads a photo, banner shows photo + dark overlay + text (unchanged behavior).
+- BannerTab form now only requires title; image field labeled "(opsional)".
+- Browser-verified: text-only banner renders correctly on home page with all text visible, gradient background, no broken images.
+- Test banner left active on home page so user can immediately see the feature; user can change text via admin panel → Banner tab.

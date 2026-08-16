@@ -150,7 +150,7 @@ export function AdBanner() {
   // auto-rotate every 5s, pause on hover — only for default rotating banners
   useEffect(() => {
     if (paused) return;
-    if (adminBanner?.active && adminBanner.imageUrl) return; // single banner, no rotation
+    if (adminBanner?.active && adminBanner.title?.trim()) return; // admin banner shown, no rotation
     const id = setInterval(next, 5000);
     return () => clearInterval(id);
   }, [next, paused, adminBanner]);
@@ -169,27 +169,42 @@ export function AdBanner() {
     else goToPost();
   };
 
-  // ===== ADMIN BANNER (single, with photo) =====
-  if (adminBanner?.active && adminBanner.imageUrl) {
+  // ===== ADMIN BANNER (custom text + optional photo) =====
+  // Renders when the admin banner is active AND has a title.
+  // Photo is optional — when absent, the banner shows as a text-only banner
+  // with the configured gradient background + decorative circles.
+  if (adminBanner?.active && adminBanner.title?.trim()) {
+    const hasImage = !!adminBanner.imageUrl;
     return (
       <section className="mx-auto max-w-7xl px-4 py-4">
         <div className={cn(
-          "relative overflow-hidden rounded-2xl bg-gradient-to-r shadow-xl",
+          "relative overflow-hidden rounded-2xl bg-gradient-to-r p-6 text-white shadow-xl sm:p-8",
           adminBanner.gradient || "from-amber-500 via-orange-500 to-rose-500"
         )}>
-          {/* Background photo */}
-          <img
-            src={adminBanner.imageUrl}
-            alt={adminBanner.title || "Promo"}
-            className="absolute inset-0 size-full object-cover"
-          />
-          {/* Dark overlay for text readability */}
-          <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-black/10" />
+          {hasImage ? (
+            <>
+              {/* Background photo */}
+              <img
+                src={adminBanner.imageUrl}
+                alt={adminBanner.title || "Promo"}
+                className="absolute inset-0 size-full object-cover"
+              />
+              {/* Dark overlay for text readability */}
+              <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-black/10" />
+            </>
+          ) : (
+            <>
+              {/* decorative circles (same style as default rotating banners) */}
+              <div className="absolute -right-16 -top-16 size-48 rounded-full bg-white/10" />
+              <div className="absolute -bottom-20 right-32 size-40 rounded-full bg-white/10" />
+              <div className="absolute left-1/3 -top-10 size-24 rounded-full bg-white/5" />
+            </>
+          )}
 
-          <div className="relative flex flex-col items-start gap-4 p-6 text-white sm:flex-row sm:items-center sm:justify-between sm:p-8">
+          <div className="relative flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0 flex-1">
               <div className="mb-3 flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/25 px-3 py-1 text-[11px] font-bold uppercase tracking-wider backdrop-blur">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wider backdrop-blur">
                   <Sparkles className="size-3.5" />
                   Promo
                 </span>

@@ -2332,7 +2332,7 @@ function BannerTab() {
 
   const handleSave = () => {
     if (!title.trim()) { toast.error("Judul banner wajib diisi"); return; }
-    if (!imageUrl) { toast.error("Foto banner wajib diunggah"); return; }
+    // Foto banner opsional — banner bisa hanya berupa tulisan (text-only) dengan background gradient
     saveMutation.mutate({ title, desc, cta, imageUrl, link, gradient, active });
   };
 
@@ -2411,7 +2411,7 @@ function BannerTab() {
         </Badge>
       </div>
       <p className="text-xs text-muted-foreground">
-        Ubah tulisan dan foto banner yang tampil di beranda (online). Jika nonaktif, banner bawaan (default) yang akan tampil.
+        Ubah tulisan dan foto banner yang tampil di beranda (online). Foto bersifat opsional — jika tanpa foto, banner akan tampil dengan background warna gradient. Jika nonaktif, banner bawaan (default) yang akan tampil.
       </p>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -2461,7 +2461,7 @@ function BannerTab() {
 
           {/* Photo upload */}
           <div>
-            <Label className="text-xs">Foto Banner *</Label>
+            <Label className="text-xs">Foto Banner <span className="text-muted-foreground">(opsional)</span></Label>
             <div className="mt-1 flex items-center gap-3">
               <button
                 type="button"
@@ -2532,10 +2532,18 @@ function BannerTab() {
             "relative overflow-hidden rounded-2xl bg-gradient-to-r p-6 text-white shadow-xl",
             gradient
           )}>
-            {imageUrl && (
-              <img src={imageUrl} alt="" className="absolute inset-0 size-full object-cover" />
+            {imageUrl ? (
+              <>
+                <img src={imageUrl} alt="" className="absolute inset-0 size-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-black/10" />
+              </>
+            ) : (
+              <>
+                <div className="absolute -right-16 -top-16 size-48 rounded-full bg-white/10" />
+                <div className="absolute -bottom-20 right-32 size-40 rounded-full bg-white/10" />
+                <div className="absolute left-1/3 -top-10 size-24 rounded-full bg-white/5" />
+              </>
             )}
-            <div className="absolute inset-0 bg-black/30" />
             <div className="relative flex flex-col items-start gap-3">
               <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wider backdrop-blur">
                 Promo
