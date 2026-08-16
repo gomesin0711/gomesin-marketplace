@@ -79,7 +79,11 @@ export default function RootLayout({
               });
               window.addEventListener('appinstalled', function() {
                 window.__deferredInstallPrompt = null;
-                try { localStorage.setItem('gomesin-pwa-installed', '1'); } catch(ex) {}
+                // NOTE: We do NOT set gomesin-pwa-installed here anymore.
+                // The React component (PwaInstallPrompt) sets it after the
+                // native dialog resolves as "accepted". This way, if the app
+                // is later uninstalled, the component clears the stale flag
+                // (via clearStaleInstalled) and the popup can show again.
                 console.log('[PWA] app installed successfully');
               });
               // Register SW early (don't wait for load) so it activates ASAP.

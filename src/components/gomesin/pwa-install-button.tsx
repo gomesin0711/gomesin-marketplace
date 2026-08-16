@@ -44,12 +44,21 @@ function isStandalone(): boolean {
   return (
     window.matchMedia("(display-mode: standalone)").matches ||
     window.matchMedia("(display-mode: fullscreen)").matches ||
-    window.matchMedia("(display-mode: minimal-ui)").matches ||
     ("standalone" in navigator && (navigator as unknown as Record<string, boolean>).standalone === true)
   );
 }
 
+// Clear stale INSTALLED_KEY if not actually in standalone mode (app was uninstalled)
+function clearStaleInstalled(): void {
+  try {
+    if (localStorage.getItem(INSTALLED_KEY) === "1" && !isStandalone()) {
+      localStorage.removeItem(INSTALLED_KEY);
+    }
+  } catch {}
+}
+
 function isInstalled(): boolean {
+  clearStaleInstalled();
   try { return localStorage.getItem(INSTALLED_KEY) === "1"; } catch { return false; }
 }
 
@@ -147,7 +156,9 @@ export function PwaInstallButton() {
     setVisible(false);
   }, []);
 
-  if (!visible || !hasPrompt || isStandalone() || isInstalled()) return null;
+  if (!visible || !hasPrompt) return null;
+  clearStaleInstalled();
+  if (isStandalone() || isInstalled()) return null;
 
   return (
     <button

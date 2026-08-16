@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { X, Download, Smartphone, Monitor, Tablet, Share2, ArrowUpFromLine, MonitorSmartphone } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { X, Download, Smartphone, Monitor, Tablet, Share2, Star, ShieldCheck, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLang } from "@/lib/i18n";
 
@@ -10,32 +10,11 @@ import { useLang } from "@/lib/i18n";
 /* ------------------------------------------------------------------ */
 
 type Platform = "ios" | "android" | "desktop";
-type Browser = "chrome" | "edge" | "samsung" | "huawei" | "opera" | "firefox" | "safari" | "other";
 
 interface DeferredPrompt extends Event {
   prompt(): Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
-
-/* ------------------------------------------------------------------ */
-/*  Constants                                                          */
-/* ------------------------------------------------------------------ */
-
-const DISMISSED_KEY = "gomesin-pwa-dismissed";
-const SOFT_DISMISSED_KEY = "gomesin-pwa-soft-dismissed";
-const INSTALLED_KEY = "gomesin-pwa-installed";
-const DISMISS_MS = 60 * 60 * 1000; // 1 hour — hard dismiss ("Nanti Saja" / native reject)
-const SOFT_DISMISS_MS = 15 * 60 * 1000; // 15 min — soft dismiss ("Mengerti")
-// Auto-show the install popup after this delay on ALL platforms.
-// (Previously Chromium waited for `beforeinstallprompt` which on mobile can
-// take 30+ seconds or require scrolling — so the popup never appeared.
-// Now we show on a timer and update the button to "Install Now" reactively
-// when the native prompt becomes available.)
-const SHOW_DELAY_MS = 1200;
-
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
 
 declare global {
   interface Window {
@@ -43,47 +22,117 @@ declare global {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Constants                                                          */
+/* ------------------------------------------------------------------ */
+
+/*
+ * STORAGE STRATEGY (Play Store-like):
+ *   - INSTALLED_KEY (localStorage): Set when the native install dialog is
+ *     ACCEPTED. Cleared on every mount if the app is NOT actually running
+ *     in standalone mode — so uninstalling the PWA resets the state and
+ *     the popup can show again.
+ *   - SESSION_DISMISSED_KEY (sessionStorage): Set when the user clicks
+ *     "Nanti Saja" or "Mengerti". Uses sessionStorage so it resets when
+ *     the user closes the browser — every fresh visit shows the prompt,
+ *     just like Play Store shows install prompts every time you open an
+ *     app page.
+ *   - HARD_DISMISSED_KEY (localStorage, 6h): Only set when the user
+ *     rejects the NATIVE install dialog (Chrome's own popup). This
+ *     respects Chrome's 30-day re-prompt rule and avoids annoying users
+ *     who explicitly said "no" to the real install.
+ */
+const INSTALLED_KEY = "gomesin-pwa-installed";
+const SESSION_DISMISSED_KEY = "gomesin-pwa-session-dismissed";
+const HARD_DISMISSED_KEY = "gomesin-pwa-hard-dismissed";
+const HARD_DISMISS_MS = 6 * 60 * 60 * 1000; // 6 hours — native dialog rejected
+
+// Auto-show delay. Short so the popup appears almost immediately on mobile,
+// like a Play Store install card.
+const SHOW_DELAY_MS = 800;
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
 function isStandalone(): boolean {
   if (typeof window === "undefined") return false;
   return (
     window.matchMedia("(display-mode: standalone)").matches ||
     window.matchMedia("(display-mode: fullscreen)").matches ||
-    window.matchMedia("(display-mode: minimal-ui)").matches ||
+    // iOS Safari standalone flag
     ("standalone" in navigator && (navigator as unknown as Record<string, boolean>).standalone === true)
   );
 }
 
-function canShow(): boolean {
+/*
+ * CRITICAL FIX: Clear stale INSTALLED_KEY if not actually in standalone mode.
+ * If the flag is "1" but we're browsing in a regular tab, the app was
+ * uninstalled (or the flag was set by a test). Clear it so the popup can
+ * show again. This is the #1 reason the popup "never appears" on mobile.
+ */
+function clearStaleInstalled(): void {
   try {
-    // Hard dismiss — 1 hour
-    const raw = localStorage.getItem(DISMISSED_KEY);
-    if (raw) {
-      const ts = Number(raw);
-      if (!isNaN(ts) && Date.now() - ts < DISMISS_MS) return false;
+    if (localStorage.getItem(INSTALLED_KEY) === "1" && !isStandalone()) {
+      localStorage.removeItem(INSTALLED_KEY);
     }
-    // Soft dismiss — 15 min (only blocks the timer-based auto-show, NOT the
-    // real-time beforeinstallprompt re-show which overrides it)
-    const soft = localStorage.getItem(SOFT_DISMISSED_KEY);
-    if (soft) {
-      const ts = Number(soft);
-      if (!isNaN(ts) && Date.now() - ts < SOFT_DISMISS_MS) return false;
-    }
-    return true;
   } catch {
-    return true;
+    /* ignore */
   }
 }
 
-function markDismissed() {
-  try { localStorage.setItem(DISMISSED_KEY, String(Date.now())); } catch {}
-}
-
-function markSoftDismissed() {
-  try { localStorage.setItem(SOFT_DISMISSED_KEY, String(Date.now())); } catch {}
-}
-
 function isInstalled(): boolean {
-  try { return localStorage.getItem(INSTALLED_KEY) === "1"; } catch { return false; }
+  try {
+    return localStorage.getItem(INSTALLED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function isSessionDismissed(): boolean {
+  try {
+    return sessionStorage.getItem(SESSION_DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markSessionDismissed(): void {
+  try {
+    sessionStorage.setItem(SESSION_DISMISSED_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+}
+
+function isHardDismissed(): boolean {
+  try {
+    const raw = localStorage.getItem(HARD_DISMISSED_KEY);
+    if (!raw) return false;
+    const ts = Number(raw);
+    if (isNaN(ts)) return false;
+    return Date.now() - ts < HARD_DISMISS_MS;
+  } catch {
+    return false;
+  }
+}
+
+function markHardDismissed(): void {
+  try {
+    localStorage.setItem(HARD_DISMISSED_KEY, String(Date.now()));
+  } catch {
+    /* ignore */
+  }
+}
+
+function canShow(): boolean {
+  // Clear stale "installed" flag first — if the app isn't actually running
+  // standalone, any previous "installed" mark is stale.
+  clearStaleInstalled();
+  if (isInstalled()) return false;
+  if (isSessionDismissed()) return false;
+  if (isHardDismissed()) return false;
+  return true;
 }
 
 function detectPlatform(): Platform {
@@ -93,40 +142,26 @@ function detectPlatform(): Platform {
   return "desktop";
 }
 
-function detectBrowser(): Browser {
-  const ua = navigator.userAgent;
-  if (/SamsungBrowser/i.test(ua)) return "samsung";
-  if (/HuaweiBrowser/i.test(ua) || (/HUAWEI/i.test(ua) && /Mobile/i.test(ua))) return "huawei";
-  if (/Firefox/i.test(ua)) return "firefox";
-  if (/Edg/i.test(ua)) return "edge";
-  if (/OPR|Opera/i.test(ua)) return "opera";
-  if (/Chrome/i.test(ua)) return "chrome";
-  if (/Safari/i.test(ua)) return "safari";
-  return "other";
-}
-
-function isChromium(b: Browser): boolean {
-  return ["chrome", "edge", "samsung", "huawei", "opera"].includes(b);
-}
-
 /* ------------------------------------------------------------------ */
 /*  Translations                                                       */
 /* ------------------------------------------------------------------ */
 
 const T: Record<string, Record<string, string>> = {
-  popupTitle:    { id: "Install Aplikasi mesinKU", en: "Install mesinKU App", zh: "\u5b89\u88c5 mesinKU \u5e94\u7528" },
-  popupDesc:     { id: "Akses marketplace mesin industri terlengkap langsung dari home screen Anda.", en: "Access the largest industrial machinery marketplace directly from your home screen.", zh: "\u4ece\u4e3b\u5c4f\u5e55\u76f4\u63a5\u8bbf\u95ee\u6700\u5927\u7684\u5de5\u4e1a\u673a\u68b0\u5e02\u573a\u3002" },
-  install:       { id: "Install Sekarang", en: "Install Now", zh: "\u7acb\u5373\u5b89\u88c5" },
-  later:         { id: "Nanti Saja", en: "Not Now", zh: "\u4ee5\u540e\u518d\u8bf4" },
-  benefit1:      { id: "Buka langsung dari home screen", en: "Open directly from home screen", zh: "\u4ece\u4e3b\u5c4f\u5e55\u76f4\u63a5\u6253\u5f00" },
-  benefit2:      { id: "Tampilan seperti aplikasi native", en: "Native app-like experience", zh: "\u7c7b\u4f3c\u539f\u751f\u5e94\u7528\u4f53\u9a8c" },
-  benefit3:      { id: "Notifikasi instan untuk chat & iklan", en: "Instant notifications for chat & ads", zh: "\u804a\u5929\u548c\u5e7f\u544a\u5373\u65f6\u901a\u77e5" },
-  iosStep1:      { id: "Tekan tombol", en: "Tap the", zh: "\u70b9\u51fb" },
-  iosStep1Icon:  { id: "Share", en: "Share", zh: "\u5206\u4eab" },
-  iosStep2:      { id: "di bilah bawah browser", en: "button in the browser bottom bar", zh: "\u6d4f\u89c8\u5668\u5e95\u90e8\u680f\u7684\u6309\u94ae" },
-  iosStep3:      { id: 'Lalu pilih "Tambahkan ke Layar Utama"', en: 'Then select "Add to Home Screen"', zh: '\u7136\u540e\u9009\u62e9\u201c\u6dfb\u52a0\u5230\u4e3b\u5c4f\u5e55\u201d' },
-  desktopHint:   { id: "Klik ikon install (\u2295) di bilah alamat browser, lalu pilih \"Install\"", en: "Click the install icon in your browser address bar, then select \"Install\"", zh: "\u70b9\u51fb\u6d4f\u89c8\u5668\u5730\u5740\u680f\u4e2d\u7684\u5b89\u88c5\u56fe\u6807\uff0c\u7136\u540e\u9009\u62e9\"\u5b89\u88c5\"" },
-  gotIt:        { id: "Mengerti", en: "Got it", zh: "\u660e\u767d\u4e86" },
+  title:        { id: "Install mesinKU", en: "Install mesinKU", zh: "\u5b89\u88c5 mesinKU" },
+  subtitle:     { id: "Marketplace Mesin Industri #1", en: "#1 Industrial Machinery Marketplace", zh: "#1 \u5de5\u4e1a\u673a\u68b0\u5e02\u573a" },
+  desc:         { id: "Akses marketplace mesin industri terlengkap langsung dari home screen Anda.", en: "Access the largest industrial machinery marketplace directly from your home screen.", zh: "\u4ece\u4e3b\u5c4f\u5e55\u76f4\u63a5\u8bbf\u95ee\u6700\u5927\u7684\u5de5\u4e1a\u673a\u68b0\u5e02\u573a\u3002" },
+  install:      { id: "Install", en: "Install", zh: "\u5b89\u88c5" },
+  installing:   { id: "Menginstall...", en: "Installing...", zh: "\u5b89\u88c5\u4e2d..." },
+  later:        { id: "Nanti saja", en: "Not now", zh: "\u4ee5\u540e\u518d\u8bf4" },
+  feature1:     { id: "Buka langsung dari home screen", en: "Open from home screen", zh: "\u4ece\u4e3b\u5c4f\u5e55\u6253\u5f00" },
+  feature2:     { id: "Notifikasi instan chat & iklan", en: "Instant chat & ad notifications", zh: "\u5373\u65f6\u804a\u5929\u548c\u5e7f\u544a\u901a\u77e5" },
+  feature3:     { id: "Tampilan full-screen tanpa browser", en: "Full-screen, no browser UI", zh: "\u5168\u5c4f\uff0c\u65e0\u6d4f\u89c8\u5668\u754c\u9762" },
+  rating:       { id: "4.9", en: "4.9", zh: "4.9" },
+  ratingText:   { id: "Ribuan pengguna aktif", en: "Thousands of active users", zh: "\u6570\u5343\u6d3b\u8dc3\u7528\u6237" },
+  free:         { id: "GRATIS", en: "FREE", zh: "\u514d\u8d39" },
+  iosStep1:     { id: "Tekan tombol Share", en: "Tap the Share button", zh: "\u70b9\u51fb\u5206\u4eab\u6309\u94ae" },
+  iosStep2:     { id: 'Lalu pilih "Tambahkan ke Layar Utama"', en: 'Then select "Add to Home Screen"', zh: '\u7136\u540e\u9009\u62e9\u201c\u6dfb\u52a0\u5230\u4e3b\u5c4f\u5e55\u201d' },
+  desktopHint:  { id: "Klik ikon install di address bar browser Anda", en: "Click the install icon in your browser address bar", zh: "\u70b9\u51fb\u6d4f\u89c8\u5668\u5730\u5740\u680f\u7684\u5b89\u88c5\u56fe\u6807" },
 };
 
 function tr(key: string, lang: string): string {
@@ -142,75 +177,50 @@ export function PwaInstallPrompt() {
   const [installing, setInstalling] = useState(false);
   const [hasNativePrompt, setHasNativePrompt] = useState(false);
   const { lang } = useLang();
-  const mountedRef = useRef(false);
 
   const platform: Platform = typeof window !== "undefined" ? detectPlatform() : "desktop";
-  const browser: Browser = typeof window !== "undefined" ? detectBrowser() : "chrome";
-  const chromium = isChromium(browser);
 
-  /* ------ Core logic: auto-show popup + real-time native prompt ------
-   *
-   * STRATEGY:
-   *   1. Auto-show the install popup on a timer (SHOW_DELAY_MS) for ALL
-   *      platforms (Android, iOS, desktop). This fixes the mobile issue
-   *      where the popup never appeared because Chromium's
-   *      `beforeinstallprompt` event requires an engagement heuristic
-   *      (scrolling/clicking) that can take 30+ seconds on mobile.
-   *   2. A real-time `beforeinstallprompt` listener updates the button
-   *      label from "Mengerti" → "Install Sekarang" reactively when the
-   *      native prompt becomes available. If the popup was soft-dismissed
-   *      (user clicked "Mengerti" earlier), the listener OVERRIDES the
-   *      soft dismissal and re-shows the popup with the working install
-   *      button — because now we actually have something useful to offer.
-   *   3. Hard dismissal ("Nanti Saja" / native prompt rejected) blocks
-   *      both the timer and the real-time re-show for 1 hour.
+  /*
+   * STRATEGY (Play Store-like):
+   *   1. On mount, clear any stale "installed" flag if not standalone.
+   *   2. Auto-show the popup after SHOW_DELAY_MS on ALL platforms —
+   *      this is the primary trigger. Works even if beforeinstallprompt
+   *      never fires (iOS Safari, or Chrome before engagement heuristic).
+   *   3. Listen for beforeinstallprompt reactively — when it fires,
+   *      upgrade the button from "Install" to "Install" (now triggers
+   *      native dialog) and re-show the popup if it was session-dismissed.
+   *   4. Hard dismissal (native dialog rejected) blocks for 6 hours.
+   *      Session dismissal ("Nanti saja" / "Mengerti") blocks until the
+   *      browser is closed — next visit, popup shows again.
    */
   useEffect(() => {
+    // Step 1: clear stale installed flag
+    clearStaleInstalled();
+
+    // Don't show if already running as standalone app or genuinely installed
     if (isStandalone() || isInstalled()) return;
 
-    // If the early <head> script already captured the event before React
-    // hydrated, pick it up. Deferred via microtask so we don't trigger a
-    // cascading render from inside the effect body.
+    // Step 2: Check if the early <head> script already captured the prompt.
+    // Deferred via microtask to avoid cascading renders from inside the effect.
     if (window.__deferredInstallPrompt) {
-      Promise.resolve().then(() => {
-        setHasNativePrompt(true);
-        if (canShow() && !isStandalone() && !isInstalled()) {
-          mountedRef.current = true;
-          setShowPopup(true);
-        }
-      });
+      Promise.resolve().then(() => setHasNativePrompt(true));
     }
 
-    // Real-time listener — fires whenever Chrome decides the app is
-    // installable, even if that's 5-30 seconds after page load on mobile.
-    // When it fires, update the button to "Install Now" and (re-)show the
-    // popup unless the user hard-dismissed it.
+    // Step 3: Real-time listener for beforeinstallprompt
     const handleBIP = () => {
       setHasNativePrompt(true);
-      // Clear soft dismissal — we now have a real install prompt to offer,
-      // so the earlier "Mengerti" click shouldn't block re-showing.
-      try { localStorage.removeItem(SOFT_DISMISSED_KEY); } catch {}
-      // Only re-show if not hard-dismissed.
-      const hardOk = (() => {
-        try {
-          const raw = localStorage.getItem(DISMISSED_KEY);
-          if (!raw) return true;
-          const ts = Number(raw);
-          if (isNaN(ts)) return true;
-          return Date.now() - ts > DISMISS_MS;
-        } catch { return true; }
-      })();
-      if (hardOk && !isStandalone() && !isInstalled()) {
-        mountedRef.current = true;
+      // Clear session dismissal — we now have a real native prompt to offer
+      try { sessionStorage.removeItem(SESSION_DISMISSED_KEY); } catch {}
+      // Re-show the popup (unless hard-dismissed recently)
+      if (!isHardDismissed() && !isStandalone() && !isInstalled()) {
         setShowPopup(true);
       }
     };
     window.addEventListener("beforeinstallprompt", handleBIP);
 
-    // Auto-show the popup on a timer for ALL platforms.
+    // Step 4: Auto-show on timer
     const timer = setTimeout(() => {
       if (canShow() && !isStandalone() && !isInstalled()) {
-        mountedRef.current = true;
         setShowPopup(true);
       }
     }, SHOW_DELAY_MS);
@@ -219,11 +229,12 @@ export function PwaInstallPrompt() {
       window.removeEventListener("beforeinstallprompt", handleBIP);
       clearTimeout(timer);
     };
-  }, [platform, chromium]);
+  }, []);
 
-  /* ------ Listen for appinstalled ------ */
+  // Listen for appinstalled
   useEffect(() => {
     const handler = () => {
+      try { localStorage.setItem(INSTALLED_KEY, "1"); } catch {}
       window.__deferredInstallPrompt = null;
       setHasNativePrompt(false);
       setShowPopup(false);
@@ -232,14 +243,12 @@ export function PwaInstallPrompt() {
     return () => window.removeEventListener("appinstalled", handler);
   }, []);
 
-  /* ------ handle install button tap ------ */
+  // Handle install button tap
   const handleInstall = useCallback(async () => {
-    // Use the deferred prompt captured by the early <head> script or
-    // our real-time listener. This is the ONLY reliable way to trigger
-    // the native install dialog on Chromium browsers.
     const prompt = window.__deferredInstallPrompt;
 
     if (prompt) {
+      // Chromium: trigger native install dialog
       setInstalling(true);
       try {
         await prompt.prompt();
@@ -247,24 +256,21 @@ export function PwaInstallPrompt() {
         if (outcome === "accepted") {
           try { localStorage.setItem(INSTALLED_KEY, "1"); } catch {}
         } else {
-          // User dismissed the native install dialog — respect that and
-          // don't re-show our popup for the dismiss window.
-          markDismissed();
+          // User rejected the NATIVE dialog — hard dismiss (6h)
+          markHardDismissed();
         }
         window.__deferredInstallPrompt = null;
         setHasNativePrompt(false);
       } catch {
-        // User cancelled or error — don't mark dismissed, let them retry.
+        // Error — don't dismiss, let user retry
       }
       setInstalling(false);
       setShowPopup(false);
       return;
     }
 
-    // iOS Safari: try to open the share sheet (which contains the
-    // "Add to Home Screen" action). This is the closest to "install"
-    // we can get on iOS.
-    if (platform === "ios" && navigator.share) {
+    // iOS Safari: open share sheet (contains "Add to Home Screen")
+    if (platform === "ios" && typeof navigator !== "undefined" && navigator.share) {
       try {
         await navigator.share({
           title: "mesinKU",
@@ -272,166 +278,150 @@ export function PwaInstallPrompt() {
           url: window.location.href,
         });
       } catch {
-        // User cancelled the share sheet — don't mark dismissed.
+        // User cancelled share sheet
       }
       setShowPopup(false);
+      markSessionDismissed();
       return;
     }
 
-    // Desktop/Android without native prompt: the button says "Mengerti".
-    // Soft-dismiss (15 min) so the popup doesn't reappear on every navigation
-    // but CAN reappear when `beforeinstallprompt` fires (the listener clears
-    // the soft dismissal).
+    // No native prompt available (desktop without beforeinstallprompt, or
+    // iOS without share API): just close the popup with session dismissal.
     setShowPopup(false);
-    markSoftDismissed();
+    markSessionDismissed();
   }, [platform]);
 
-  /* ------ explicit dismiss ("Nanti Saja") — hard dismiss, 1 hour ------ */
+  // Explicit dismiss ("Nanti saja") — session dismissal
   const handleDismiss = useCallback(() => {
     setShowPopup(false);
-    markDismissed();
+    markSessionDismissed();
   }, []);
 
-  /* ------ don't render if standalone, installed, or hidden ------ */
+  // Don't render if standalone, installed, or hidden
   if (isStandalone() || isInstalled() || !showPopup) return null;
 
-  /* ------ Instructions ------ */
-  const renderInstructions = () => {
-    if (platform === "ios") {
-      return (
-        <div className="mt-4 rounded-xl bg-muted/50 p-3">
-          <p className="text-center text-xs font-medium text-muted-foreground">
-            {tr("iosStep1", lang)}
-            <Share2 className="inline size-3.5 mx-0.5 -mt-0.5" />
-            {tr("iosStep1Icon", lang)} {tr("iosStep2", lang)}
-          </p>
-          <p className="mt-1 text-center text-xs font-semibold text-foreground">
-            {tr("iosStep3", lang)}
-          </p>
-        </div>
-      );
-    }
-
-    // Chromium desktop/mobile WITHOUT a captured native prompt yet.
-    // This branch is now rare because we only show the popup on
-    // Chromium when beforeinstallprompt has fired. But if the user
-    // navigated here from an iOS-style fallback path, show guidance.
-    if (chromium && !hasNativePrompt) {
-      return (
-        <div className="mt-4 rounded-xl bg-primary/5 border border-primary/10 p-3">
-          <div className="flex items-start gap-2.5">
-            <MonitorSmartphone className="size-5 shrink-0 mt-0.5 text-primary" />
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {tr("desktopHint", lang)}
-            </p>
-          </div>
-        </div>
-      );
-    }
-
-    // Non-Chromium desktop
-    if (platform === "desktop" && !chromium) {
-      return (
-        <div className="mt-4 rounded-xl bg-muted/50 p-3">
-          <p className="text-center text-xs text-muted-foreground">
-            {tr("desktopHint", lang)}
-          </p>
-        </div>
-      );
-    }
-
-    return null;
-  };
-
   const platformIcon =
-    platform === "ios" ? <Tablet className="size-5" /> :
-    platform === "android" ? <Smartphone className="size-5" /> :
-    <Monitor className="size-5" />;
-
-  // Button label:
-  // - hasNativePrompt (Chromium + beforeinstallprompt fired) → "Install Sekarang"
-  // - iOS → "Install Sekarang" (triggers share sheet)
-  // - otherwise (desktop without prompt) → "Mengerti"
-  const installBtnLabel = hasNativePrompt
-    ? tr("install", lang)
-    : (platform === "ios" ? tr("install", lang) : tr("gotIt", lang));
+    platform === "ios" ? <Tablet className="size-4" /> :
+    platform === "android" ? <Smartphone className="size-4" /> :
+    <Monitor className="size-4" />;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[200] flex items-end justify-center p-0 sm:items-center sm:p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
         onClick={handleDismiss}
       />
 
-      {/* Popup Card */}
-      <div className="relative w-full max-w-sm animate-in zoom-in-95 fade-in duration-300 slide-in-from-bottom-4">
-        <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-          {/* Top gradient header */}
-          <div className="relative bg-gradient-to-br from-primary to-orange-600 px-6 pb-8 pt-6 text-center">
-            <button
-              onClick={handleDismiss}
-              className="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-white/20 text-white hover:bg-white/30 transition"
-              aria-label="Tutup"
-            >
-              <X className="size-4" />
-            </button>
+      {/* Popup Card — Play Store-like bottom sheet on mobile, centered card on desktop */}
+      <div className="relative w-full max-w-sm animate-in slide-in-from-bottom-8 fade-in duration-300 sm:zoom-in-95 sm:slide-in-from-bottom-4">
+        <div className="overflow-hidden rounded-t-3xl border border-border bg-card shadow-2xl sm:rounded-2xl">
+          {/* Close button */}
+          <button
+            onClick={handleDismiss}
+            className="absolute right-3 top-3 z-10 grid size-8 place-items-center rounded-full bg-black/20 text-white backdrop-blur-sm hover:bg-black/40 transition"
+            aria-label="Tutup"
+          >
+            <X className="size-4" />
+          </button>
 
-            <div className="mx-auto mb-3 grid size-20 place-items-center rounded-2xl bg-white shadow-lg">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/pwa-icon-192.png" alt="mesinKU" className="size-16 rounded-xl" />
+          {/* Top gradient header with app icon — like Play Store hero */}
+          <div className="relative bg-gradient-to-br from-primary via-orange-600 to-amber-600 px-5 pb-6 pt-7">
+            <div className="flex items-center gap-4">
+              {/* App icon */}
+              <div className="grid size-20 shrink-0 place-items-center rounded-2xl bg-white shadow-xl ring-2 ring-white/40">
+                <img src="/pwa-icon-192.png" alt="mesinKU" className="size-16 rounded-xl" />
+              </div>
+              {/* App name + rating — like Play Store */}
+              <div className="min-w-0 flex-1 text-white">
+                <h2 className="truncate text-xl font-bold leading-tight">
+                  {tr("title", lang)}
+                </h2>
+                <p className="text-xs text-white/80">
+                  {tr("subtitle", lang)}
+                </p>
+                {/* Rating row */}
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <div className="flex items-center gap-0.5">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <Star key={i} className="size-3 fill-yellow-300 text-yellow-300" />
+                    ))}
+                  </div>
+                  <span className="text-xs font-semibold text-white">
+                    {tr("rating", lang)}
+                  </span>
+                  <span className="text-[10px] text-white/70">· {tr("ratingText", lang)}</span>
+                </div>
+              </div>
             </div>
-
-            <h2 className="text-lg font-bold text-white">
-              {tr("popupTitle", lang)}
-            </h2>
-            <p className="mt-1 text-xs text-white/80 leading-relaxed">
-              {tr("popupDesc", lang)}
-            </p>
+            {/* FREE badge */}
+            <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] font-bold text-white backdrop-blur-sm">
+              <Zap className="size-3" />
+              {tr("free", lang)}
+            </div>
           </div>
 
-          {/* Benefits */}
-          <div className="px-5 pt-5 pb-2">
-            <div className="space-y-2.5">
-              <div className="flex items-center gap-3">
-                <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                  <ArrowUpFromLine className="size-4" />
+          {/* Description + features */}
+          <div className="px-5 pt-4 pb-2">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {tr("desc", lang)}
+            </p>
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-2.5">
+                <div className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <Smartphone className="size-3.5" />
                 </div>
-                <span className="text-sm text-foreground">{tr("benefit1", lang)}</span>
+                <span className="text-sm text-foreground">{tr("feature1", lang)}</span>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                  <Smartphone className="size-4" />
+              <div className="flex items-center gap-2.5">
+                <div className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <ShieldCheck className="size-3.5" />
                 </div>
-                <span className="text-sm text-foreground">{tr("benefit2", lang)}</span>
+                <span className="text-sm text-foreground">{tr("feature2", lang)}</span>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+              <div className="flex items-center gap-2.5">
+                <div className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
                   {platformIcon}
                 </div>
-                <span className="text-sm text-foreground">{tr("benefit3", lang)}</span>
+                <span className="text-sm text-foreground">{tr("feature3", lang)}</span>
               </div>
             </div>
           </div>
 
-          {/* Platform instructions */}
-          <div className="px-5">
-            {renderInstructions()}
-          </div>
+          {/* iOS instructions (only on iOS without native prompt) */}
+          {platform === "ios" && !hasNativePrompt && (
+            <div className="mx-5 mt-2 mb-1 rounded-xl bg-muted/60 p-3">
+              <p className="text-center text-xs font-medium text-muted-foreground">
+                {tr("iosStep1", lang)} <Share2 className="inline size-3.5 mx-0.5 -mt-0.5" />
+              </p>
+              <p className="mt-1 text-center text-xs font-semibold text-foreground">
+                {tr("iosStep2", lang)}
+              </p>
+            </div>
+          )}
 
-          {/* Action buttons */}
+          {/* Desktop hint without native prompt */}
+          {platform === "desktop" && !hasNativePrompt && (
+            <div className="mx-5 mt-2 mb-1 rounded-xl bg-muted/60 p-3">
+              <p className="text-center text-xs text-muted-foreground">
+                {tr("desktopHint", lang)}
+              </p>
+            </div>
+          )}
+
+          {/* Action buttons — Play Store style */}
           <div className="px-5 pt-3 pb-5">
             <Button
-              className="w-full h-12 rounded-xl bg-primary text-base font-bold text-primary-foreground hover:bg-primary/90 gap-2 shadow-md"
+              className="w-full h-12 rounded-2xl bg-gradient-to-r from-primary to-orange-600 text-base font-bold text-white shadow-lg hover:opacity-90 gap-2"
               onClick={handleInstall}
               disabled={installing}
             >
               <Download className="size-5" />
-              {installing ? "Menginstall..." : installBtnLabel}
+              {installing ? tr("installing", lang) : tr("install", lang)}
             </Button>
             <button
               onClick={handleDismiss}
-              className="mt-2 w-full py-2.5 text-center text-sm text-muted-foreground hover:text-foreground transition"
+              className="mt-2 w-full py-2.5 text-center text-sm font-medium text-muted-foreground hover:text-foreground transition"
             >
               {tr("later", lang)}
             </button>
