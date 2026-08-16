@@ -112,16 +112,59 @@ export async function POST(req: NextRequest) {
     const { key, name, price, originalPrice, duration, features, active, sortOrder } = body;
     if (!key || !name) return NextResponse.json({ error: "Key dan nama wajib" }, { status: 400 });
 
-    // Check duplicate key
-    const existing = await db.paket.findFirst({ where: { key } });
-    if (existing) return NextResponse.json({ error: "Key paket sudah ada" }, { status: 409 });
+    // --- Path A: local dev (Prisma + SQLite) ---
+    if (isDbAvailable()) {
+      try {
+        // Check duplicate key
+        const existing = await db.paket.findFirst({ where: { key } });
+        if (existing) return NextResponse.json({ error: "Key paket sudah ada" }, { status: 409 });
 
-    // Get max sortOrder
-    const allPakets = await db.paket.findMany({ orderBy: { sortOrder: "desc" }, take: 1 });
-    const nextSort = sortOrder ?? ((allPakets[0]?.sortOrder ?? 0) + 1);
+        // Get max sortOrder
+        const allPakets = await db.paket.findMany({ orderBy: { sortOrder: "desc" }, take: 1 });
+        const nextSort = sortOrder ?? ((allPakets[0]?.sortOrder ?? 0) + 1);
 
-    const created = await db.paket.create({
-      data: {
+        const created = await db.paket.create({
+          data: {
+            key,
+            name,
+            price: Number(price) || 0,
+            originalPrice: Number(originalPrice) || 0,
+            duration: Number(duration) || 30,
+            features: JSON.stringify(features || []),
+            active: active !== undefined ? active : true,
+            sortOrder: nextSort,
+          },
+        });
+        return NextResponse.json({ paket: parseFeatures(created) }, { status: 201 });
+      } catch (prismaErr) {
+        console.error("[admin/paket] POST Prisma error, falling back to Supabase:", prismaErr);
+        // fall through to Supabase
+      }
+    }
+
+    // --- Path B: Vercel (raw Supabase) ---
+    const supabase = await getSupabase();
+
+    // Check duplicate key in Supabase
+    const { data: existing } = await supabase.from("Paket").select("id").eq("key", key).limit(1);
+    if (existing && existing.length > 0) {
+      return NextResponse.json({ error: "Key paket sudah ada" }, { status: 409 });
+    }
+
+    // Get max sortOrder from Supabase
+    const { data: maxRow } = await supabase
+      .from("Paket")
+      .select("sortOrder")
+      .order("sortOrder", { ascending: false })
+      .limit(1);
+    const maxSort = maxRow && maxRow[0]?.sortOrder != null ? maxRow[0].sortOrder : 0;
+    const nextSort = sortOrder ?? (maxSort + 1);
+
+    const newId = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    const { data: newRow, error: insertErr } = await supabase
+      .from("Paket")
+      .insert({
+        id: newId,
         key,
         name,
         price: Number(price) || 0,
@@ -130,9 +173,15 @@ export async function POST(req: NextRequest) {
         features: JSON.stringify(features || []),
         active: active !== undefined ? active : true,
         sortOrder: nextSort,
-      },
-    });
-    return NextResponse.json({ paket: parseFeatures(created) }, { status: 201 });
+      })
+      .select("*")
+      .single();
+
+    if (insertErr || !newRow) {
+      console.error("[admin/paket] Supabase POST insert error:", insertErr);
+      return NextResponse.json({ ok: false, error: "Gagal membuat paket: " + (insertErr?.message || "unknown") }, { status: 500 });
+    }
+    return NextResponse.json({ paket: parseFeatures(newRow) }, { status: 201 });
   } catch (error) {
     console.error("[admin/paket] POST error:", error);
     return NextResponse.json({ ok: false, error: "Database error" }, { status: 500 });
@@ -146,19 +195,52 @@ export async function PUT(req: NextRequest) {
     const { id, name, price, originalPrice, duration, features, active, sortOrder } = body;
     if (!id) return NextResponse.json({ error: "ID wajib" }, { status: 400 });
 
-    const updated = await db.paket.update({
-      where: { id },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(price !== undefined && { price: Number(price) }),
-        ...(originalPrice !== undefined && { originalPrice: Number(originalPrice) }),
-        ...(duration !== undefined && { duration: Number(duration) }),
-        ...(features !== undefined && { features: JSON.stringify(features) }),
-        ...(active !== undefined && { active }),
-        ...(sortOrder !== undefined && { sortOrder: Number(sortOrder) }),
-      },
-    });
-    return NextResponse.json({ paket: parseFeatures(updated) });
+    // --- Path A: local dev (Prisma + SQLite) ---
+    if (isDbAvailable()) {
+      try {
+        const updated = await db.paket.update({
+          where: { id },
+          data: {
+            ...(name !== undefined && { name }),
+            ...(price !== undefined && { price: Number(price) }),
+            ...(originalPrice !== undefined && { originalPrice: Number(originalPrice) }),
+            ...(duration !== undefined && { duration: Number(duration) }),
+            ...(features !== undefined && { features: JSON.stringify(features) }),
+            ...(active !== undefined && { active }),
+            ...(sortOrder !== undefined && { sortOrder: Number(sortOrder) }),
+          },
+        });
+        return NextResponse.json({ paket: parseFeatures(updated) });
+      } catch (prismaErr) {
+        console.error("[admin/paket] PUT Prisma error, falling back to Supabase:", prismaErr);
+        // fall through to Supabase
+      }
+    }
+
+    // --- Path B: Vercel (raw Supabase) ---
+    const supabase = await getSupabase();
+
+    const updatePayload: Record<string, any> = {};
+    if (name !== undefined) updatePayload.name = name;
+    if (price !== undefined) updatePayload.price = Number(price);
+    if (originalPrice !== undefined) updatePayload.originalPrice = Number(originalPrice);
+    if (duration !== undefined) updatePayload.duration = Number(duration);
+    if (features !== undefined) updatePayload.features = JSON.stringify(features);
+    if (active !== undefined) updatePayload.active = active;
+    if (sortOrder !== undefined) updatePayload.sortOrder = Number(sortOrder);
+
+    const { data: updatedRow, error: updateErr } = await supabase
+      .from("Paket")
+      .update(updatePayload)
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (updateErr || !updatedRow) {
+      console.error("[admin/paket] Supabase PUT update error:", updateErr);
+      return NextResponse.json({ ok: false, error: "Gagal update paket: " + (updateErr?.message || "unknown") }, { status: 500 });
+    }
+    return NextResponse.json({ paket: parseFeatures(updatedRow) });
   } catch (error) {
     console.error("[admin/paket] PUT error:", error);
     return NextResponse.json({ ok: false, error: "Database error" }, { status: 500 });
@@ -170,7 +252,26 @@ export async function DELETE(req: NextRequest) {
   try {
     const { id } = await req.json();
     if (!id) return NextResponse.json({ error: "ID wajib" }, { status: 400 });
-    await db.paket.delete({ where: { id } });
+
+    // --- Path A: local dev (Prisma + SQLite) ---
+    if (isDbAvailable()) {
+      try {
+        await db.paket.delete({ where: { id } });
+        return NextResponse.json({ success: true });
+      } catch (prismaErr) {
+        console.error("[admin/paket] DELETE Prisma error, falling back to Supabase:", prismaErr);
+        // fall through to Supabase
+      }
+    }
+
+    // --- Path B: Vercel (raw Supabase) ---
+    const supabase = await getSupabase();
+    const { error: deleteErr } = await supabase.from("Paket").delete().eq("id", id);
+
+    if (deleteErr) {
+      console.error("[admin/paket] Supabase DELETE error:", deleteErr);
+      return NextResponse.json({ ok: false, error: "Gagal hapus paket: " + (deleteErr.message || "unknown") }, { status: 500 });
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[admin/paket] DELETE error:", error);
