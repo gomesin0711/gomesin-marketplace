@@ -148,7 +148,7 @@ export function PostAdView() {
   const [success, setSuccess] = useState(false);
   const [compressing, setCompressing] = useState(false);
   const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
-  const [selectedPackage, setSelectedPackage] = useState("gratis");
+  const [selectedPackage, setSelectedPackage] = useState("colek");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [showPayment, setShowPayment] = useState(true);
   const [qrisModal, setQrisModal] = useState(false);
@@ -183,7 +183,8 @@ export function PostAdView() {
         if (d.province) setProvince(d.province);
         if (Array.isArray(d.images)) setImages(d.images);
         if (Array.isArray(d.specs) && d.specs.length) setSpecs(d.specs);
-        if (d.selectedPackage) setSelectedPackage(d.selectedPackage);
+        // Migrate stale "gratis" selection → "colek" (Gratis package was removed)
+        if (d.selectedPackage && d.selectedPackage !== "gratis") setSelectedPackage(d.selectedPackage);
         if (typeof d.step === "number" && d.step >= 1 && d.step <= 4) setStep(d.step);
       }
     } catch {}
@@ -541,7 +542,7 @@ export function PostAdView() {
     highlight: "border-green-500 ring-2 ring-green-400 bg-green-50/50",
     spotlight: "border-green-500 ring-2 ring-green-400 bg-green-50/50",
   };
-  const pkgKeys = ["gratis", "colek", "highlight", "spotlight", "sundul"];
+  const pkgKeys = ["colek", "sundul", "highlight", "spotlight"];
 
   // --- Price display helper ---
   const priceDisplay = price ? Number(price.replace(/[^0-9]/g, "")).toLocaleString("de-DE") : "";
