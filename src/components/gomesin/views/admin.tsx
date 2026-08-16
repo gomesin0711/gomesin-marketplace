@@ -15,9 +15,9 @@ import {
   CheckCircle2, XCircle, Trash2, Plus, ChevronRight, ChevronLeft, Lock, X,
   TrendingUp, DollarSign, Eye, BarChart3, Loader2, Edit, Sparkle, Clock, RefreshCw,
   Mail, Phone, Calendar, Zap,
-  MessageCircle, Send, Search, ArrowLeft,
+  MessageCircle, Search, ArrowLeft,
   LayoutGrid, List, Gem, Shield, ArrowUpCircle, Timer, ImageIcon,
-  AlertTriangle, Frown, Settings, Volume2, Save,
+  AlertTriangle, Frown, Settings, Volume2, Save, Upload, Music,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
@@ -33,11 +33,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { useChatSocket, type ChatMessage } from "@/lib/use-chat-socket";
-import { normalizeImageUrl } from "@/lib/image";
+import { useChatSocket } from "@/lib/use-chat-socket";
+import { refreshAssetUrls } from "@/lib/notification-sound";
 
-type Tab = "dashboard" | "iklan" | "iklanbaru" | "iklanexpired" | "iklanditolak" | "penjual" | "kategori" | "merek" | "lokasi" | "banner" | "paket" | "transaksi" | "laporan" | "laporanbulanan" | "audit" | "pengguna" | "chat" | "pengaturan";
+type Tab = "dashboard" | "iklan" | "iklanbaru" | "iklanexpired" | "iklanditolak" | "penjual" | "kategori" | "merek" | "lokasi" | "banner" | "paket" | "transaksi" | "laporan" | "laporanbulanan" | "audit" | "pengguna" | "pengaturan";
 
 // ============ FETCHERS ============
 const fetchJson = async (url: string) => {
@@ -117,7 +116,6 @@ export function AdminView({ initialTab }: { initialTab?: Tab }) {
     { id: "transaksi", label: tr("admTransactions"), icon: Receipt },
     { id: "laporan", label: tr("admReports"), icon: FileText },
     { id: "audit", label: tr("admAuditTitle"), icon: ScrollText },
-    { id: "chat", label: "Pesan", icon: MessageCircle },
     { id: "pengaturan", label: "Pengaturan", icon: Settings },
   ];
 
@@ -186,7 +184,6 @@ export function AdminView({ initialTab }: { initialTab?: Tab }) {
       {tab === "laporan" && <LaporanTab />}
       {tab === "laporanbulanan" && <MonthlyReportTab />}
       {tab === "audit" && <AuditTab />}
-      {tab === "chat" && <ChatTab />}
       {tab === "pengaturan" && <PengaturanTab />}
 
     </div>
@@ -3403,457 +3400,6 @@ function AuditTab() {
   );
 }
 
-// ============ CHAT TAB (WhatsApp-style) ============
-// ============ CHAT MESSAGE BUBBLE (WhatsApp-style) ============
-// Reusable bubble for both desktop & mobile admin chat views.
-// Renders image edge-to-edge, caption below, time at bottom-right.
-// Uses referrerPolicy=no-referrer + normalizeImageUrl to handle
-// tmpfiles.org viewer URLs and hotlink protection.
-function ChatMsgBubble({
-  m,
-  isSent,
-  partnerImage,
-  onImageClick,
-}: {
-  m: any;
-  isSent: boolean;
-  partnerImage?: string | null;
-  onImageClick: (url: string) => void;
-}) {
-  const imgUrl = m.image ? normalizeImageUrl(m.image) : null;
-  const [imgError, setImgError] = useState(false);
-  return (
-    <div className={isSent ? "flex justify-end" : "flex justify-start"}>
-      {!isSent && partnerImage && (
-        <img
-          src={partnerImage}
-          alt=""
-          className="mr-1.5 mt-auto size-7 shrink-0 rounded-full object-cover"
-        />
-      )}
-      <div
-        className={cn(
-          "overflow-hidden rounded-lg shadow-sm",
-          isSent
-            ? "max-w-[80%] rounded-tr-sm bg-[#dcf8c6]"
-            : "max-w-[80%] rounded-tl-sm bg-white"
-        )}
-      >
-        {imgUrl && !imgError && (
-          <img
-            src={imgUrl}
-            alt="Gambar"
-            referrerPolicy="no-referrer"
-            onClick={() => onImageClick(m.image)}
-            onError={() => setImgError(true)}
-            className="block w-full min-w-[220px] max-w-full cursor-pointer object-cover transition hover:opacity-90"
-            style={{ maxHeight: 360 }}
-          />
-        )}
-        {imgUrl && imgError && (
-          <a
-            href={m.image}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => { e.preventDefault(); onImageClick(m.image); }}
-            className="flex min-w-[220px] items-center gap-2 bg-black/5 px-3 py-4 text-xs text-[#075E54] underline"
-          >
-            <ImageIcon className="size-4 shrink-0" />
-            Gambar tidak tersedia — klik untuk membuka
-          </a>
-        )}
-        {m.content && (
-          <p className="whitespace-pre-wrap break-words px-2.5 pt-1.5 text-sm font-medium text-black">
-            {m.content}
-          </p>
-        )}
-        <div className="px-2.5 pb-1 pt-0.5 text-right">
-          <span className="text-[9px] text-black/50">
-            {new Date(m.createdAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
-            {isSent && (
-              <span className={cn("ml-1", m.read ? "text-blue-500" : "text-black/30")}>✓✓</span>
-            )}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ChatTab() {
-  const user = useStore((s) => s.user);
-  const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [lightbox, setLightbox] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const queryClient = useQueryClient();
-  const { subscribe } = useChatSocket();
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["admin-chat", user?.id],
-    queryFn: () => fetchJson("/api/messages?userId=" + (user?.id || "")),
-    ...RT,
-  });
-
-  const conversations: any[] = data?.conversations ?? [];
-  const totalMessages = conversations.reduce((sum: number, c: any) => sum + (c.messages?.length || 0), 0);
-  const totalUnread = conversations.reduce((sum: number, c: any) => sum + (c.unread || 0), 0);
-
-  // === REALTIME: subscribe to socket.io message:new events ===
-  // When a new message arrives (e.g. a payment proof from a user), instantly
-  // invalidate the admin-chat query so the conversation list refreshes
-  // immediately — no 500ms polling lag. Also auto-select the conversation
-  // that received the proof and show a toast notification.
-  useEffect(() => {
-    if (!user?.id) return;
-    const off = subscribe<ChatMessage>("message:new", (msg) => {
-      // Only handle messages where the admin is the receiver (incoming).
-      if (msg.receiverId !== user.id) return;
-      // Instantly refetch so the new message appears in the conversation list.
-      queryClient.invalidateQueries({ queryKey: ["admin-chat", user.id] });
-      // Auto-select the conversation so the admin sees it immediately.
-      if (msg.senderId) setSelectedId(msg.senderId);
-      // Toast notification for payment proofs (messages with images that
-      // mention "Bukti Pembayaran").
-      if (msg.image && msg.content?.includes("Bukti Pembayaran")) {
-        toast.success("Bukti pembayaran baru masuk!", {
-          description: "Cek tab Pesan untuk verifikasi.",
-        });
-      }
-    });
-    return off;
-  }, [user?.id, subscribe, queryClient]);
-
-  // Filter conversations by search
-  const filtered = conversations.filter((c: any) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (
-      (c.name || "").toLowerCase().includes(q) ||
-      (c.lastMessage || "").toLowerCase().includes(q) ||
-      (c.listingTitle || "").toLowerCase().includes(q)
-    );
-  });
-
-  const selected = conversations.find((c: any) => c.id === selectedId);
-  const selectedMessages: any[] = selected?.messages ?? [];
-
-  // Auto-scroll to bottom when messages change or conversation changes
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [selectedMessages.length, selectedId]);
-
-  if (isLoading) return <SkeletonGrid count={4} />;
-
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <span className="grid size-10 place-items-center rounded-xl bg-[#075E54]/10 text-[#075E54]">
-          <MessageCircle className="size-5" />
-        </span>
-        <div>
-          <h2 className="text-lg font-bold">Pesan Admin</h2>
-          <p className="text-xs text-muted-foreground">Lihat semua percakapan pengguna</p>
-        </div>
-      </div>
-
-      {/* Stat cards */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-xl border border-border bg-card p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-muted-foreground">Percakapan</span>
-            <span className="grid size-7 place-items-center rounded-lg bg-[#075E54]/10">
-              <MessageCircle className="size-4 text-[#075E54]" />
-            </span>
-          </div>
-          <p className="mt-1 text-xl font-bold">{conversations.length}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-muted-foreground">Pesan</span>
-            <span className="grid size-7 place-items-center rounded-lg bg-orange-50">
-              <Send className="size-4 text-orange-600" />
-            </span>
-          </div>
-          <p className="mt-1 text-xl font-bold">{totalMessages}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-muted-foreground">Belum dibaca</span>
-            <span className="grid size-7 place-items-center rounded-lg bg-amber-50">
-              <Mail className="size-4 text-amber-500" />
-            </span>
-          </div>
-          <p className="mt-1 text-xl font-bold">{totalUnread}</p>
-        </div>
-      </div>
-
-      {/* WhatsApp-style split layout */}
-      <div className="flex gap-0 overflow-hidden rounded-xl border border-border bg-card" style={{ height: 540 }}>
-        {/* LEFT: Conversation list */}
-        <div className="flex w-full shrink-0 flex-col border-r border-border md:w-80 lg:w-96">
-          {/* Search bar inside list header */}
-          <div className="border-b border-border bg-[#f0f2f5] p-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-black/40" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Cari percakapan..."
-                className="h-8 rounded-lg border-none bg-white pl-8 text-sm text-black shadow-sm placeholder:text-black/40"
-              />
-            </div>
-          </div>
-          {/* Conversation items */}
-          <div className="max-h-[500px] flex-1 overflow-y-auto">
-            {filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <MessageCircle className="size-10 text-muted-foreground/30" />
-                <p className="mt-2 text-sm font-semibold">Tidak ada percakapan</p>
-                <p className="mt-1 text-xs text-muted-foreground">Belum ada pesan masuk.</p>
-              </div>
-            ) : (
-              filtered.map((c: any) => {
-                const active = c.id === selectedId;
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => setSelectedId(c.id)}
-                    className={cn(
-                      "flex w-full items-center gap-3 px-3 py-2.5 text-left transition border-b border-border/30",
-                      active ? "bg-[#f0f2f5]" : "hover:bg-[#f5f6f6]"
-                    )}
-                  >
-                    <Avatar className="size-12 shrink-0 rounded-full">
-                      {c.partnerImage ? (
-                        <img src={c.partnerImage} alt={c.name} className="size-full rounded-full object-cover" />
-                      ) : (
-                        <AvatarFallback className="bg-[#075E54]/10 text-sm font-bold text-[#075E54]">
-                          {(c.name || "?").split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
-                        </AvatarFallback>
-                      )}
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-sm font-semibold text-black">{c.name}</p>
-                        <span className="shrink-0 text-[10px] text-black/50">{timeAgoShort(c.lastTime)}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-xs text-black/60">{c.lastMessage || "—"}</p>
-                        {c.unread > 0 && (
-                          <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[#25D366] text-[9px] font-bold text-white">{c.unread}</span>
-                        )}
-                      </div>
-                      {c.listingTitle && <p className="mt-0.5 truncate text-[10px] text-[#075E54]">{c.listingTitle}</p>}
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* RIGHT: Message panel */}
-        <div className={cn("hidden flex-1 flex-col md:flex", !selected && "md:flex")}>
-          {selected ? (
-            <>
-              {/* Chat header */}
-              <div className="flex items-center gap-2 border-b border-border bg-[#f0f2f5] px-3 py-2.5">
-                <Avatar className="size-9 shrink-0 rounded-full md:size-10">
-                  {selected.partnerImage ? (
-                    <img src={selected.partnerImage} alt={selected.name} className="size-full rounded-full object-cover" />
-                  ) : (
-                    <AvatarFallback className="bg-[#075E54]/10 text-xs font-bold text-[#075E54]">
-                      {(selected.name || "?").split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
-                    </AvatarFallback>
-                  )}
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-black">{selected.name}</p>
-                  {selected.listingTitle && (
-                    <p className="truncate text-[10px] text-[#075E54]">{selected.listingTitle}</p>
-                  )}
-                </div>
-                <Badge variant="secondary" className="text-[10px]">Admin View</Badge>
-              </div>
-
-              {/* Messages — WhatsApp background with dot pattern */}
-              <div
-                ref={scrollRef}
-                className="flex-1 space-y-1.5 overflow-y-auto p-4"
-                style={{
-                  backgroundColor: "#e5ddd5",
-                  backgroundImage: "radial-gradient(circle at 50% 50%, rgba(0,0,0,0.03) 1px, transparent 1px)",
-                  backgroundSize: "20px 20px",
-                }}
-              >
-                {/* Listing card bubble */}
-                {selected.listingTitle && (
-                  <div className="flex justify-start">
-                    <div className="max-w-[75%] overflow-hidden rounded-lg rounded-tl-sm bg-white shadow-sm">
-                      {selected.listingImage ? (
-                        <img src={selected.listingImage} alt={selected.listingTitle} className="max-h-44 w-full object-cover" />
-                      ) : (
-                        <div className="flex h-20 items-center justify-center bg-muted text-muted-foreground">
-                          <ImageIcon className="size-6" />
-                        </div>
-                      )}
-                      <div className="p-2">
-                        <p className="truncate text-xs font-semibold text-black">{selected.listingTitle}</p>
-                        {selected.listingPrice != null && (
-                          <p className="text-xs font-bold text-[#075E54]">Rp {selected.listingPrice.toLocaleString("id-ID")}</p>
-                        )}
-                        <span className="mt-0.5 block text-right text-[9px] text-black/50">
-                          {timeAgoShort(selected.lastTime)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Chat messages */}
-                {selectedMessages.length === 0 ? (
-                  <div className="flex h-full items-center justify-center text-sm text-black/50">Belum ada pesan.</div>
-                ) : (
-                  selectedMessages.map((m: any, i: number) => (
-                    <ChatMsgBubble key={m.id || i} m={m} isSent={m.sent} partnerImage={selected.partnerImage} onImageClick={setLightbox} />
-                  ))
-                )}
-              </div>
-
-              {/* Footer — view-only notice */}
-              <div className="border-t border-border bg-[#f0f2f5] px-4 py-2 text-center text-[11px] text-black/50">
-                Mode baca saja — {selectedMessages.length} pesan
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-1 flex-col items-center justify-center text-center">
-              <div className="grid size-20 place-items-center rounded-full bg-[#f0f2f5]">
-                <MessageCircle className="size-10 text-muted-foreground/40" />
-              </div>
-              <p className="mt-4 text-lg font-semibold text-foreground">Pesan Admin</p>
-              <p className="mt-1 max-w-xs text-sm text-muted-foreground">
-                Pilih percakapan dari daftar untuk melihat pesan.
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Mobile: show selected conversation full-screen */}
-        {selected && (
-          <div className="flex flex-1 flex-col md:hidden">
-            {/* Chat header with back button */}
-            <div className="flex items-center gap-2 border-b border-border bg-[#f0f2f5] px-2 py-2.5">
-              <button
-                onClick={() => setSelectedId(null)}
-                aria-label="Kembali"
-                className="grid size-9 shrink-0 place-items-center rounded-full hover:bg-black/5"
-              >
-                <ChevronLeft className="size-5 text-black" />
-              </button>
-              <Avatar className="size-9 shrink-0 rounded-full">
-                {selected.partnerImage ? (
-                  <img src={selected.partnerImage} alt={selected.name} className="size-full rounded-full object-cover" />
-                ) : (
-                  <AvatarFallback className="bg-[#075E54]/10 text-xs font-bold text-[#075E54]">
-                    {(selected.name || "?").split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
-                  </AvatarFallback>
-                )}
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-black">{selected.name}</p>
-                {selected.listingTitle && (
-                  <p className="truncate text-[10px] text-[#075E54]">{selected.listingTitle}</p>
-                )}
-              </div>
-            </div>
-            {/* Messages */}
-            <div
-              ref={scrollRef}
-              className="flex-1 space-y-1.5 overflow-y-auto p-3"
-              style={{
-                backgroundColor: "#e5ddd5",
-                backgroundImage: "radial-gradient(circle at 50% 50%, rgba(0,0,0,0.03) 1px, transparent 1px)",
-                backgroundSize: "20px 20px",
-              }}
-            >
-              {selected.listingTitle && (
-                <div className="flex justify-start">
-                  <div className="max-w-[75%] overflow-hidden rounded-lg rounded-tl-sm bg-white shadow-sm">
-                    {selected.listingImage ? (
-                      <img src={selected.listingImage} alt={selected.listingTitle} className="max-h-44 w-full object-cover" />
-                    ) : (
-                      <div className="flex h-20 items-center justify-center bg-muted text-muted-foreground">
-                        <ImageIcon className="size-6" />
-                      </div>
-                    )}
-                    <div className="p-2">
-                      <p className="truncate text-xs font-semibold text-black">{selected.listingTitle}</p>
-                      {selected.listingPrice != null && (
-                        <p className="text-xs font-bold text-[#075E54]">Rp {selected.listingPrice.toLocaleString("id-ID")}</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-              {selectedMessages.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-sm text-black/50">Belum ada pesan.</div>
-              ) : (
-                selectedMessages.map((m: any, i: number) => (
-                  <ChatMsgBubble key={m.id || i} m={m} isSent={m.sent} onImageClick={setLightbox} />
-                ))
-              )}
-            </div>
-            <div className="border-t border-border bg-[#f0f2f5] px-4 py-2 text-center text-[11px] text-black/50">
-              Mode baca saja — {selectedMessages.length} pesan
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Image lightbox */}
-      {lightbox && (
-        <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90 p-4"
-          onClick={() => setLightbox(null)}
-        >
-          <button
-            aria-label="Tutup"
-            className="absolute right-4 top-4 grid size-10 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20"
-            onClick={() => setLightbox(null)}
-          >
-            <X className="size-6" />
-          </button>
-          <img
-            src={lightbox}
-            alt="Gambar besar"
-            className="max-h-[90vh] max-w-full rounded-lg object-contain"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function timeAgoShort(dateStr: string): string {
-  if (!dateStr) return "—";
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const sec = Math.floor(diff / 1000);
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}j`;
-  const day = Math.floor(hr / 24);
-  if (day < 30) return `${day}h`;
-  const mo = Math.floor(day / 30);
-  return `${mo}bl`;
-}
-
 // ============ HELPERS ============
 function Row({ label, value }: { label: string; value: any }) {
   return <div className="flex items-center justify-between"><span className="text-muted-foreground">{label}</span><span className="font-semibold">{value}</span></div>;
@@ -3867,8 +3413,11 @@ function BadgeCheck({ className }: { className?: string }) {
 
 // ============ PENGATURAN TAB ============
 // Site-wide settings editable by admin: payment details (BCA account, QRIS
-// image preview), contact info (WhatsApp, email), and notification sound
-// testing/toggle. Persists to /api/admin/settings (SiteSetting key-value table).
+// image upload + preview), contact info (WhatsApp, email), and notification
+// sound upload/test/toggle. Persists to /api/admin/settings (SiteSetting
+// key-value table). Asset files (QRIS image, ringtones) are uploaded via
+// /api/admin/upload-asset which writes to public/ and bumps a version setting
+// used for cache-busting.
 function PengaturanTab() {
   const queryClient = useQueryClient();
   const user = useStore((s) => s.user);
@@ -3878,8 +3427,22 @@ function PengaturanTab() {
     whatsappNumber: "",
     supportEmail: "",
     chatSoundEnabled: "on",
+    qrisImageUrl: "/qris-mesinKU.jpeg",
+    qrisImageVersion: "2",
+    chatSoundUrl: "/sounds/mesinku-chat.wav",
+    chatSoundVersion: "8",
+    listingSoundUrl: "/sounds/iklan-masuk.wav",
+    listingSoundVersion: "3",
   });
   const [saving, setSaving] = useState(false);
+
+  // Upload state for each asset type.
+  const [uploadingQris, setUploadingQris] = useState(false);
+  const [uploadingChat, setUploadingChat] = useState(false);
+  const [uploadingListing, setUploadingListing] = useState(false);
+  const qrisFileRef = useRef<HTMLInputElement>(null);
+  const chatFileRef = useRef<HTMLInputElement>(null);
+  const listingFileRef = useRef<HTMLInputElement>(null);
 
   // Fetch current settings.
   const { data, isLoading } = useQuery<Record<string, string>>({
@@ -3918,14 +3481,64 @@ function PengaturanTab() {
     }
   };
 
-  // Test sounds — plays the current chat + listing ringtones so admin can
-  // preview what users hear.
+  // --- Asset upload handler (generic) ---
+  // Sends the file as multipart/form-data to /api/admin/upload-asset, which
+  // writes it to public/ and updates the corresponding *Url + *Version
+  // settings. After upload, we refetch settings and refresh the in-memory
+  // notification sound URLs so the new sound plays immediately.
+  const handleAssetUpload = async (
+    file: File,
+    type: "qris" | "chat-sound" | "listing-sound",
+    onDone: () => void
+  ) => {
+    if (!file) { onDone(); return; }
+    if (!user?.id) {
+      toast.error("Sesi tidak ditemukan, silakan login ulang");
+      onDone();
+      return;
+    }
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("type", type);
+      fd.append("userId", user.id);
+      const res = await fetch("/api/admin/upload-asset", {
+        method: "POST",
+        body: fd,
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.error || "Gagal upload");
+      }
+      // Refetch settings to pick up the new URL + version.
+      await queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
+      // Refresh the in-memory notification sound URLs so the new sound plays
+      // immediately (without a page reload).
+      try { await refreshAssetUrls(); } catch { /* ignore */ }
+      const label = type === "qris" ? "Gambar QRIS" : type === "chat-sound" ? "Ringtone chat" : "Ringtone iklan masuk";
+      toast.success(`${label} berhasil diganti`);
+    } catch (e: any) {
+      toast.error(e.message || "Gagal mengunggah file");
+    } finally {
+      onDone();
+    }
+  };
+
+  // --- Test sounds — plays the current chat + listing ringtones so admin
+  // can preview what users hear. Uses the dynamic URL from settings so the
+  // most recently uploaded sound is what gets played. ---
   const [testingChat, setTestingChat] = useState(false);
   const [testingListing, setTestingListing] = useState(false);
+
+  // Build cache-busted URLs for the test buttons.
+  const chatTestUrl = `${(form.chatSoundUrl || "/sounds/mesinku-chat.wav").split("?")[0]}?v=${form.chatSoundVersion || "8"}`;
+  const listingTestUrl = `${(form.listingSoundUrl || "/sounds/iklan-masuk.wav").split("?")[0]}?v=${form.listingSoundVersion || "3"}`;
+  const qrisPreviewUrl = `${(form.qrisImageUrl || "/qris-mesinKU.jpeg").split("?")[0]}?v=${form.qrisImageVersion || "2"}`;
+
   const testChatSound = () => {
     setTestingChat(true);
     try {
-      const el = new Audio("/sounds/mesinku-chat.wav?v=8");
+      const el = new Audio(chatTestUrl);
       el.volume = 0.9;
       el.onended = () => setTestingChat(false);
       el.onerror = () => setTestingChat(false);
@@ -3937,7 +3550,7 @@ function PengaturanTab() {
   const testListingSound = () => {
     setTestingListing(true);
     try {
-      const el = new Audio("/sounds/iklan-masuk.wav?v=3");
+      const el = new Audio(listingTestUrl);
       el.volume = 0.9;
       el.onended = () => setTestingListing(false);
       el.onerror = () => setTestingListing(false);
@@ -3974,7 +3587,7 @@ function PengaturanTab() {
           <Receipt className="size-4 text-primary" /> Pembayaran
         </h3>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Detail rekening BCA ditampilkan di halaman pembayaran transfer.
+          Detail rekening BCA dan gambar QRIS ditampilkan di halaman pembayaran.
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
@@ -3997,21 +3610,69 @@ function PengaturanTab() {
             />
           </div>
         </div>
-        {/* QRIS image preview */}
-        <div className="mt-4 flex items-center gap-4 rounded-lg border border-border bg-background p-3">
-          <div className="size-20 shrink-0 overflow-hidden rounded-lg border border-border bg-white">
-            <img
-              src="/qris-mesinKU.jpeg?v=2"
-              alt="QRIS mesinKU"
-              className="size-full object-contain"
+
+        {/* QRIS image upload + preview */}
+        <div className="mt-4 rounded-lg border border-border bg-background p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            {/* Preview thumbnail (clickable to upload) */}
+            <button
+              type="button"
+              onClick={() => qrisFileRef.current?.click()}
+              disabled={uploadingQris}
+              className="size-28 shrink-0 overflow-hidden rounded-lg border-2 border-dashed border-border bg-white hover:border-primary disabled:opacity-60"
+              aria-label="Ganti gambar QRIS"
+            >
+              {uploadingQris ? (
+                <div className="grid size-full place-items-center">
+                  <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <img
+                  src={qrisPreviewUrl}
+                  alt="QRIS mesinKU"
+                  className="size-full object-contain"
+                />
+              )}
+            </button>
+            <div className="min-w-0 flex-1 space-y-2">
+              <div>
+                <p className="text-sm font-semibold">Gambar QRIS</p>
+                <p className="text-xs text-muted-foreground">
+                  Klik gambar untuk mengganti. Format: JPG/PNG/WebP, maks 5MB.
+                  Perubahan langsung tampil di semua halaman pembayaran QRIS.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => qrisFileRef.current?.click()}
+                  disabled={uploadingQris}
+                >
+                  {uploadingQris ? (
+                    <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="mr-1.5 size-3.5" />
+                  )}
+                  {uploadingQris ? "Mengunggah..." : "Ganti Foto QRIS"}
+                </Button>
+              </div>
+            </div>
+            <input
+              ref={qrisFileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  setUploadingQris(true);
+                  handleAssetUpload(f, "qris", () => setUploadingQris(false));
+                }
+                e.target.value = "";
+              }}
             />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">Gambar QRIS</p>
-            <p className="text-xs text-muted-foreground">
-              Gambar QR code yang ditampilkan di halaman pembayaran QRIS.
-              Untuk mengganti, letakkan file baru di <code className="rounded bg-muted px-1 py-0.5 text-[10px]">public/qris-mesinKU.jpeg</code>.
-            </p>
           </div>
         </div>
       </section>
@@ -4055,49 +3716,119 @@ function PengaturanTab() {
           <Volume2 className="size-4 text-primary" /> Notifikasi Suara
         </h3>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Tes dan kelola suara notifikasi yang didengar pengguna.
+          Unggah dan tes suara notifikasi yang didengar pengguna.
         </p>
 
-        {/* Chat ringtone */}
-        <div className="mt-4 flex flex-col gap-3 rounded-lg border border-border bg-background p-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">Ringtone Chat</p>
-            <p className="text-xs text-muted-foreground">
-              Suara "mesinku!!!" saat pesan chat masuk (2x speed).
-            </p>
+        {/* Chat ringtone — upload + test */}
+        <div className="mt-4 rounded-lg border border-border bg-background p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-1.5 text-sm font-semibold">
+                <MessageCircle className="size-4 text-primary" /> Ringtone Chat
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Suara yang diputar saat pesan chat masuk.
+              </p>
+              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                File saat ini: <code className="rounded bg-muted px-1 py-0.5">{form.chatSoundUrl?.split("/").pop() || "mesinku-chat.wav"}</code>
+              </p>
+            </div>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={testChatSound}
-            disabled={testingChat}
-            className="shrink-0"
-          >
-            {testingChat ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Volume2 className="mr-1.5 size-3.5" />}
-            {testingChat ? "Memutar..." : "Tes Suara"}
-          </Button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={testChatSound}
+              disabled={testingChat || uploadingChat}
+            >
+              {testingChat ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Volume2 className="mr-1.5 size-3.5" />}
+              {testingChat ? "Memutar..." : "Tes Suara"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => chatFileRef.current?.click()}
+              disabled={uploadingChat || testingChat}
+            >
+              {uploadingChat ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Upload className="mr-1.5 size-3.5" />}
+              {uploadingChat ? "Mengunggah..." : "Ganti Suara"}
+            </Button>
+            <input
+              ref={chatFileRef}
+              type="file"
+              accept="audio/wav,audio/mpeg,audio/mp3,audio/ogg,audio/x-wav"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  setUploadingChat(true);
+                  handleAssetUpload(f, "chat-sound", () => setUploadingChat(false));
+                }
+                e.target.value = "";
+              }}
+            />
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Format: WAV/MP3/OGG, maks 2MB. Disarankan durasi &lt; 2 detik.
+          </p>
         </div>
 
-        {/* Listing ringtone */}
-        <div className="mt-3 flex flex-col gap-3 rounded-lg border border-border bg-background p-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">Ringtone Iklan Masuk</p>
-            <p className="text-xs text-muted-foreground">
-              Suara koin jatuh saat iklan baru terdeteksi.
-            </p>
+        {/* Listing ringtone — upload + test */}
+        <div className="mt-3 rounded-lg border border-border bg-background p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-1.5 text-sm font-semibold">
+                <Music className="size-4 text-primary" /> Ringtone Iklan Masuk
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Suara yang diputar saat iklan baru terdeteksi.
+              </p>
+              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                File saat ini: <code className="rounded bg-muted px-1 py-0.5">{form.listingSoundUrl?.split("/").pop() || "iklan-masuk.wav"}</code>
+              </p>
+            </div>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={testListingSound}
-            disabled={testingListing}
-            className="shrink-0"
-          >
-            {testingListing ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Volume2 className="mr-1.5 size-3.5" />}
-            {testingListing ? "Memutar..." : "Tes Suara"}
-          </Button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={testListingSound}
+              disabled={testingListing || uploadingListing}
+            >
+              {testingListing ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Volume2 className="mr-1.5 size-3.5" />}
+              {testingListing ? "Memutar..." : "Tes Suara"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => listingFileRef.current?.click()}
+              disabled={uploadingListing || testingListing}
+            >
+              {uploadingListing ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Upload className="mr-1.5 size-3.5" />}
+              {uploadingListing ? "Mengunggah..." : "Ganti Suara"}
+            </Button>
+            <input
+              ref={listingFileRef}
+              type="file"
+              accept="audio/wav,audio/mpeg,audio/mp3,audio/ogg,audio/x-wav"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  setUploadingListing(true);
+                  handleAssetUpload(f, "listing-sound", () => setUploadingListing(false));
+                }
+                e.target.value = "";
+              }}
+            />
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Format: WAV/MP3/OGG, maks 2MB. Disarankan durasi &lt; 2 detik.
+          </p>
         </div>
 
         {/* Sound toggle */}

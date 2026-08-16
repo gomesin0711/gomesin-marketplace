@@ -31,16 +31,100 @@ let unlocked = false;
 // --- Module-level flag: is the user currently viewing an open chat? ---
 let chatOpen = false;
 
+// --- Dynamic asset URLs (fetched from /api/admin/settings on first unlock) ---
+// The admin can upload new QRIS image / chat ringtone / listing ringtone files
+// via the admin panel. The URLs + cache-bust versions are stored in the
+// SiteSetting table. We fetch them once on first unlock and cache the result.
+// After an admin uploads a new file, `refreshAssetUrls()` is called to
+// re-fetch and recreate the Audio elements with the new URL.
+type AssetUrls = {
+  chatSoundUrl: string;
+  chatSoundVersion: string;
+  listingSoundUrl: string;
+  listingSoundVersion: string;
+};
+
+const DEFAULT_ASSET_URLS: AssetUrls = {
+  chatSoundUrl: "/sounds/mesinku-chat.wav",
+  chatSoundVersion: "8",
+  listingSoundUrl: "/sounds/iklan-masuk.wav",
+  listingSoundVersion: "3",
+};
+
+let assetUrls: AssetUrls = { ...DEFAULT_ASSET_URLS };
+let assetUrlsPromise: Promise<AssetUrls> | null = null;
+
+/** Build a cache-busted URL: "<path>?v=<version>" */
+function cacheBust(url: string, version: string): string {
+  if (!url) return url;
+  // Strip any existing query string to avoid double ?v=
+  const cleanUrl = url.split("?")[0];
+  return `${cleanUrl}?v=${version || "1"}`;
+}
+
+/**
+ * Fetch asset URLs + versions from /api/admin/settings. Cached after first
+ * call. Safe to call multiple times — returns the cached promise.
+ */
+function fetchAssetUrls(): Promise<AssetUrls> {
+  if (assetUrlsPromise) return assetUrlsPromise;
+  assetUrlsPromise = (async () => {
+    try {
+      const res = await fetch("/api/admin/settings", { cache: "no-store" });
+      if (!res.ok) return { ...DEFAULT_ASSET_URLS };
+      const data = await res.json();
+      return {
+        chatSoundUrl: data.chatSoundUrl || DEFAULT_ASSET_URLS.chatSoundUrl,
+        chatSoundVersion: data.chatSoundVersion || DEFAULT_ASSET_URLS.chatSoundVersion,
+        listingSoundUrl: data.listingSoundUrl || DEFAULT_ASSET_URLS.listingSoundUrl,
+        listingSoundVersion: data.listingSoundVersion || DEFAULT_ASSET_URLS.listingSoundVersion,
+      };
+    } catch {
+      return { ...DEFAULT_ASSET_URLS };
+    } finally {
+      // Allow re-fetching after 30 seconds (in case admin uploads new assets
+      // and the user navigates back).
+      setTimeout(() => { assetUrlsPromise = null; }, 30000);
+    }
+  })();
+  return assetUrlsPromise;
+}
+
+/**
+ * Force re-fetch of asset URLs (called after admin uploads a new asset).
+ * Resets the cached Audio elements so they are recreated with the new URL.
+ */
+export async function refreshAssetUrls() {
+  assetUrlsPromise = null;
+  const fresh = await fetchAssetUrls();
+  // If chat sound URL or version changed, drop the cached Audio element so
+  // getChatAudio() recreates it with the new URL on next play.
+  if (
+    fresh.chatSoundUrl !== assetUrls.chatSoundUrl ||
+    fresh.chatSoundVersion !== assetUrls.chatSoundVersion
+  ) {
+    chatAudioEl = null;
+  }
+  if (
+    fresh.listingSoundUrl !== assetUrls.listingSoundUrl ||
+    fresh.listingSoundVersion !== assetUrls.listingSoundVersion
+  ) {
+    listingAudioEl = null;
+  }
+  assetUrls = fresh;
+}
+
 // --- Preloaded HTMLAudioElement for the "coin drop" (new listing) ringtone ---
-// A real recorded coin-on-hard-surface sound (converted from user-uploaded
-// MP3). Plays when a new listing is published. Falls back to synthesized coin
-// drop on error. The `?v=3` query string busts the browser cache.
+// A real recorded coin-on-hard-surface sound (or user-uploaded replacement).
+// Plays when a new listing is published. Falls back to synthesized coin drop
+// on error. URL + cache-bust version come from /api/admin/settings.
 let listingAudioEl: HTMLAudioElement | null = null;
 function getListingAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
   if (listingAudioEl) return listingAudioEl;
   try {
-    const el = new Audio("/sounds/iklan-masuk.wav?v=3");
+    const url = cacheBust(assetUrls.listingSoundUrl, assetUrls.listingSoundVersion);
+    const el = new Audio(url);
     el.preload = "auto";
     el.volume = 0.9;
     listingAudioEl = el;
@@ -53,13 +137,14 @@ function getListingAudio(): HTMLAudioElement | null {
 // --- Preloaded HTMLAudioElement for the "mesinku" chat ringtone ---
 // TTS-generated Indonesian voice saying "mesinku!!!" (excited delivery, 2x
 // speed). No chime intro — the voice plays directly on incoming chat messages.
-// The `?v=8` query string busts the cache.
+// URL + cache-bust version come from /api/admin/settings.
 let chatAudioEl: HTMLAudioElement | null = null;
 function getChatAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
   if (chatAudioEl) return chatAudioEl;
   try {
-    const el = new Audio("/sounds/mesinku-chat.wav?v=8");
+    const url = cacheBust(assetUrls.chatSoundUrl, assetUrls.chatSoundVersion);
+    const el = new Audio(url);
     el.preload = "auto";
     el.volume = 0.9;
     chatAudioEl = el;
@@ -96,6 +181,17 @@ export function unlockNotificationSound() {
     if (ctx && ctx.state === "suspended") {
       ctx.resume().catch(() => {});
     }
+    // Kick off async fetch of asset URLs from /api/admin/settings (so the
+    // Audio elements below get created with the correct cache-bust URL).
+    // If the fetch hasn't resolved by the time getChatAudio()/getListingAudio()
+    // is called, they'll use the DEFAULT_ASSET_URLS (which match the original
+    // hardcoded URLs), and refreshAssetUrls() will recreate them when ready.
+    fetchAssetUrls().then((urls) => {
+      assetUrls = urls;
+      // Pre-create the Audio elements with the correct URLs now.
+      getListingAudio();
+      getChatAudio();
+    }).catch(() => {});
     // Preload the listing + chat ringtone audio elements so they can play
     // instantly without a network fetch on the first notification.
     getListingAudio();

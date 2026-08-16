@@ -14,6 +14,7 @@ import { useMounted } from "@/lib/use-mounted";
 import { compressImage } from "@/lib/image";
 import { openWhatsAppWithUrl } from "@/lib/share-image";
 import { useChatSocket } from "@/lib/use-chat-socket";
+import { useSiteAssets } from "@/lib/use-site-assets";
 import { useStore } from "@/lib/store";
 
 type PackageKey = "simpan" | "colek" | "sundul" | "highlight" | "spotlight";
@@ -108,6 +109,7 @@ export function PackageActivateDialog({
   const queryClient = useQueryClient();
   const user = useStore((s) => s.user);
   const { sendMessage } = useChatSocket();
+  const { qrisImageUrl } = useSiteAssets();
 
   // Fetch paket pricing from DB (admin can edit)
   const { data: paketData } = useQuery({
@@ -825,7 +827,7 @@ export function PackageActivateDialog({
                 {/* QR code */}
                 <div className="rounded-2xl border-2 border-border bg-white p-4 shadow-lg sm:p-6">
                   <img
-                    src="/qris-mesinKU.jpeg?v=2"
+                    src={qrisImageUrl}
                     alt="QRIS mesinKU"
                     className="h-auto w-full max-w-[250px] object-contain"
                   />

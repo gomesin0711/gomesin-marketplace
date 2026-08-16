@@ -42,6 +42,7 @@ import { toast } from "sonner";
 import { compressImage } from "@/lib/image";
 import { openWhatsAppWithUrl } from "@/lib/share-image";
 import { useChatSocket } from "@/lib/use-chat-socket";
+import { useSiteAssets } from "@/lib/use-site-assets";
 import {
   Popover,
   PopoverContent,
@@ -82,6 +83,7 @@ const YEAR_OPTIONS = Array.from({ length: 2025 - 1990 + 1 }, (_, i) => String(20
 const STEP_LABELS = ["Informasi Dasar", "Detail & Deskripsi", "Foto Mesin", "Konfirmasi"];
 
 export function PostAdView() {
+  const { qrisImageUrl } = useSiteAssets();
   const { data: cats } = useQuery({
     queryKey: ["categories"],
     queryFn: fetchCategories,
@@ -1484,7 +1486,7 @@ export function PostAdView() {
                   <>
                     <div className="rounded-2xl border-2 border-border bg-white p-4 shadow-lg sm:p-6">
                       <img
-                        src="/qris-mesinKU.jpeg?v=2"
+                        src={qrisImageUrl}
                         alt="QRIS mesinKU"
                         className="h-auto w-full max-w-[250px] object-contain"
                       />

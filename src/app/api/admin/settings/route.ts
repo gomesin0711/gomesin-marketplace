@@ -11,6 +11,12 @@ export const dynamic = "force-dynamic";
 //   - whatsappNumber  : Support WhatsApp number (international format, no "+")
 //   - supportEmail    : Support email address
 //   - chatSoundEnabled: "on" | "off" — global toggle for chat notification sound
+//   - qrisImageUrl    : path/URL of the QRIS image shown on payment pages
+//   - qrisImageVersion: cache-bust version (epoch millis) for QRIS image
+//   - chatSoundUrl    : path/URL of the chat ringtone audio file
+//   - chatSoundVersion: cache-bust version (epoch millis) for chat ringtone
+//   - listingSoundUrl : path/URL of the listing-notification ringtone audio file
+//   - listingSoundVersion: cache-bust version (epoch millis) for listing ringtone
 //
 // GET is public (settings are needed to render payment pages for all users).
 // PUT is admin-only.
@@ -23,6 +29,12 @@ const DEFAULTS: Record<string, string> = {
   whatsappNumber: "6285888082208",
   supportEmail: "mesinKU0711@gmail.com",
   chatSoundEnabled: "on",
+  qrisImageUrl: "/qris-mesinKU.jpeg",
+  qrisImageVersion: "2",
+  chatSoundUrl: "/sounds/mesinku-chat.wav",
+  chatSoundVersion: "8",
+  listingSoundUrl: "/sounds/iklan-masuk.wav",
+  listingSoundVersion: "3",
 };
 
 // Keys that are allowed to be read/written (whitelist for safety).

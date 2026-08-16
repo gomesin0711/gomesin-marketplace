@@ -5251,3 +5251,36 @@ Stage Summary:
 - Sound test buttons play the actual ringtone files (chat + listing)
 - Sound toggle switch (on/off)
 - Browser-verified: all 27 checks pass, PUT returns 200, no errors in dev.log
+
+---
+Task ID: admin-settings-assets
+Agent: Main
+Task: Add edit capabilities in admin panel for QRIS image, chat ringtone, listing ringtone; add banner edit (already existed); remove "Pesan" (chat) menu from admin panel; check and fix.
+
+Work Log:
+- Extended /api/admin/settings route.ts DEFAULTS + ALLOWED_KEYS with 6 new keys: qrisImageUrl, qrisImageVersion, chatSoundUrl, chatSoundVersion, listingSoundUrl, listingSoundVersion (defaults match the previously-hardcoded URLs + cache-bust versions v=2/v=8/v=3).
+- Created /api/admin/upload-asset/route.ts: multipart/form-data endpoint that accepts {file, type: "qris"|"chat-sound"|"listing-sound", userId}, validates admin role server-side, validates MIME type + extension + size (5MB images / 2MB audio), writes the file to public/ (overwriting the existing asset), removes old files with different extensions, and upserts the *Url + *Version settings (version = Date.now() for cache-bust).
+- Updated src/lib/notification-sound.ts: replaced hardcoded Audio URLs with a dynamic AssetUrls system. Added fetchAssetUrls() (cached for 30s) that GETs /api/admin/settings, refreshAssetUrls() export that force-refetches and recreates the Audio elements when URLs/versions change. unlockNotificationSound() now kicks off the async fetch + preloads Audio elements with correct cache-bust URLs.
+- Created src/lib/use-site-assets.ts: useSiteAssets() hook using TanStack Query ("admin-settings" key) that returns cache-busted URLs (qrisImageUrl, chatSoundUrl, listingSoundUrl) for use in React components.
+- Updated src/components/gomesin/views/post-ad.tsx: imported useSiteAssets, replaced hardcoded src="/qris-mesinKU.jpeg?v=2" with src={qrisImageUrl} (dynamic from settings).
+- Updated src/components/gomesin/package-activate-dialog.tsx: same — imported useSiteAssets, replaced hardcoded QRIS src with qrisImageUrl.
+- Rewrote PengaturanTab in src/components/gomesin/views/admin.tsx: 
+  * Added upload UI for QRIS image (clickable preview thumbnail + "Ganti Foto QRIS" button, accepts JPG/PNG/WebP max 5MB).
+  * Added upload UI for chat ringtone ("Ganti Suara" button next to existing "Tes Suara", accepts WAV/MP3/OGG max 2MB).
+  * Added upload UI for listing ringtone (same pattern).
+  * Test sound buttons now use dynamic URLs from form state (so they play the most recently uploaded sound).
+  * handleAssetUpload() sends FormData to /api/admin/upload-asset, invalidates "admin-settings" query, and calls refreshAssetUrls() so the new sound plays immediately without page reload.
+- Removed "Pesan" (chat) menu from admin panel:
+  * admin-sidebar.tsx: removed { view: "admin-chat", ... } from ADMIN_MENU, removed unused MessageCircle import.
+  * views/admin.tsx: removed { id: "chat", label: "Pesan", ... } from tabs array, removed {tab === "chat" && <ChatTab />} render, deleted ChatTab function (~360 lines), deleted ChatMsgBubble helper (~70 lines), deleted timeAgoShort helper (~14 lines), removed "chat" from Tab type, removed unused imports (Send, Avatar, AvatarFallback, ChatMessage type, normalizeImageUrl).
+  * app-shell.tsx: removed "admin-chat" from ADMIN_VIEWS array, removed {view === "admin-chat" && <AdminView initialTab="chat" />} render.
+  * lib/store.ts: removed "admin-chat" from View type union (line 34) and from goToAdminSub parameter type (lines 125, 332).
+- Ran `bun run db:push` — database already in sync (SiteSetting table already exists, no schema change needed).
+- Ran `bun run lint` — only pre-existing errors in .cjs files and _backup_pre_* folder; no new errors from these changes.
+- Verified dev server: GET /api/admin/settings returns 200 with all 6 new keys present.
+
+Stage Summary:
+- Admin panel "Pengaturan" tab now has full edit/upload capabilities for: QRIS image, chat ringtone, listing ringtone (banner edit already existed in "Banner" tab).
+- "Pesan" menu removed from admin sidebar + all related code (ChatTab, ChatMsgBubble, timeAgoShort, admin-chat view) deleted.
+- All asset URLs are now dynamic (fetched from /api/admin/settings with cache-bust versions), so uploading a new file via the admin panel instantly updates every page that uses the asset (post-ad, package-activate-dialog, notification sounds) without code changes or server restart.
+- notification-sound.ts exports refreshAssetUrls() so the in-memory Audio elements get recreated with new URLs immediately after upload.
