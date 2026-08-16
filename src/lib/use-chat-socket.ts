@@ -56,13 +56,45 @@ type MessageSendPayload = {
 };
 
 // ---------------------------------------------------------------------------
+// Realtime availability detection
+// ---------------------------------------------------------------------------
+// The chat-service mini-service (port 3003) ONLY runs inside the local
+// sandbox where a Caddy gateway proxies "/?XTransformPort=3003" to it.
+// On Vercel production (or any non-sandbox host) the chat-service is NOT
+// deployed, so the same URL returns the Next.js HTML homepage. When
+// socket.io's polling transport tries to parse that HTML as JSON it throws
+// "Unexpected token '<', \"<!DOCTYPE\"... is not valid JSON".
+//
+// To keep the online deployment behaving like offline (no console errors,
+// graceful degradation), we detect the absence of the chat-service and
+// skip socket creation entirely. All realtime consumers already have
+// polling fallbacks (TanStack Query refetchInterval), so functionality
+// is preserved — only the instant push is lost in production.
+function isRealtimeAvailable(): boolean {
+  if (typeof window === "undefined") return false;
+  // Allow explicit override via env var (set NEXT_PUBLIC_CHAT_ENABLED="false"
+  // on Vercel to force-disable, or "true" to force-enable).
+  if (process.env.NEXT_PUBLIC_CHAT_ENABLED === "false") return false;
+  if (process.env.NEXT_PUBLIC_CHAT_ENABLED === "true") return true;
+  // Auto-detect: Vercel preview/production deployments don't run the
+  // chat-service mini-service, so the gateway would return HTML.
+  const host = window.location.hostname;
+  if (host.endsWith(".vercel.app")) return false;
+  // Sandbox preview / localhost / custom hosts → assume chat-service is up.
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Singleton socket — one per browser tab
 // ---------------------------------------------------------------------------
 let socketRef: Socket | null = null;
 let joinedUserId: string | null = null;
 const listeners: Record<string, Set<(payload: any) => void>> = {};
 
-function getSocket(): Socket {
+function getSocket(): Socket | null {
+  // If the chat-service is not deployed in this environment, do NOT create
+  // a socket. Returning null lets all consumers fall back to polling.
+  if (!isRealtimeAvailable()) return null;
   if (socketRef) return socketRef;
 
   // ALWAYS use the Caddy gateway (relative path "/?XTransformPort=3003").

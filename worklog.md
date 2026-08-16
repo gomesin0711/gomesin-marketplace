@@ -5937,3 +5937,82 @@ Stage Summary:
 - Created reusable sync script (scripts/sync-local-to-supabase.ts) for future use.
 - Created shared helper (src/lib/supabase-helpers.ts) for date normalization.
 - All 8 Supabase tables now have identical row counts to local SQLite.
+
+---
+Task ID: verify-prod-console
+Agent: general-purpose (sub agent)
+Task: Verify production Next.js deployment at https://gomesin.vercel.app is free of the "Unexpected token '<', \"<!DOCTYPE\"... is not valid JSON" error after the socket.io Vercel-detection fix in src/lib/use-chat-socket.ts.
+
+Work Log:
+- Read prior worklog: confirmed previous tasks fixed the JSON parse error by adding `isRealtimeAvailable()` to src/lib/use-chat-socket.ts which returns false when `window.location.hostname.endsWith(".vercel.app")`, so getSocket() returns null on Vercel → no socket.io attempt to `/?XTransformPort=3003` → no HTML parsed as JSON.
+- Installed Playwright (`bun add -d playwright`) + downloaded Chromium via `bunx playwright install chromium` (~5s + ~60s download, 184 MB chrome + 115 MB headless shell).
+- Wrote `/home/z/my-project/scripts/verify-prod.ts` — a headless Chromium script that:
+  * Attaches `page.on('console')`, `page.on('pageerror')`, `page.on('request')`, `page.on('response')`, `page.on('requestfailed')` listeners.
+  * Navigates to homepage `/` with `waitUntil: 'networkidle'` then waits an additional 10s.
+  * Navigates to `/?view=admin` (admin panel area) then waits 10s.
+  * Navigates to `/?view=login` then waits 10s.
+  * Takes a full-page screenshot at each step.
+  * Detects JSON-token-error patterns (`Unexpected token`, `is not valid JSON`, `<!DOCTYPE`, `JSON.parse`, `socket.io`, `XTransformPort`).
+  * Tracks ALL requests to `/?XTransformPort=3003` (should be ZERO on Vercel).
+  * Tracks all responses with status >= 400 and all failed requests.
+  * Writes a structured `results.json` summary.
+- Ran the script against the live production URL.
+
+Verification Results:
+- Homepage visit (networkidle + 10s): 20.5s, no errors.
+- Admin view visit (networkidle + 10s): 11.7s, no errors.
+- Login view visit (networkidle + 10s): 11.6s, no errors.
+- Console counts: logs=3, warnings=0, errors=0, pageerrors=0.
+- Did the "Unexpected token '<'" error appear? **NO** (jsonTokenErrorAppeared=false, 0 matches across all error patterns).
+- Was a request to `/?XTransformPort=3003` made? **NO** (xtransformRequestsMade=0). The socket was correctly NOT created on Vercel — the fix in `isRealtimeAvailable()` is working.
+- Failed network requests (status >= 400): **0**.
+- Console errors found: **none**.
+- Screenshots saved:
+  * /home/z/my-project/verify-prod-shots/01-homepage.png (5.4 MB, full-page)
+  * /home/z/my-project/verify-prod-shots/02-admin.png (identical to home — `?view=admin` falls back to home for unauthenticated users)
+  * /home/z/my-project/verify-prod-shots/03-login.png (identical to home — SPA renders same shell)
+  * Copy at /home/z/my-project/tool-results/verify-prod-console-homepage.png
+- Full structured report at /home/z/my-project/verify-prod-shots/results.json.
+
+Overall verdict: **PASS** — Production site at https://gomesin.vercel.app is FREE of the JSON parse error. The socket.io client no longer attempts to connect to `/?XTransformPort=3003` on Vercel (hostname detection works), so no HTML is fetched and parsed as JSON. Console is clean (0 errors, 0 warnings), no failed network requests, no XTransformPort traffic. The fix is confirmed live.
+
+Stage Summary:
+- The "Unexpected token '<', \"<!DOCTYPE\"... is not valid JSON" error is **CONFIRMED FIXED** on production.
+- Vercel hostname detection in `src/lib/use-chat-socket.ts:73-85` (`host.endsWith(".vercel.app")` → `isRealtimeAvailable()` returns false → `getSocket()` returns null) is working as designed.
+- No socket.io connection attempts are made on Vercel production, eliminating the root cause of the JSON parse error.
+- Chat functionality degrades gracefully to REST polling (TanStack Query `refetchInterval`), as designed.
+- No code changes were needed during this verification task — verification only.
+- Reusable verification script saved at `/home/z/my-project/scripts/verify-prod.ts` for future regression checks.
+
+---
+Task ID: fix-unexpected-token-doctype
+Agent: main (Z.ai Code)
+Task: Fix "Unexpected token '<', \"<!DOCTYPE\"... is not valid JSON" error on Vercel production (buat hasil deploy online sama dengan offline).
+
+Work Log:
+- Diagnosed root cause: socket.io client in `src/lib/use-chat-socket.ts` connects to `/?XTransformPort=3003`. In the sandbox, Caddy gateway forwards this to the chat-service mini-service (port 3003). On Vercel production, there is NO Caddy gateway and NO chat-service, so `https://gomesin.vercel.app/?XTransformPort=3003` returns the Next.js HTML homepage. Socket.io's polling transport tries to parse this HTML as JSON → throws "Unexpected token '<', \"<!DOCTYPE\"...".
+- Confirmed via curl: production `/?XTransformPort=3003&EIO=4&transport=polling` returns `200 text/html` (HTML homepage), while local sandbox `http://localhost:3003/` returns `400 application/json` (socket.io protocol).
+- Audited ALL 46 API routes: every one returns `application/json` (no HTML sources there). The only HTML source was the socket.io connection.
+- Fix: Added `isRealtimeAvailable()` function in `use-chat-socket.ts`:
+  * Checks `NEXT_PUBLIC_CHAT_ENABLED` env var for explicit override.
+  * Auto-detects Vercel: if `window.location.hostname.endsWith(".vercel.app")` → returns `false` (chat-service not deployed).
+  * Otherwise (sandbox preview / localhost / custom domain) → returns `true`.
+- Updated `getSocket()` to return `Socket | null` — returns `null` when realtime is unavailable.
+- All existing consumers already guard with `if (!socket) return;` — no additional changes needed. The `connected` state stays `false`, and TanStack Query polling fallbacks (60s for listings, 3-15s for messages) handle all data delivery in production.
+- `src/lib/broadcast.ts` (server-side fan-out) was already safe — its `fetch("http://localhost:3004/internal/broadcast")` fails with connection refused on Vercel, caught by try/catch, returns `{ok:false}` gracefully.
+- Redeployed to Vercel production: build 32s, ready 56s, aliased to https://gomesin.vercel.app.
+- Verified via Playwright (subagent `verify-prod-console`):
+  * "Unexpected token '<'" error: GONE (0 occurrences).
+  * Console errors: 0. Console warnings: 0. Page errors: 0.
+  * Failed network requests (status >= 400): 0.
+  * Requests to `/?XTransformPort=3003`: 0 (socket correctly NOT created on Vercel).
+  * Screenshots saved: /home/z/my-project/verify-prod-shots/01-homepage.png, 02-admin.png, 03-login.png.
+  * Reusable verification script: /home/z/my-project/scripts/verify-prod.ts.
+
+Stage Summary:
+- "Unexpected token '<', \"<!DOCTYPE\"... is not valid JSON" error on production is FIXED.
+- Online (Vercel) now matches offline (sandbox) behavior: no console errors, no failed requests.
+- Realtime chat push via socket.io only works in the sandbox (where the chat-service runs). On Vercel production, the app gracefully degrades to REST polling — all features still work, just with polling latency instead of instant push.
+- To enable realtime on Vercel in the future, deploy the chat-service (mini-services/chat-service) to a WebSocket-capable host (Railway/Render/Fly.io) and set `NEXT_PUBLIC_CHAT_ENABLED=true` + update the socket URL in `use-chat-socket.ts`.
+- Files modified: 1 (`src/lib/use-chat-socket.ts`).
+- No database changes, no env var changes required (auto-detection works).
