@@ -8241,3 +8241,240 @@ Stage Summary:
   * Playwright script: `/home/z/my-project/verify-detail-4.py`
   * Result JSON:        `/home/z/my-project/verify-detail-4-result.json`
   * Screenshots:        `/home/z/my-project/verify-detail-4-{desktop,mobile}-{1-home,2-detail-top,3-detail-full,4-after-heart,5-after-share}.png`
+
+---
+Task ID: verify-detail-5
+Agent: verify (general-purpose sub-agent)
+Task: Verify the MOBILE detail (ad) page matches the reference design —
+  mobile Header + BottomNav hidden, gallery flush at top, fixed bottom
+  action bar with "Chat Penjual" + "WhatsApp" side-by-side, back icon +
+  heart/share still inside the gallery image, content not hidden behind
+  the fixed bar; DESKTOP unchanged (Header sticky + sidebar action
+  buttons, NO fixed bottom bar).
+
+Work Log:
+- Read prior worklog (verify-detail-4) for context — the action-button
+  cleanup was previously verified; this task builds on it by testing the
+  mobile-specific layout overhaul.
+- Verified source state of `src/components/gomesin/app-shell.tsx`:
+    * Header wrapped in
+        `{view === "detail" ? <div className="hidden md:contents"><Header/></div> : <Header/>}`
+      (line 115-121) — confirmed.
+    * Spacer `<div className="h-[4.25rem] shrink-0 md:hidden">` and
+      `<BottomNav/>` both gated with `{view !== "detail" && ...}`
+      (lines 173-174) — confirmed.
+- Verified source state of `src/components/gomesin/views/detail.tsx`:
+    * Outer container `<div className="mx-auto max-w-7xl px-4 pb-28 pt-0 md:py-4 md:pb-4 ...">`
+      (line 190) — confirmed.
+    * Desktop-only action buttons block `<div className="mt-4 hidden space-y-2 md:block">`
+      (line 360) — confirmed.
+    * New fixed bottom bar
+      `<div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 p-3 backdrop-blur ... md:hidden">`
+      with "Chat Penjual" (Button bg-primary) + "WhatsApp" (<a> bg-[#25D366])
+      side-by-side inside `<div className="mx-auto flex max-w-md gap-2">`
+      (lines 521-540) — confirmed.
+- Ran `/home/z/my-project/verify-detail-5.py` (Playwright) on BOTH
+  viewports — dev server (port 3000) was already running, returned 200
+  on `/`.
+- Mobile (iPhone 13 / 390×844 emulated; visible viewport height 664):
+    * header_visible: FALSE — Header element has y=0, h=0, w=0
+      (display:block, visibility:visible, but zero-sized because the
+      `hidden md:contents` wrapper hides it on mobile via
+      `display:contents` → children rendered through the wrapper but the
+      `hidden` class on the wrapper DIV sets display:none on mobile).
+      No "BeliMesin" logo, no search bar, no category nav visible at
+      top. ✅
+    * bottomnav_present: FALSE; tab_count: 0 — Home/Chat/Jual/Iklan
+      Saya/Akun bottom tab bar HIDDEN. ✅
+    * fixed_bottom_bar:
+        - fixed_bar_present: TRUE
+        - fixed_bar_rect: {x:0, y:599, w:390, h:65} — full-width,
+          bottom of viewport (visible viewport h=664, so bar bottom
+          edge at 664 = viewport bottom).
+        - chat_button: <BUTTON> text="Chat Penjual", classes include
+          "bg-primary font-semibold", x=12, y=612, w=187, h=40.
+        - whatsapp_anchor: <A> text="WhatsApp", classes include
+          "bg-[#25D366] px-4 py-2.5 text-white", x=207, y=612, w=171,
+          h=40; href="https://wa.me/6281234567890?text=Halo%20...".
+        - side_by_side: TRUE (both on same y=612, side-by-side with
+          gap-2 between them, together filling the 390px viewport).
+        - md_hidden_class: TRUE (the bar has `md:hidden`). ✅
+    * gallery_flush_top: TRUE
+        - gallery_top_y: 0 (gallery image starts at y=0 — flush at the
+          very top of the viewport).
+        - elements_above: [] (zero elements above the gallery on
+          mobile — no header, no spacer, nothing). ✅
+    * back_btn_in_gallery: FOUND
+        - aria_label="kembali", rect {x:12, y:12, w:36, h:36},
+          rounded_full=TRUE, bg_white=TRUE, text_empty=TRUE,
+          svg_count=1 (the ChevronLeft icon), y_offset_from_gallery_top
+          =12, x_offset_from_gallery_left=12 (= top-3/left-3 inset). ✅
+    * fav_share_buttons_top_right: 2 buttons found:
+        - favorit at {x:298, y:12, w:36, h:36}, rounded-full, bg-white.
+        - bagikan at {x:342, y:12, w:36, h:36}, rounded-full, bg-white.
+        Both at gallery top y=12 ≈ gallery_top 0 + 12 = top-3, and
+        bagikan's right edge (378) sits at viewport right edge
+        (390-12=378). ✅
+    * content_not_hidden: TRUE
+        - last_element_after_scrollIntoView.last_content_bottom: 552
+          (the related-listings "Iklan Serupa" section's bottom, after
+          scrolling it into view).
+        - fixed_bar_top_y: 599.
+        - gap: 47 (last content bottom 552 is 47px ABOVE the fixed bar
+          top 599 → the last content is fully visible above the fixed
+          bar with a 47px buffer; pb-28 padding on the detail
+          container leaves enough room). ✅
+    * page_errors: [] (0 uncaught exceptions). ✅
+    * Console: only [PWA] SW registered + [HMR] connected log/info
+      messages — NO errors, NO warnings. ✅
+    * (Note: chat_click on mobile timed out on `.nth(1)` selector
+      because on mobile there is only ONE "Chat Penjual" button on the
+      page — the desktop sidebar block is `hidden md:block` so it
+      doesn't render. The button itself is verified present and
+      visible in fixed_bottom_bar.chat_button above. Desktop chat_click
+      succeeded and showed the expected "Silakan masuk terlebih dahulu
+      untuk chat penjual" toast because the test session is not logged
+      in — this is the correct handler behavior, not a defect.)
+- Desktop (1280×800):
+    * header_visible: TRUE; header_element text starts with "BeliMesin
+      \nHome\n🇮🇩\nMasuk\nPasang Iklan" at y=0, h=65, w=1280. ✅
+    * desktop_header_sticky: header_before.position="sticky",
+      sticky_at_top=TRUE (verified by scrolling the page — the header
+      stays at y=0 after scroll). ✅
+    * bottomnav_present: FALSE (BottomNav is `md:hidden` so it never
+      renders on desktop — expected). ✅
+    * fixed_bottom_bar:
+        - fixed_bar_present: FALSE — the mobile fixed bar has
+          `md:hidden` so it does NOT render on desktop. ✅
+    * desktop_sidebar_action_buttons:
+        - found: TRUE — the right-side card (rounded-xl border
+          border-border bg-card p-4 sm:p-5) at {x:904, y:81, w:360,
+          h:735} contains the action buttons block.
+        - has_chat_button: TRUE (Chat Penjual, bg-primary, in sidebar).
+        - has_whatsapp_anchor: TRUE (WhatsApp, bg-[#25D366], in
+          sidebar).
+        - child_count: 4 (the block contains the Button, the <a>, plus
+          two empty-text nodes). ✅
+    * back_btn_in_gallery: FOUND — aria="kembali", rect {x:29, y:94,
+      w:36, h:36}, rounded_full, bg_white, svg_count=1, y_offset=12
+      (gallery_top 82 + 12 = top-3). ✅
+    * fav_share_buttons_top_right: 2 buttons — favorit at {x:795, y:94}
+      and bagikan at {x:839, y:94}, both 36×36, rounded-full, bg-white. ✅
+    * chat_click: clicked=TRUE, toast_appeared=TRUE, toast_text=
+      "Silakan masuk terlebih dahulu untuk chat penjual\nMasuk" — the
+      expected "please login to chat" toast (the test session isn't
+      logged in; the handler correctly prompts login rather than
+      navigating). ✅
+    * page_errors: [] (0 uncaught exceptions). ✅
+    * Console: only [PWA] SW registered + "Download React DevTools"
+      info messages — NO errors. (No SSR hydration warning showed up
+      this run, but it would be pre-existing anyway if it had.) ✅
+- dev.log check (last ~30 lines):
+    * All API requests returned 200 — including the detail listing API
+      (`GET /api/listings/excavator-komatsu-pc200-8-bekas-qwhc8 200`),
+      all home-page listing/banner/category APIs (200), and all
+      `/api/messages` polling calls (200).
+    * The ONLY error in dev.log is the pre-existing
+      `[admin/settings] Prisma GET error, trying Supabase: TypeError:
+      Cannot read properties of undefined (reading 'findMany')` at
+      `src/app/api/admin/settings/route.ts:65:41` — documented Prisma→
+      Supabase fallback path (dev DB initialization quirk; the API still
+      returns 200 after the fallback). UNRELATED to the mobile layout
+      change.
+
+SCREENSHOTS (all saved to /home/z/my-project/):
+  * `verify-detail-5-desktop-1-home.png` (1280×800) — desktop home.
+  * `verify-detail-5-desktop-2-detail-top.png` (1280×800) — desktop
+    detail top: sticky Header at top + gallery/sidebar below.
+  * `verify-detail-5-desktop-3-detail-full.png` (1280×~2200) — desktop
+    full-page detail view.
+  * `verify-detail-5-desktop-4-after-chat.png` (1280×800) — desktop
+    after clicking Chat Penjual: sonner toast "Silakan masuk terlebih
+    dahulu untuk chat penjual" visible.
+  * `verify-detail-5-mobile-1-home.png` (390×~1700) — mobile home.
+  * `verify-detail-5-mobile-2-detail-top.png` (390×~1700) — mobile
+    detail top: full-bleed gallery flush at viewport top (no Header),
+    back-chevron top-left + heart/share top-right inside image.
+  * `verify-detail-5-mobile-3-detail-full.png` (390×~2200) — mobile
+    full-page detail view.
+  * `verify-detail-5-mobile-3-top-crop.png` (390×~300) — cropped top
+    showing gallery flush at y=0.
+  * `verify-detail-5-mobile-3-bottom-crop.png` (390×~300) — cropped
+    bottom showing the fixed action bar (Chat Penjual + WhatsApp side-
+    by-side).
+  * `verify-detail-5-mobile-4-after-chat.png` (390×~800) — mobile
+    after clicking Chat Penjual.
+  * `verify-detail-5-mobile-5-content-above-fixed-bar.png` (390×~800)
+    — mobile after scrolling to last content: the "Iklan Serupa"
+    section's bottom is fully visible above the fixed bottom bar (47px
+    gap).
+
+Stage Summary:
+- VERIFICATION PASSED on BOTH mobile (iPhone 13, 390×844) and desktop
+  (1280×800).
+- MOBILE:
+  * Header HIDDEN? YES — `header_visible: FALSE`; the
+    `hidden md:contents` wrapper on the Header in app-shell.tsx
+    correctly hides the Header (logo "BeliMesin", search bar, category
+    nav) on mobile detail views. The Header element has zero size
+    (h=0, w=0) and no text is at the top of the viewport.
+  * Bottom nav HIDDEN? YES — `bottomnav_present: FALSE`, `tab_count: 0`.
+    The `{view !== "detail" && <BottomNav/>}` gating correctly removes
+    the Home/Chat/Jual/Iklan Saya/Akun tab bar on mobile detail views.
+  * Fixed bottom action bar present with Chat+WhatsApp side-by-side?
+    YES — `fixed_bar_present: TRUE`, `side_by_side: TRUE`. The bar
+    spans the full viewport width at the bottom (rect {x:0, y:599,
+    w:390, h:65}). The "Chat Penjual" <Button> (bg-primary, x=12, w=187)
+    and "WhatsApp" <a> (bg-[#25D366], x=207, w=171) sit on the same
+    y=612 row, side-by-side with gap-2, together filling the 390px
+    width. The bar has `md:hidden` so it doesn't render on desktop.
+  * Gallery flush to top? YES — `gallery_top_y: 0`, `flush_to_top:
+    TRUE`, `elements_above: []` (zero elements above the gallery on
+    mobile). The gallery image starts at the very top of the viewport.
+  * Back icon + heart/share icons present? YES — back button
+    (aria="kembali", 36×36, rounded-full, bg-white, ChevronLeft SVG)
+    at top-left inside the image (x=12, y=12 = top-3/left-3); 2
+    floating buttons at top-right (favorit x=298, bagikan x=342, both
+    at y=12, 36×36, rounded-full, bg-white) — both inside the gallery
+    image.
+  * Content not hidden behind fixed bar? YES — `content_not_hidden:
+    TRUE`. After scrolling the last content ("Iklan Serupa" related-
+    listings section) into view, its bottom edge (y=552) is 47px ABOVE
+    the fixed bar top (y=599), so the last content is fully visible
+    above the fixed bar (pb-28 padding on the detail container leaves
+    enough room).
+- DESKTOP:
+  * Header visible & sticky? YES — `header_visible: TRUE`,
+    `belimesin_logo_at_top: TRUE`, `sticky_at_top: TRUE` (header
+    position:sticky verified at y=0 both before and after scroll).
+    Header shows "BeliMesin\nHome\n🇮🇩\nMasuk\nPasang Iklan".
+  * Action buttons in sidebar? YES — the right-side card
+    (`rounded-xl border border-border bg-card p-4 sm:p-5` at
+    {x:904, y:81, w:360, h:735}) contains the action buttons block
+    (`hidden md:block`) with both "Chat Penjual" <Button> and
+    "WhatsApp" <a>.
+  * No fixed bottom bar? YES — `fixed_bar_present: FALSE`. The mobile
+    fixed bar has `md:hidden` so it does NOT render on desktop.
+  * Back icon + heart/share icons still present? YES — same as mobile,
+    back button at top-left (x=29, y=94) and 2 floating buttons at
+    top-right (favorit x=795, bagikan x=839) inside the gallery image.
+  * Chat Penjual click handler still works? YES — clicking Chat
+    Penjual on desktop (test session not logged in) showed the
+    expected sonner toast "Silakan masuk terlebih dahulu untuk chat
+    penjual" with "Masuk" action button (the correct handler behavior
+    for an unauthenticated visitor).
+- No new console or runtime errors:
+  * `page_errors: []` (0 uncaught exceptions) on BOTH viewports.
+  * Mobile console: only [PWA] SW registered + [HMR] connected logs.
+  * Desktop console: only [PWA] SW registered + React DevTools info.
+  * dev.log: all detail-page API requests returned 200; the only
+    dev.log error is the pre-existing Prisma→Supabase fallback for
+    /api/admin/settings (returns 200 after fallback), unrelated to
+    this change.
+- Artifacts:
+  * Playwright script: `/home/z/my-project/verify-detail-5.py`
+  * Result JSON:        `/home/z/my-project/verify-detail-5-result.json`
+  * Screenshots:        `/home/z/my-project/verify-detail-5-{desktop,mobile}-{1-home,2-detail-top,3-detail-full,4-after-chat,5-content-above-fixed-bar}.png`
+                       (+ mobile-3-top-crop.png + mobile-3-bottom-crop.png
+                       for close-ups of the gallery-flush-top and the
+                       fixed bottom bar).

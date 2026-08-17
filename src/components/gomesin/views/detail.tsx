@@ -156,10 +156,38 @@ export function DetailView() {
     } catch {}
   };
 
+  // Open chat with the ad owner (shared by desktop sidebar button & mobile fixed bar)
+  const handleChat = () => {
+    if (!currentUser) {
+      toast.info(tr("chatLoginRequired"), { action: { label: tr("chatLoginAction"), onClick: goToLogin } });
+      return;
+    }
+    const ownerId = (l as any).user?.id;
+    if (!ownerId) {
+      toast.info(tr("chatSellerNotRegistered"));
+      return;
+    }
+    if (currentUser.id === ownerId) {
+      toast.info(tr("chatOwnListing"));
+      return;
+    }
+    goToProfileChat({
+      partnerId: ownerId,
+      partnerName: (l as any).user?.name || l.seller.name,
+      partnerImage: (l as any).user?.logoImage || null,
+      partnerPhone: ownerPhone || null,
+      listingId: l.id,
+      listingSlug: l.slug,
+      listingTitle: l.title,
+      listingImage: l.images?.[0] || null,
+      listingPrice: l.price,
+    });
+  };
+
   const specsEntries = Object.entries(listingSpecs(l, mounted ? lang : "id"));
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-4 animate-fade-up">
+    <div className="mx-auto max-w-7xl px-4 pb-28 pt-0 md:py-4 md:pb-4 animate-fade-up">
       {/* TOP: gallery + title/price card side by side */}
       <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_360px]">
         {/* gallery — left — full-bleed on mobile (no margins/rounded/border), card style on desktop */}
@@ -328,35 +356,10 @@ export function DetailView() {
             </span>
           </div>
 
-          {/* action buttons (moved from seller sidebar) */}
-          <div className="mt-4 space-y-2">
+          {/* action buttons (moved from seller sidebar) — desktop only, mobile uses fixed bottom bar */}
+          <div className="mt-4 hidden space-y-2 md:block">
             <Button
-              onClick={() => {
-                if (!currentUser) {
-                  toast.info(tr("chatLoginRequired"), { action: { label: tr("chatLoginAction"), onClick: goToLogin } });
-                  return;
-                }
-                const ownerId = (l as any).user?.id;
-                if (!ownerId) {
-                  toast.info(tr("chatSellerNotRegistered"));
-                  return;
-                }
-                if (currentUser.id === ownerId) {
-                  toast.info(tr("chatOwnListing"));
-                  return;
-                }
-                goToProfileChat({
-                  partnerId: ownerId,
-                  partnerName: (l as any).user?.name || l.seller.name,
-                  partnerImage: (l as any).user?.logoImage || null,
-                  partnerPhone: ownerPhone || null,
-                  listingId: l.id,
-                  listingSlug: l.slug,
-                  listingTitle: l.title,
-                  listingImage: l.images?.[0] || null,
-                  listingPrice: l.price,
-                });
-              }}
+              onClick={handleChat}
               className="w-full gap-2 rounded-full bg-primary font-semibold"
               size="lg"
             >
@@ -514,6 +517,27 @@ export function DetailView() {
           </div>
         </section>
       )}
+
+      {/* ===== Mobile fixed bottom action bar (Chat Penjual + WhatsApp) ===== */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/85 md:hidden">
+        <div className="mx-auto flex max-w-md gap-2">
+          <Button
+            onClick={handleChat}
+            className="flex-1 gap-2 rounded-full bg-primary font-semibold"
+            size="lg"
+          >
+            {tr("chatSeller")}
+          </Button>
+          <a
+            href={`https://wa.me/${waNumber}?text=${waText}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex flex-1 items-center justify-center gap-2 rounded-full bg-[#25D366] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1ebe5d]"
+          >
+            <Phone className="size-4" /> WhatsApp
+          </a>
+        </div>
+      </div>
 
       {/* ===== Full-screen image lightbox ===== */}
       {lightboxOpen && l.images.length > 0 && (

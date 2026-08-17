@@ -112,7 +112,13 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Header />
+      {view === "detail" ? (
+        <div className="hidden md:contents">
+          <Header />
+        </div>
+      ) : (
+        <Header />
+      )}
       {showSidebar ? (
         <div className="flex flex-1">
           <AdminSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
@@ -164,8 +170,8 @@ export function AppShell() {
       {/* Hide footer on account/dashboard/admin views for cleaner UX */}
       {!["profile", "dashboard", "favorites", "login", "post", ...ADMIN_VIEWS].includes(view) && <Footer />}
       {/* Spacer so the fixed bottom nav (mobile) doesn't cover footer content */}
-      <div className="h-[4.25rem] shrink-0 md:hidden" aria-hidden="true" />
-      <BottomNav />
+      {view !== "detail" && <div className="h-[4.25rem] shrink-0 md:hidden" aria-hidden="true" />}
+      {view !== "detail" && <BottomNav />}
       {/* Persistent floating PWA install button — appears whenever the app
           is installable (beforeinstallprompt captured). Visible on all
           views so the user can always install. */}
