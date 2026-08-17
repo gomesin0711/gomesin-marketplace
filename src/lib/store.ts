@@ -407,7 +407,17 @@ export const useStore = create<NavState>()(
         }
       },
 
-      logout: () => set({ user: null, favorites: [], favoritesSeenCount: 0, recents: [], profilePanel: null, pendingChatPartner: null, pendingCall: null, view: "home", slug: undefined, filters: {} }),
+      logout: () => {
+        // Fire-and-forget: tell the server to clear the session cookie so the
+        // next request is unauthenticated. We don't await this — we want the
+        // UI to update immediately.
+        try {
+          if (typeof window !== "undefined") {
+            fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+          }
+        } catch {}
+        set({ user: null, favorites: [], favoritesSeenCount: 0, recents: [], profilePanel: null, pendingChatPartner: null, pendingCall: null, view: "home", slug: undefined, filters: {} });
+      },
     }),
     {
       name: "gomesin-store",

@@ -3,6 +3,15 @@ import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/auth";
 import { fallbackFindUser, fallbackFindUserByPhone } from "@/lib/auth-fallback";
 import { isPhoneVerified, normalizePhone, phonesMatch } from "@/lib/otp-store";
+import { setSessionCookie } from "@/lib/session";
+
+// Wrap a successful auth response (login/register) with a session cookie.
+// All successful login paths MUST go through this helper so the cookie is set.
+function authResponse(user: { id: string; role?: string }, status: number = 200) {
+  const res = NextResponse.json({ user }, { status });
+  setSessionCookie(res, user.id, user.role || "user");
+  return res;
+}
 
 // ---------------------------------------------------------------------------
 // Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
@@ -53,8 +62,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      return NextResponse.json({
-        user: {
+      return authResponse({
           id: user.id,
           name: user.name,
           email: user.email,
@@ -69,8 +77,7 @@ export async function POST(req: NextRequest) {
             user.createdAt instanceof Date
               ? user.createdAt.toISOString()
               : user.createdAt,
-        },
-      });
+        });
     } catch {
       // SQLite unavailable — use fallback
     }
@@ -81,7 +88,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    return NextResponse.json({ user: result.user });
+    return authResponse(result.user);
   }
 
   // ===== Email + Password login =====
@@ -107,20 +114,18 @@ export async function POST(req: NextRequest) {
     }>>`SELECT * FROM User WHERE email = ${emailNorm} COLLATE NOCASE LIMIT 1`;
     const user = matches && matches.length > 0 ? matches[0] : null;
     if (user && verifyPassword(password, user.password)) {
-      return NextResponse.json({
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          city: user.city,
-          company: user.company,
-          address: user.address,
-          bannerImage: user.bannerImage,
-          logoImage: user.logoImage,
-          role: user.role,
-          createdAt: user.createdAt,
-        },
+      return authResponse({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        city: user.city,
+        company: user.company,
+        address: user.address,
+        bannerImage: user.bannerImage,
+        logoImage: user.logoImage,
+        role: user.role,
+        createdAt: user.createdAt,
       });
     }
     // If Prisma found no user OR password didn't match, fall through to
@@ -150,20 +155,18 @@ export async function POST(req: NextRequest) {
           { status: 401 }
         );
       }
-      return NextResponse.json({
-        user: {
-          id: supaUser.id,
-          name: supaUser.name,
-          email: supaUser.email,
-          phone: supaUser.phone,
-          city: supaUser.city,
-          company: supaUser.company,
-          address: supaUser.address,
-          bannerImage: supaUser.bannerImage,
-          logoImage: supaUser.logoImage,
-          role: supaUser.role,
-          createdAt: supaUser.createdAt,
-        },
+      return authResponse({
+        id: supaUser.id,
+        name: supaUser.name,
+        email: supaUser.email,
+        phone: supaUser.phone,
+        city: supaUser.city,
+        company: supaUser.company,
+        address: supaUser.address,
+        bannerImage: supaUser.bannerImage,
+        logoImage: supaUser.logoImage,
+        role: supaUser.role,
+        createdAt: supaUser.createdAt,
       });
     }
   } catch (supaErr) {
@@ -177,5 +180,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
-  return NextResponse.json({ user: result.user });
+  return authResponse(result.user);
 }

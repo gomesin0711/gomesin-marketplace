@@ -4,6 +4,7 @@ import { parseListing } from "@/lib/types";
 import { getPaketMap } from "@/lib/paket";
 import { broadcastListingNew, broadcastListingPending } from "@/lib/broadcast";
 import { normalizeSupabaseDate } from "@/lib/supabase-helpers";
+import { requireAdmin } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,8 @@ function safeJsonParse(s: string, fallback: any) {
 
 // GET all listings (admin, include inactive/violation/unpaid)
 export async function GET(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") || "";
 
@@ -149,6 +152,8 @@ export async function GET(req: NextRequest) {
 
 // PATCH: update status (approve/reject/sold) OR toggle violation
 export async function PATCH(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   try {
     const body = await req.json();
     const { id, status, violationFlag, violationReason } = body;
@@ -222,6 +227,8 @@ export async function PATCH(req: NextRequest) {
 
 // DELETE listing
 export async function DELETE(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   try {
     const { id } = await req.json();
     if (!id) return NextResponse.json({ error: "ID wajib" }, { status: 400 });

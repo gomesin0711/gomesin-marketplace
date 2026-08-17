@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, isDbAvailable } from "@/lib/db";
 import { fallbackGetUserById, fallbackUpdateUser } from "@/lib/auth-fallback";
+import { getSessionUser } from "@/lib/session";
 
 // ---------------------------------------------------------------------------
 // Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
@@ -17,12 +18,27 @@ async function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 }
 
-// GET /api/auth/profile?userId=<id> — fetch latest user profile
+// GET /api/auth/profile — fetch the current user's own profile.
+//
+// SECURITY: The userId is resolved EXCLUSIVELY from the verified session
+// cookie. The `?userId=xxx` query param is IGNORED for non-admin sessions.
+// Admins may pass `?userId=other` to fetch another user's profile (used by
+// the admin panel). This prevents account A from reading account B's profile
+// by simply passing B's userId in the query string.
 export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get("userId");
-  if (!userId) {
-    return NextResponse.json({ error: "User ID wajib" }, { status: 400 });
+  const session = getSessionUser(req);
+  if (!session) {
+    return NextResponse.json(
+      { error: "Sesi berakhir. Silakan masuk kembali." },
+      { status: 401 }
+    );
   }
+
+  // Resolve the effective userId: admins can impersonate; everyone else is
+  // locked to their own session userId.
+  const requestedUserId = req.nextUrl.searchParams.get("userId");
+  const isAdmin = session.role === "admin";
+  const userId = isAdmin && requestedUserId ? requestedUserId : session.id;
 
   // --- Path A: local dev (Prisma + SQLite) ---
   if (isDbAvailable()) {
@@ -91,10 +107,23 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ user });
 }
 
-// PATCH /api/auth/profile — update user profile
+// PATCH /api/auth/profile — update the current user's own profile.
+//
+// SECURITY: The userId is resolved EXCLUSIVELY from the verified session
+// cookie. The body's `userId` field is IGNORED for non-admin sessions.
+// Admins may pass `userId` to update another user's profile. This prevents
+// account A from editing account B's profile.
 export async function PATCH(req: NextRequest) {
+  const session = getSessionUser(req);
+  if (!session) {
+    return NextResponse.json(
+      { error: "Sesi berakhir. Silakan masuk kembali." },
+      { status: 401 }
+    );
+  }
+
   const body = await req.json();
-  const { userId, name, phone, city, company, address, bannerImage, logoImage } = body as {
+  const { userId: bodyUserId, name, phone, city, company, address, bannerImage, logoImage } = body as {
     userId?: string;
     name?: string;
     phone?: string;
@@ -105,12 +134,9 @@ export async function PATCH(req: NextRequest) {
     logoImage?: string;
   };
 
-  if (!userId) {
-    return NextResponse.json(
-      { error: "User ID wajib diisi." },
-      { status: 400 }
-    );
-  }
+  // Admins can target another user; non-admins are locked to their session id.
+  const isAdmin = session.role === "admin";
+  const userId = isAdmin && bodyUserId ? bodyUserId : session.id;
 
   const updateData: { name?: string; phone?: string | null; city?: string | null; company?: string | null; address?: string | null; bannerImage?: string | null; logoImage?: string | null } = {};
   if (name && name.trim()) updateData.name = name.trim();

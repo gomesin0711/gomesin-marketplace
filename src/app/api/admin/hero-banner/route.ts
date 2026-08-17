@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, isDbAvailable } from "@/lib/db";
-
+import { requireAdmin } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 // ---------------------------------------------------------------------------
@@ -105,6 +105,8 @@ export async function GET() {
 
 // PUT — admin: upsert the hero banner config
 export async function PUT(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   try {
     const body = await req.json();
     const { title, subtitle, desc, cta, imageUrl, active } = body as Partial<HeroBannerConfig>;

@@ -8907,3 +8907,114 @@ Stage Summary:
 - **Screenshots saved: YES** ✓ (all 4 PNGs saved to `/home/z/my-project/verify-wa-me-fix-shots/` + `report.json`)
 
 VERDICT: VERIFICATION PASSED. The wa.me fix is working correctly. All WhatsApp UI affordances are now `<button>` elements with `onClick` handlers calling `openExternalUrl()` (which prefers `window.top.open()` / `window.open()` over `window.location.href`), so the previous failure mode of the sandboxed iframe navigating itself to wa.me and getting blocked by `X-Frame-Options: DENY` no longer occurs.
+
+---
+Task ID: 8
+Agent: Chat-service session verification subagent
+Task: Update chat-service to verify session cookie on user:join and message events
+
+Work Log:
+- Read existing worklog (8855+ lines) to understand prior context — main app already has `src/lib/session.ts` (HMAC-signed `mesinku_session` cookie, format `base64url(JSON({id,role,exp})).hex_hmac_sha256_sig`, secret derived from `SESSION_SECRET` or `"mesinku:" + DATABASE_URL`). Multi-user data isolation in progress.
+- Inspected `mini-services/chat-service/index.ts` — confirmed it blindly trusted the client-supplied `data.userId` in `user:join` and `data.senderId`/`data.from` in message/typing/call events. This allowed account-A to call `socket.emit("user:join", { userId: "B" })` and receive B's private messages.
+- Inspected `mini-services/chat-service/package.json` — confirmed it's a standalone Bun project (no Next.js, no `@/` alias). Dependencies: `@prisma/client`, `prisma`, `socket.io`. Started via `bun --hot index.ts` (per `daemon.cjs` line 21 / `start-chat.cjs` line 22).
+- Added `import { createHmac, timingSafeEqual } from 'node:crypto'` at the top of `index.ts` (Bun supports `node:crypto` natively).
+- Inlined the session-verification logic from `src/lib/session.ts` as 4 private functions in `index.ts` (lines 16-103): `getSecret()`, `signPayload(payload)`, `b64urlDecode(s)`, `verifySessionToken(token)`, plus the public `verifySessionCookie(cookieHeader)` that parses the raw `Cookie:` header to find `mesinku_session=<token>`, splits at the last `.`, constant-time-compares the HMAC, base64url-decodes the payload, JSON-parses it, checks `exp > now`, and returns `{ id, role } | null`. The logic is a literal copy of the verification path in `src/lib/session.ts` (kept in sync per the inline comment).
+- Modified `user:join` handler (lines 187-207): now reads `socket.handshake.headers.cookie`, calls `verifySessionCookie`, and if it returns null → logs `user:join REJECTED (no/invalid session) socket=...`, acks `{ ok: false, error: 'Unauthorized' }`, and does NOT join any room. If verification succeeds → stores `socket.data.userId = sessionUser.id`, joins `user:${sessionUser.id}`, acks `{ ok: true }`, logs `user:join verified=<id>`. The client-supplied `data.userId` is IGNORED entirely (type changed to `{ userId?: string }`).
+- Modified `message:send` handler (lines 222-243): reads `socket.data.userId`; if not set → acks `{ ok: false, error: 'Not authenticated' }`. If `data.senderId` is provided AND differs from `verifiedUserId` → logs `message:send FORBIDDEN senderId=X != verified=Y socket=Z`, acks `{ ok: false, error: 'Forbidden: senderId mismatch', status: 403 }`. Otherwise proceeds with the existing logic using `verifiedUserId` as `senderId` for both DB persistence and room emit.
+- Modified `message:read` handler (lines 291-303): reads `socket.data.userId`; if not set → acks `{ ok: false, error: 'Not authenticated' }`. Uses `verifiedUserId` as the `userId` for both the Prisma `updateMany` `where.receiverId` filter and the `message:read-update` emit payload (ignoring the client-supplied `data.userId`; type changed to `{ userId?: string; partnerId: string }`). Only requires `data.partnerId` to be present.
+- Modified `typing:start` and `typing:stop` handlers (lines 328-340): reads `socket.data.userId`; if not set OR `data.senderId !== verifiedUserId` → silently returns (no emit). Otherwise emits `typing:update` with `typerId: verifiedUserId` (not the client value) to `user:${data.receiverId}`.
+- Modified all 5 call-signaling handlers: `call:request` (346-364), `call:accept` (366-374), `call:reject` (376-384), `call:end` (386-394), `call:signal` (398-408). Each now reads `socket.data.userId`; if not set → silent return. If `data.from` provided AND `data.from !== verifiedUserId` → silent return (rejects spoofed `from`). All emits use `verifiedUserId` as the authoritative `from` field in the relayed payload. Log lines now reference `verifiedUserId` instead of the client-supplied `from`.
+- Left the control HTTP server (port 3004) UNTOUCHED per the brief (localhost-only, trusted — used by Next.js API routes for server-side broadcasts via `POST /internal/broadcast`).
+- Left `listings:broadcast`, `listing:broadcast-new`, `listing:broadcast-pending` handlers UNTOUCHED — they are public fan-out events unrelated to user-private data (any client can trigger a listing cache invalidation; no security impact).
+- Added the verified userId to log messages wherever relevant: `user:join verified=<id>`, `message:send <verifiedId> -> <receiverId>`, `message:read userId=<verifiedId>`, `call:* <verifiedId> -> <to>`.
+- Verified TypeScript compiles cleanly: ran `bunx tsc --noEmit --strict --target esnext --module esnext --moduleResolution bundler --types node --skipLibCheck index.ts` → zero errors.
+- Killed orphaned chat-service PID 1503 (started at 01:20, was running `bun index.ts` without `--hot`, parent daemon had long since exited so no auto-restart was wired up). Re-ran `node start-chat.cjs` from project root — new chat-service PID 24903 now running `bun --hot index.ts` (with `--hot` enabled so future edits auto-reload). Verified via `ps -ef` and `curl http://localhost:3004/health` → `{"ok":true,"uptime":9.23,"clients":0}`. Log shows clean startup: `[chat-service] listening on port 3003 (path /)` + `[chat-service] control HTTP server listening on port 3004 (localhost-only)`.
+- Wrote end-to-end auth test `/home/z/my-project/_test-chat-auth.ts` (deleted after running) using `socket.io-client` + the main app's `createSessionToken` from `src/lib/session.ts` to mint a real token for an existing user (`cmswngcwr0000q4bs37na30qd`, Budi Santoso). Test ran 3 scenarios and ALL PASSED:
+  1. **Anonymous socket (no cookie)** → `user:join` ack = `{"ok":false,"error":"Unauthorized"}` ✓ (attacker cannot join arbitrary user rooms)
+  2. **Valid cookie + spoofed `userId`** → `user:join` ack = `{"ok":true}` ✓ (client-supplied userId was IGNORED; verified id from cookie used instead)
+  3. **Valid cookie + spoofed `senderId` in `message:send`** → ack = `{"ok":false,"error":"Forbidden: senderId mismatch","status":403}` ✓ (defense-in-depth rejected the spoofed senderId)
+
+Stage Summary:
+- **File modified**: `/home/z/my-project/mini-services/chat-service/index.ts` (336 → 475 lines). Added 88 lines of inlined session-verification helpers (`getSecret`, `signPayload`, `b64urlDecode`, `verifySessionToken`, `verifySessionCookie`) plus auth checks in 8 socket event handlers (`user:join`, `message:send`, `message:read`, `typing:start`, `typing:stop`, `call:request`, `call:accept`, `call:reject`, `call:end`, `call:signal`).
+- **Security fix**: The vulnerability where account-A could call `socket.emit("user:join", { userId: "B" })` and receive account-B's private messages is now CLOSED. All user identity in the chat-service is derived exclusively from the HMAC-signed `mesinku_session` cookie sent in the socket.io handshake. Client-supplied `userId`/`senderId`/`from` values are either ignored (user:join, message:read) or rejected via 403 ack if they don't match the verified session user (message:send) or silently dropped (typing/call events).
+- **Compatibility**: The change is backward-compatible for any client that was already sending the correct `senderId`/`from` matching their session cookie. Clients that were sending incorrect/spoofed values will now be rejected (as intended).
+- **Verified**: chat-service running on PID 24903 with `bun --hot index.ts` (auto-reloads on future edits). Control server on port 3004 healthy. End-to-end auth test passed all 3 scenarios (anonymous rejected, valid cookie accepted, spoofed senderId rejected with 403).
+- **Important caveat for client code**: The frontend socket.io client (in `useChatSocket` hook) MUST include the `mesinku_session` cookie in its handshake. Since socket.io uses `XMLHttpRequest`/`WebSocket` from the browser, cookies are sent automatically when connecting to the same origin (or via Caddy gateway on port 81 with `withCredentials`). If the socket.io client connects cross-origin without cookies, `user:join` will now fail with `Unauthorized`. This should "just work" for the existing frontend because the Caddy gateway routes `/socket.io/` (port 81 → port 3003) on the same origin as the Next.js app, so the browser's `mesinku_session` httpOnly cookie is included automatically in the handshake. No client-side change needed.
+
+---
+Task ID: 7
+Agent: Admin-route-hardening subagent
+Task: Add admin role verification to all /api/admin/* routes
+
+Work Log:
+- Read /home/z/my-project/worklog.md (8909 lines) — noted prior context: Task 1 chat-service, supabase config, Prisma fixes, and most recently the wa.me fix verification. No prior task had touched the /api/admin/* route authorization.
+- Read src/lib/session.ts (218 lines) — confirmed `requireAdmin(req: NextRequest)` returns `{ok:true,user}` for admins or `{ok:false,response}` with 401/403 NextResponse. Cookie name `mesinku_session`, HMAC-signed, 7-day TTL.
+- Listed all 16 files under src/app/api/admin/ and read each one fully to inventory handlers and identify whether GET returns public-facing data (banners/paket/settings/info are fetched by anonymous homepage code) vs admin-only data (stats, chat, listings moderation, categories management, sellers, users, monthly-report).
+- Cross-referenced call sites via Grep: `/api/admin/categories` is only called from admin.tsx → admin-only GET; `/api/admin/paket` is called from post-ad.tsx + profile.tsx + package-activate-dialog.tsx → public GET needed; `/api/admin/settings` is called from notification-sound.ts + use-site-assets.ts → public GET needed; `/api/admin/info` powers payment-proof chat routing on production → public GET needed; `/api/admin/banner[-2|-3]?` and `/api/admin/hero-banner` are called from ad-banner.tsx + admin.tsx → public GET needed; public homepage has separate `/api/categories` so the admin categories GET can be locked down.
+- Applied the standard pattern to every admin-only handler:
+    const adminCheck = requireAdmin(req);
+    if (!adminCheck.ok) return adminCheck.response;
+  plus `import { requireAdmin } from "@/lib/session";` at the top.
+- For routes whose GET is public (settings, hero-banner, banner, banner-2, banner-3, paket), ONLY the mutating handlers (PUT/POST/PATCH/DELETE) got the requireAdmin check; GET was left anonymous per task brief points 5 & 6.
+- For routes whose GET is admin-only (stats, chat, categories, monthly-report, sellers, users, listings), ALL handlers including GET got the requireAdmin check.
+- For `info/route.ts`: the only exported handler is a public GET that returns the first admin's `{id,name}` (needed by every payment-proof chat flow). No mutating handlers exist, so no changes were required — left untouched.
+- For handlers whose signature was `function GET()` (no req param), added `req: NextRequest` to the signature so requireAdmin could read the cookie. Added `NextRequest` to the import line where it wasn't already present (stats, sellers, users, settings).
+- For `settings/route.ts` PUT, the original signature was `req: Request` (Web standard Request, not NextRequest). Changed it to `req: NextRequest` so requireAdmin's type signature matches; the body's existing `body.userId` admin check is now redundant but was left intact per the "do NOT change other logic" rule.
+- For `categories/[id]/route.ts` DELETE, renamed the unused `_req` parameter to `req` so the requireAdmin call reads naturally and the variable counts as "used" for eslint's no-unused-vars rule.
+- Ran `bun run lint` — all 16 errors and 18 warnings are pre-existing in backup folders (`_backup_pre_*`), .cjs scripts (require() forbidden in TS), and untouched files (listing-card-carousel, login, package-activate-dialog). Zero new errors from my edits.
+- Ran `bunx tsc --noEmit` and filtered to src/app/api/admin/. Only two TS errors remain: `paket/route.ts` lines 265 and 315 — both pre-existing (`raw = JSON.parse(raw)` narrowing issue and `rawFeatures: string[] | undefined` not assignable). Verified by `git stash` + re-run tsc: the same errors existed at lines 261/311 before my edits (my 4 added import+preamble lines shifted them down by 4). I did NOT introduce them.
+
+Stage Summary:
+- **Files modified: 15 of 16** (all except `info/route.ts`, which has only a public GET).
+- **Handlers protected with requireAdmin: 23 total**
+  - Admin-only GET: stats, chat, categories (list), monthly-report, sellers, users, listings → 7 GET handlers
+  - Admin-only mutations: categories PATCH/DELETE, categories POST, listings PATCH/DELETE, sellers PATCH, users DELETE, upload-asset POST → 9 mutation handlers
+  - Admin-only mutations on routes with public GET: hero-banner PUT, banner PUT, banner-2 PUT, banner-3 PUT, paket POST/PUT/DELETE, settings PUT → 7 mutation handlers
+- **Handlers intentionally left anonymous (public GET)**: settings GET, hero-banner GET, banner GET, banner-2 GET, banner-3 GET, paket GET, info GET → 7 GET handlers (all return data shown on the public homepage / used by payment flows).
+- **Zero new lint/TS errors** introduced. Pre-existing errors in paket/route.ts (lines 265, 315) are unrelated to the auth change.
+- **Migration pattern**: every protected handler now starts with `const adminCheck = requireAdmin(req); if (!adminCheck.ok) return adminCheck.response;` — uniform across the codebase, easy to grep for, and impossible to forget when adding new admin endpoints.
+- **Defense-in-depth preserved**: settings/route.ts PUT and upload-asset/route.ts POST still have their original `body.userId` DB-lookup admin checks in place (now redundant but harmless — belt-and-suspenders).
+- **Next actions for downstream agents**:
+  1. The frontend admin UI (src/components/gomesin/views/admin.tsx) must send the `mesinku_session` cookie with all admin API calls. Because the cookie is httpOnly and SameSite=Lax, browser fetch() calls from the same origin will automatically include it — NO frontend code change needed for same-origin requests.
+  2. Any external tooling or server-side scripts (e.g. mini-services/chat-service) calling /api/admin/* endpoints will now get 401/403 unless they forward the session cookie. The chat-service already uses `getSessionUserFromCookieHeader()` from the same session module — no integration issue expected.
+  3. The settings PUT body still includes a `userId` field sent by the client; this is now dead code (requireAdmin short-circuits before the body.userId check fires). A future cleanup task could remove the body.userId auth path entirely.
+
+---
+Task ID: multi-user-isolation
+Agent: Main (multi-user data isolation)
+Task: Make the application multi-user so account A cannot see account B's data (and vice versa)
+
+Work Log:
+- Diagnosed the root cause: NO server-side session existed. The frontend stored `user.id` in localStorage (zustand persist) and passed it as `?userId=xxx` to all data API endpoints. Anyone knowing another user's ID could read/write that user's data.
+- Created `src/lib/session.ts` — HMAC-signed httpOnly cookie helpers:
+  - `createSessionToken(id, role)` — issues a `payload.signature` token (base64url JSON + HMAC-SHA256)
+  - `getSessionUser(req)` — verifies cookie, returns `{id, role}` or null (constant-time signature compare)
+  - `requireAdmin(req)` — returns `{ok:true, user}` or `{ok:false, response}` for admin-only routes
+  - `setSessionCookie(res, id, role)` / `clearSessionCookie(res)` — httpOnly, SameSite=Lax, 7-day TTL
+  - `getSessionUserFromCookieHeader(cookieHeader)` — for the chat-service mini-service
+- Updated `/api/auth/login` and `/api/auth/register` — every successful return path now sets the session cookie via a shared `authResponse()` helper.
+- Created `/api/auth/logout` (POST — clears cookie) and `/api/auth/me` (GET — returns the verified session user, ignoring any `?userId=` query param).
+- Hardened `/api/auth/profile` (GET + PATCH) — session cookie is authoritative; `?userId=`/body `userId` is IGNORED for non-admins. Admins can override.
+- Hardened `/api/auth/password` (PATCH) — uses `session.id`; body `userId` ignored. Account A can no longer change account B's password.
+- Hardened `/api/messages` (GET/POST/PATCH/DELETE) — session cookie authoritative for all message operations. POST verifies `senderId === session.id`. DELETE(single) verifies message ownership.
+- Hardened `/api/favorites` (GET/POST/DELETE) — session cookie authoritative.
+- Hardened `/api/my-listings` (GET) — smart dual-mode: session user querying own id → private (all listings incl. drafts); querying another user's id → public (only published listings). Admin override via `?all=1`.
+- Hardened `/api/listings` POST — requires session; `userId` is ALWAYS `session.id` (body `userId` ignored → prevents impersonation).
+- Hardened `/api/listings/[slug]` PATCH + DELETE — ownership check (`existing.userId === session.id` or admin). Supabase path also checks ownership.
+- Delegated admin-route hardening (Task ID 7) to a subagent — added `requireAdmin(req)` to 15 admin route files (23 handlers protected). Public-facing GETs (banners, settings, paket pricing) left anonymous since they're used by the homepage.
+- Delegated chat-service update (Task ID 8) to a subagent — `mini-services/chat-service/index.ts` now verifies the `mesinku_session` cookie from `socket.handshake.headers.cookie` on `user:join`. Spoofed userId is ignored; verified session user is used for all socket events (message:send, message:read, typing, call signaling).
+- Updated frontend `src/lib/store.ts` — `logout()` now fire-and-forgets `POST /api/auth/logout` to clear the server cookie.
+- Updated `src/components/gomesin/app-shell.tsx` — on mount, calls `/api/auth/me` (session-verified) instead of `/api/auth/profile?userId=`. If session is invalid, clears the local user (prevents stale localStorage user from appearing "logged in").
+
+Stage Summary:
+- Multi-user data isolation is now enforced SERVER-SIDE via an HMAC-signed httpOnly cookie. The frontend's `?userId=` query param is no longer trusted — the verified session cookie is the single source of truth.
+- Verified with curl tests (all PASSED):
+  - User B cannot read admin's messages (returns B's own 0 conversations, not admin's)
+  - User B cannot read admin's profile (returns B's own profile, not admin's)
+  - User B cannot change admin's password (server uses session.id, body userId ignored)
+  - User B cannot edit/delete admin's listings (403 "Akses ditolak: Anda bukan pemilik")
+  - Anonymous users cannot post listings (401)
+  - Admin override works (admin can view any user's profile/listings via ?userId=)
+  - Logout clears the cookie (subsequent /api/auth/me returns 401)
+- Files created: `src/lib/session.ts`, `src/app/api/auth/logout/route.ts`, `src/app/api/auth/me/route.ts`
+- Files modified: login, register, profile, password, messages, favorites, my-listings, listings, listings/[slug], store.ts, app-shell.tsx, all /api/admin/* routes, chat-service/index.ts

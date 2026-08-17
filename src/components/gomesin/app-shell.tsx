@@ -67,22 +67,44 @@ export function AppShell() {
     });
   }, []);
 
-  // Rehydrate Zustand store (user) from localStorage on mount, then fetch fresh profile
+  // Rehydrate Zustand store (user) from localStorage on mount, then verify
+  // the session against the server. If the server says the session is invalid
+  // (cookie missing/expired), we clear the local user — this prevents a stale
+  // localStorage user from being shown as "logged in" when they're actually
+  // not. This is the core of multi-user data isolation: the verified session
+  // cookie is the single source of truth for "who am I".
   useEffect(() => {
-    // Rehydrate from localStorage first
+    // Rehydrate from localStorage first (so the UI doesn't flash a logged-out
+    // state if the user is actually still logged in).
     useStore.persist.rehydrate();
-    // Then fetch fresh user data from API (ensures banner/logo/latest data)
-    const uid = useStore.getState().user?.id;
-    if (uid) {
-      fetch(`/api/auth/profile?userId=${uid}`)
-        .then((r) => r.ok ? r.json() : null)
-        .then((data) => {
-          if (data?.user) {
-            useStore.getState().setUser(data.user);
-          }
-        })
-        .catch(() => {});
-    }
+
+    // Verify the session via the server. /api/auth/me resolves the user from
+    // the httpOnly cookie — NOT from any client-supplied userId.
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((r) => {
+        if (!r.ok) return null;
+        return r.json();
+      })
+      .then((data) => {
+        if (data?.user) {
+          // Session is valid — refresh the local user object with the freshest
+          // data from the server (bannerImage, logoImage, etc.).
+          useStore.getState().setUser(data.user);
+        } else {
+          // Session invalid — clear the local user so the UI reflects reality.
+          // (Don't call full logout() because that would also navigate home;
+          // just clear the user state.)
+          useStore.setState({
+            user: null,
+            favorites: [],
+            favoritesSeenCount: 0,
+            recents: [],
+          });
+        }
+      })
+      .catch(() => {
+        // Network error — leave the local user as-is (optimistic).
+      });
   }, []);
 
   // scroll to top on view change

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAdmin } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -7,6 +8,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   try {
     const { id } = await params;
     const body = await req.json();
@@ -19,9 +22,11 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   try {
     const { id } = await params;
     await db.category.delete({ where: { id } });

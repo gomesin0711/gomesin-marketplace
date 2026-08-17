@@ -3,6 +3,7 @@ import { db, isDbAvailable } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
 import { fallbackRegisterUser } from "@/lib/auth-fallback";
 import { phonesMatch, normalizePhone } from "@/lib/otp-store";
+import { setSessionCookie } from "@/lib/session";
 
 // ---------------------------------------------------------------------------
 // Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
@@ -134,7 +135,11 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      return NextResponse.json({ user }, { status: 201 });
+      // Issue session cookie alongside the new user response so subsequent
+      // requests are authenticated (multi-user data isolation).
+      const res = NextResponse.json({ user }, { status: 201 });
+      setSessionCookie(res, user.id, user.role || "user");
+      return res;
     } catch (prismaErr) {
       console.error("[auth/register] Prisma error, falling back to Supabase:", prismaErr);
       // fall through to Supabase
@@ -236,7 +241,9 @@ export async function POST(req: NextRequest) {
       console.error("[auth/register] Supabase insert error:", insertErr);
       // fall through to in-memory fallback as last resort
     } else {
-      return NextResponse.json({ user: newRow }, { status: 201 });
+      const res = NextResponse.json({ user: newRow }, { status: 201 });
+      setSessionCookie(res, newRow.id, newRow.role || "user");
+      return res;
     }
   } catch (supaErr) {
     console.error("[auth/register] Supabase fallback error:", supaErr);
@@ -260,5 +267,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
-  return NextResponse.json({ user: result.user }, { status: 201 });
+  const res = NextResponse.json({ user: result.user }, { status: 201 });
+  setSessionCookie(res, result.user.id, result.user.role || "user");
+  return res;
 }

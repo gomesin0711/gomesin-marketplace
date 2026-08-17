@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db, isDbAvailable } from "@/lib/db";
-
+import { requireAdmin } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 // ---------------------------------------------------------------------------
@@ -95,7 +95,9 @@ export async function GET() {
 }
 
 /** PUT /api/admin/settings — update settings (admin-only). */
-export async function PUT(req: Request) {
+export async function PUT(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   let body: Record<string, unknown>;
   try {
     body = await req.json();

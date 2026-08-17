@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, isDbAvailable } from "@/lib/db";
 import { getPaketMap } from "@/lib/paket";
+import { requireAdmin } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,8 @@ function emptyMonthlyReport(year: number) {
 // user baru, dan rincian per packageType (count + omzet). Dipakai tab
 // "Laporan Bulanan" di panel admin.
 export async function GET(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   const { searchParams } = new URL(req.url);
   const now = new Date();
   const year = parseInt(searchParams.get("year") || String(now.getFullYear()), 10);

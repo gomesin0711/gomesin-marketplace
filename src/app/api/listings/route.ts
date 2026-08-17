@@ -7,6 +7,7 @@ import { getFallbackListings } from "@/lib/fallback-data";
 import type { ListingFilters } from "@/lib/fallback-data";
 import { broadcastListingPending } from "@/lib/broadcast";
 import { normalizeSupabaseDate } from "@/lib/supabase-helpers";
+import { getSessionUser } from "@/lib/session";
 
 // ---------------------------------------------------------------------------
 // Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
@@ -353,8 +354,25 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    // SECURITY: A listing can only be created by an authenticated user.
+    // The userId is resolved from the verified session cookie; the body's
+    // `userId` field is IGNORED for non-admins. This prevents account A from
+    // posting listings "as" account B.
+    const session = getSessionUser(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: "Anda harus masuk untuk pasang iklan." },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
-    const { title, description, price, priceType, condition, brand, yearProduced, city, province, categoryId, images, specs, featured, package: pkg, paymentMethod, uniqueCode, userId, userName, userPhone, saveAsDraft } = body;
+    const { title, description, price, priceType, condition, brand, yearProduced, city, province, categoryId, images, specs, featured, package: pkg, paymentMethod, uniqueCode, userName, userPhone, saveAsDraft } = body;
+
+    // The listing's userId is ALWAYS the session user's id (ignore any client-
+    // supplied userId to prevent impersonation). Admins are also locked to
+    // their own session id when posting listings (no impersonation).
+    const userId = session.id;
 
     // Draft mode ("Simpan Dulu"): only title is required, skip payment verification.
     const isDraft = saveAsDraft === true;

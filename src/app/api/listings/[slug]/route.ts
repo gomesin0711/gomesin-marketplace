@@ -5,6 +5,7 @@ import { getPaketMap } from "@/lib/paket";
 import { saveImagesToLocal } from "@/lib/save-image";
 import { getFallbackListingBySlug } from "@/lib/fallback-data";
 import { normalizeSupabaseDate } from "@/lib/supabase-helpers";
+import { getSessionUser } from "@/lib/session";
 
 // ---------------------------------------------------------------------------
 // Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
@@ -201,6 +202,15 @@ export async function PATCH(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
+    // SECURITY: Only the listing's owner (or an admin) may edit it.
+    const session = getSessionUser(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: "Anda harus masuk untuk mengubah iklan." },
+        { status: 401 }
+      );
+    }
+
     const { slug } = await params;
     const body = await req.json();
     const { title, description, price, priceType, condition, brand, yearProduced, city, province, categoryId, images, specs, package: pkg, paymentMethod, uniqueCode, status } = body;
@@ -211,6 +221,15 @@ export async function PATCH(
         const existing = await db.listing.findUnique({ where: { slug } });
         if (!existing) {
           return NextResponse.json({ error: "Iklan tidak ditemukan" }, { status: 404 });
+        }
+
+        // Ownership check: only the listing's owner (or an admin) may edit it.
+        const isAdmin = session.role === "admin";
+        if (!isAdmin && existing.userId !== session.id) {
+          return NextResponse.json(
+            { error: "Akses ditolak: Anda bukan pemilik iklan ini." },
+            { status: 403 }
+          );
         }
 
         const data: any = {};
@@ -304,12 +323,21 @@ export async function PATCH(
 
     const { data: existingRow, error: findErr } = await supabase
       .from("Listing")
-      .select("id")
+      .select("id, userId")
       .eq("slug", slug)
       .limit(1)
       .single();
     if (findErr || !existingRow) {
       return NextResponse.json({ error: "Iklan tidak ditemukan" }, { status: 404 });
+    }
+
+    // Ownership check (Supabase path).
+    const isAdmin = session.role === "admin";
+    if (!isAdmin && existingRow.userId !== session.id) {
+      return NextResponse.json(
+        { error: "Akses ditolak: Anda bukan pemilik iklan ini." },
+        { status: 403 }
+      );
     }
 
     const data: any = {};
@@ -416,6 +444,15 @@ export async function DELETE(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
+    // SECURITY: Only the listing's owner (or an admin) may delete it.
+    const session = getSessionUser(_req);
+    if (!session) {
+      return NextResponse.json(
+        { error: "Anda harus masuk untuk menghapus iklan." },
+        { status: 401 }
+      );
+    }
+
     const { slug } = await params;
 
     // --- Path A: local dev (Prisma + SQLite) ---
@@ -424,6 +461,15 @@ export async function DELETE(
         const existing = await db.listing.findUnique({ where: { slug } });
         if (!existing) {
           return NextResponse.json({ error: "Iklan tidak ditemukan" }, { status: 404 });
+        }
+
+        // Ownership check.
+        const isAdmin = session.role === "admin";
+        if (!isAdmin && existing.userId !== session.id) {
+          return NextResponse.json(
+            { error: "Akses ditolak: Anda bukan pemilik iklan ini." },
+            { status: 403 }
+          );
         }
 
         await db.listing.delete({ where: { id: existing.id } });
@@ -440,12 +486,21 @@ export async function DELETE(
 
     const { data: existingRow, error: findErr } = await supabase
       .from("Listing")
-      .select("id")
+      .select("id, userId")
       .eq("slug", slug)
       .limit(1)
       .single();
     if (findErr || !existingRow) {
       return NextResponse.json({ error: "Iklan tidak ditemukan" }, { status: 404 });
+    }
+
+    // Ownership check (Supabase path).
+    const isAdmin = session.role === "admin";
+    if (!isAdmin && existingRow.userId !== session.id) {
+      return NextResponse.json(
+        { error: "Akses ditolak: Anda bukan pemilik iklan ini." },
+        { status: 403 }
+      );
     }
 
     const { error: deleteErr } = await supabase

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAdmin } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/admin/chat
 // Returns ALL conversations across ALL users — admin oversight view.
 export async function GET(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   try {
     // Fetch ALL messages (no include — Supabase doesn't support nested includes)
     const messages = await db.message.findMany({

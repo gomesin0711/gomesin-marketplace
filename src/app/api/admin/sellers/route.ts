@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, isDbAvailable } from "@/lib/db";
-
+import { requireAdmin } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 // ---------------------------------------------------------------------------
@@ -20,7 +20,9 @@ async function getSupabase() {
 }
 
 // GET: list all sellers with listing counts
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   // --- Path A: local dev (Prisma + SQLite) ---
   if (isDbAvailable()) {
     try {
@@ -99,6 +101,8 @@ export async function GET() {
 
 // PATCH: toggle verified status
 export async function PATCH(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   try {
     const { id, verified } = await req.json();
     if (!id) return NextResponse.json({ error: "ID wajib" }, { status: 400 });

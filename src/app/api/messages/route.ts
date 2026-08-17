@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, isDbAvailable } from "@/lib/db";
+import { getSessionUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -67,12 +68,20 @@ const CHAT_DELETED_MARKER = "__SYSTEM__:CHAT_DELETED";
 const isMarker = (content: string | null | undefined): boolean =>
   !!content && content === CHAT_DELETED_MARKER;
 
-// GET /api/messages?userId=<id>
+// GET /api/messages — return the CURRENT user's conversations.
+//
+// SECURITY: userId is resolved EXCLUSIVELY from the verified session cookie.
+// The `?userId=xxx` query param is IGNORED. This prevents account A from
+// reading account B's private messages.
 export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get("userId");
-  if (!userId) {
-    return NextResponse.json({ error: "User ID wajib" }, { status: 400 });
+  const session = getSessionUser(req);
+  if (!session) {
+    return NextResponse.json(
+      { error: "Sesi berakhir. Silakan masuk kembali." },
+      { status: 401 }
+    );
   }
+  const userId = session.id;
 
   // --- Path A: local dev (Prisma + SQLite) ---
   if (isDbAvailable()) {
@@ -423,13 +432,34 @@ async function getMessagesSupabase(userId: string) {
   return { conversations };
 }
 
-// POST /api/messages — save a new message
+// POST /api/messages — save a new message.
+//
+// SECURITY: senderId is resolved from the verified session cookie; the
+// body's `senderId` MUST match. This prevents account A from impersonating
+// account B when sending messages (or sending messages "as" B).
 export async function POST(req: NextRequest) {
   try {
+    const session = getSessionUser(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: "Sesi berakhir. Silakan masuk kembali." },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const { senderId, receiverId, content, image, listingId, listingTitle } = body;
 
-    if (!senderId || !receiverId || (!content?.trim() && !image)) {
+    // The sender MUST be the authenticated session user. Ignore the
+    // client-supplied senderId if it doesn't match — fail closed.
+    if (senderId !== session.id) {
+      return NextResponse.json(
+        { error: "Akses ditolak: senderId tidak sesuai sesi." },
+        { status: 403 }
+      );
+    }
+
+    if (!receiverId || (!content?.trim() && !image)) {
       return NextResponse.json({ error: "senderId, receiverId, content/image wajib diisi" }, { status: 400 });
     }
     if (senderId === receiverId) {
@@ -518,13 +548,32 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH /api/messages — mark messages from partnerId to userId as read
+// PATCH /api/messages — mark messages from partnerId to CURRENT user as read.
+//
+// SECURITY: userId is resolved from the verified session cookie; the body's
+// `userId` MUST match. This prevents account A from manipulating account B's
+// read state.
 export async function PATCH(req: NextRequest) {
   try {
+    const session = getSessionUser(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: "Sesi berakhir. Silakan masuk kembali." },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
-    const { userId, partnerId } = body;
-    if (!userId || !partnerId) {
-      return NextResponse.json({ error: "userId dan partnerId wajib diisi" }, { status: 400 });
+    const { userId: bodyUserId, partnerId } = body;
+    if (bodyUserId && bodyUserId !== session.id) {
+      return NextResponse.json(
+        { error: "Akses ditolak: userId tidak sesuai sesi." },
+        { status: 403 }
+      );
+    }
+    const userId = session.id;
+    if (!partnerId) {
+      return NextResponse.json({ error: "partnerId wajib diisi" }, { status: 400 });
     }
 
     if (isDbAvailable()) {
@@ -562,21 +611,41 @@ export async function PATCH(req: NextRequest) {
 //
 // Two modes:
 //   1. Single-message delete (body.messageId set): hard-deletes the single
-//      message row. (Used by per-message delete — currently the frontend
-//      only does this locally, but the endpoint is kept for compatibility.)
-//   2. Conversation-level "delete"/"clear" (body.userId + body.partnerId):
-//      SOFT-DELETE only — inserts a marker message instead of deleting real
-//      messages. This ensures the OTHER party's copy of the conversation is
-//      preserved. The GET handler filters out messages up to the user's
-//      latest marker. Both "Clear chat" and "Delete chat" use this mode.
+//      message row. SECURITY: only allowed if the message belongs to the
+//      current session user (as either sender or receiver).
+//   2. Conversation-level "delete"/"clear" (body.partnerId): SOFT-DELETE —
+//      inserts a marker message. SECURITY: the current user (resolved from
+//      session) is the one whose view is cleared.
 export async function DELETE(req: NextRequest) {
   try {
+    const session = getSessionUser(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: "Sesi berakhir. Silakan masuk kembali." },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
 
     // --- Mode 1: single-message hard delete ---
     if (body.messageId) {
+      // Verify ownership before deleting.
       if (isDbAvailable()) {
         try {
+          const msg = await db.message.findUnique({
+            where: { id: body.messageId },
+            select: { senderId: true, receiverId: true },
+          });
+          if (!msg) {
+            return NextResponse.json({ error: "Pesan tidak ditemukan" }, { status: 404 });
+          }
+          if (msg.senderId !== session.id && msg.receiverId !== session.id) {
+            return NextResponse.json(
+              { error: "Akses ditolak: pesan ini bukan milik Anda." },
+              { status: 403 }
+            );
+          }
           await db.message.delete({ where: { id: body.messageId } });
           return NextResponse.json({ ok: true, deleted: 1 });
         } catch (prismaErr) {
@@ -584,15 +653,38 @@ export async function DELETE(req: NextRequest) {
         }
       }
       const supabase = await getSupabase();
+      // Ownership check on Supabase path too.
+      const { data: msgRow } = await supabase
+        .from("Message")
+        .select("senderId,receiverId")
+        .eq("id", body.messageId)
+        .limit(1)
+        .maybeSingle();
+      if (!msgRow) {
+        return NextResponse.json({ error: "Pesan tidak ditemukan" }, { status: 404 });
+      }
+      if (msgRow.senderId !== session.id && msgRow.receiverId !== session.id) {
+        return NextResponse.json(
+          { error: "Akses ditolak: pesan ini bukan milik Anda." },
+          { status: 403 }
+        );
+      }
       const { error } = await supabase.from("Message").delete().eq("id", body.messageId);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ ok: true, deleted: 1 });
     }
 
     // --- Mode 2: conversation-level soft delete (marker message) ---
-    const { userId, partnerId } = body;
-    if (!userId || !partnerId) {
-      return NextResponse.json({ error: "userId dan partnerId wajib" }, { status: 400 });
+    const { userId: bodyUserId, partnerId } = body;
+    if (bodyUserId && bodyUserId !== session.id) {
+      return NextResponse.json(
+        { error: "Akses ditolak: userId tidak sesuai sesi." },
+        { status: 403 }
+      );
+    }
+    const userId = session.id;
+    if (!partnerId) {
+      return NextResponse.json({ error: "partnerId wajib" }, { status: 400 });
     }
     if (userId === partnerId) {
       return NextResponse.json({ error: "Tidak bisa hapus chat dengan diri sendiri" }, { status: 400 });

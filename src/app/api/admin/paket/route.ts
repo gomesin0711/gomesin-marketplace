@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, isDbAvailable } from "@/lib/db";
-
+import { requireAdmin } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 // ---------------------------------------------------------------------------
@@ -147,6 +147,8 @@ export async function GET() {
 
 // CREATE new paket
 export async function POST(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   try {
     const body = await req.json();
     const { key, name, price, originalPrice, duration, maxPhotos, features, active, sortOrder } = body;
@@ -238,6 +240,8 @@ export async function POST(req: NextRequest) {
 
 // UPDATE existing paket
 export async function PUT(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   try {
     const body = await req.json();
     const { id, name, price, originalPrice, duration, maxPhotos, features, active, sortOrder } = body;
@@ -333,6 +337,8 @@ export async function PUT(req: NextRequest) {
 
 // DELETE paket
 export async function DELETE(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   try {
     const { id } = await req.json();
     if (!id) return NextResponse.json({ error: "ID wajib" }, { status: 400 });

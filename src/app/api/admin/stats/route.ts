@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db, isDbAvailable } from "@/lib/db";
 import { getPaketMap } from "@/lib/paket";
+import { requireAdmin } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,9 @@ function emptyStats() {
   };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   if (!isDbAvailable()) {
     // Try Supabase directly (Vercel)
     return getStatsFromSupabase();

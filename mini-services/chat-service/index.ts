@@ -9,8 +9,98 @@
 // way to expose a plain HTTP endpoint alongside it.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'http'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { Server } from 'socket.io'
 import { PrismaClient } from '@prisma/client'
+
+// ── Session cookie verification (inlined from src/lib/session.ts) ──────────
+// The chat-service is a standalone Bun project — no @/ alias, no Next.js —
+// so it can't import the shared `getSessionUserFromCookieHeader`. To keep
+// the secret derivation and HMAC verification identical to the main app,
+// this is a literal copy of the verification path in src/lib/session.ts.
+// Keep these two files in sync if the token format changes.
+const SESSION_COOKIE_NAME = 'mesinku_session'
+
+function getSecret(): string {
+  const envSecret = process.env.SESSION_SECRET
+  if (envSecret && envSecret.length >= 16) return envSecret
+  const dbUrl = process.env.DATABASE_URL || 'mesinku-dev-fallback-secret'
+  return 'mesinku:' + dbUrl
+}
+
+function signPayload(payload: string): string {
+  return createHmac('sha256', getSecret()).update(payload).digest('hex')
+}
+
+function b64urlDecode(s: string): string | null {
+  try {
+    return Buffer.from(s, 'base64url').toString('utf8')
+  } catch {
+    return null
+  }
+}
+
+type SessionPayload = { id: string; role: string; exp: number }
+
+function verifySessionToken(token: string): SessionPayload | null {
+  if (!token || typeof token !== 'string') return null
+  const dotIdx = token.lastIndexOf('.')
+  if (dotIdx <= 0 || dotIdx === token.length - 1) return null
+
+  const payloadStr = token.slice(0, dotIdx)
+  const sig = token.slice(dotIdx + 1)
+  const expectedSig = signPayload(payloadStr)
+
+  // Constant-time signature comparison to prevent timing attacks.
+  try {
+    const a = Buffer.from(sig, 'hex')
+    const b = Buffer.from(expectedSig, 'hex')
+    if (a.length !== b.length || !timingSafeEqual(a, b)) return null
+  } catch {
+    return null
+  }
+
+  const decoded = b64urlDecode(payloadStr)
+  if (!decoded) return null
+  let payload: SessionPayload
+  try {
+    payload = JSON.parse(decoded)
+  } catch {
+    return null
+  }
+  if (!payload.id || typeof payload.exp !== 'number') return null
+  if (payload.exp < Math.floor(Date.now() / 1000)) return null
+  return payload
+}
+
+/**
+ * Verify the session cookie from a raw Cookie header string (as found in
+ * `socket.handshake.headers.cookie`). Returns the verified user
+ * `{ id, role }`, or null if the cookie is missing/invalid/expired.
+ *
+ * The client-supplied userId in `user:join` is NEVER trusted — only the
+ * HMAC-signed cookie identifies the user. This prevents account-A from
+ * joining account-B's `user:B` room and receiving their private messages.
+ */
+function verifySessionCookie(
+  cookieHeader: string | null | undefined
+): { id: string; role: string } | null {
+  if (!cookieHeader) return null
+  let token: string | undefined
+  for (const part of cookieHeader.split(';')) {
+    const idx = part.indexOf('=')
+    if (idx < 0) continue
+    const name = part.slice(0, idx).trim()
+    if (name === SESSION_COOKIE_NAME) {
+      token = decodeURIComponent(part.slice(idx + 1).trim())
+      break
+    }
+  }
+  if (!token) return null
+  const payload = verifySessionToken(token)
+  if (!payload) return null
+  return { id: payload.id, role: payload.role }
+}
 
 const PORT = 3003
 const CONTROL_PORT = 3004
@@ -95,15 +185,24 @@ io.on('connection', (socket) => {
   console.log(`[chat-service] connect ${socket.id}`)
 
   // Client authenticates by joining their user room.
-  socket.on('user:join', (data: { userId: string }, ack?: (res: any) => void) => {
-    const { userId } = data
-    if (!userId) {
-      ack?.({ ok: false, error: 'userId wajib' })
+  // The session cookie from the socket.io handshake is verified with HMAC.
+  // The client-supplied `data.userId` is IGNORED — only the verified id
+  // from the signed cookie is used. This prevents account-A from calling
+  // `socket.emit('user:join', { userId: 'B' })` and receiving B's messages.
+  socket.on('user:join', (data: { userId?: string }, ack?: (res: any) => void) => {
+    const sessionUser = verifySessionCookie(socket.handshake.headers.cookie)
+    if (!sessionUser) {
+      console.log(
+        `[chat-service] user:join REJECTED (no/invalid session) socket=${socket.id}`
+      )
+      ack?.({ ok: false, error: 'Unauthorized' })
       return
     }
-    socket.data.userId = userId
-    socket.join(`user:${userId}`)
-    console.log(`[chat-service] user:join ${userId} (socket ${socket.id})`)
+    socket.data.userId = sessionUser.id
+    socket.join(`user:${sessionUser.id}`)
+    console.log(
+      `[chat-service] user:join verified=${sessionUser.id} (socket ${socket.id})`
+    )
     ack?.({ ok: true })
   })
 
@@ -122,9 +221,24 @@ io.on('connection', (socket) => {
       ack?: (res: any) => void
     ) => {
       try {
-        const { senderId, receiverId, content, image, listingId, listingTitle } = data
-        if (!senderId || !receiverId || (!content?.trim() && !image)) {
-          ack?.({ ok: false, error: 'senderId, receiverId, content/image wajib' })
+        const verifiedUserId = socket.data.userId
+        if (!verifiedUserId) {
+          ack?.({ ok: false, error: 'Not authenticated' })
+          return
+        }
+        // Defense-in-depth: reject if the client-supplied senderId does not
+        // match the verified session user. We always persist the VERIFIED id.
+        if (data.senderId && data.senderId !== verifiedUserId) {
+          console.log(
+            `[chat-service] message:send FORBIDDEN senderId=${data.senderId} != verified=${verifiedUserId} socket=${socket.id}`
+          )
+          ack?.({ ok: false, error: 'Forbidden: senderId mismatch', status: 403 })
+          return
+        }
+        const senderId = verifiedUserId
+        const { receiverId, content, image, listingId, listingTitle } = data
+        if (!receiverId || (!content?.trim() && !image)) {
+          ack?.({ ok: false, error: 'receiverId, content/image wajib' })
           return
         }
 
@@ -174,11 +288,17 @@ io.on('connection', (socket) => {
   // Mark messages from partnerId to userId as read, notify partner.
   socket.on(
     'message:read',
-    async (data: { userId: string; partnerId: string }, ack?: (res: any) => void) => {
+    async (data: { userId?: string; partnerId: string }, ack?: (res: any) => void) => {
       try {
-        const { userId, partnerId } = data
-        if (!userId || !partnerId) {
-          ack?.({ ok: false, error: 'userId dan partnerId wajib' })
+        const verifiedUserId = socket.data.userId
+        if (!verifiedUserId) {
+          ack?.({ ok: false, error: 'Not authenticated' })
+          return
+        }
+        const userId = verifiedUserId // ignore client-supplied data.userId
+        const { partnerId } = data
+        if (!partnerId) {
+          ack?.({ ok: false, error: 'partnerId wajib' })
           return
         }
 
@@ -206,13 +326,17 @@ io.on('connection', (socket) => {
   )
 
   socket.on('typing:start', (data: { senderId: string; receiverId: string }) => {
-    const { senderId, receiverId } = data
-    io.to(`user:${receiverId}`).emit('typing:update', { typerId: senderId, isTyping: true })
+    const verifiedUserId = socket.data.userId
+    if (!verifiedUserId) return
+    if (data.senderId !== verifiedUserId) return // reject spoofed senderId
+    io.to(`user:${data.receiverId}`).emit('typing:update', { typerId: verifiedUserId, isTyping: true })
   })
 
   socket.on('typing:stop', (data: { senderId: string; receiverId: string }) => {
-    const { senderId, receiverId } = data
-    io.to(`user:${receiverId}`).emit('typing:update', { typerId: senderId, isTyping: false })
+    const verifiedUserId = socket.data.userId
+    if (!verifiedUserId) return
+    if (data.senderId !== verifiedUserId) return // reject spoofed senderId
+    io.to(`user:${data.receiverId}`).emit('typing:update', { typerId: verifiedUserId, isTyping: false })
   })
 
   // ── In-app call signaling ──────────────────────────────────────────────
@@ -229,32 +353,44 @@ io.on('connection', (socket) => {
       type: 'voice' | 'video'
       callId: string
     }) => {
-      const { from, fromName, fromImage, to, type, callId } = data
-      if (!from || !to || !callId) return
-      io.to(`user:${to}`).emit('call:incoming', { from, fromName, fromImage, to, type, callId })
-      console.log(`[chat-service] call:request ${from} -> ${to} type=${type} callId=${callId}`)
+      const verifiedUserId = socket.data.userId
+      if (!verifiedUserId) return
+      const { fromName, fromImage, to, type, callId } = data
+      if (!data.from || !to || !callId) return
+      if (data.from !== verifiedUserId) return // reject spoofed `from`
+      io.to(`user:${to}`).emit('call:incoming', { from: verifiedUserId, fromName, fromImage, to, type, callId })
+      console.log(`[chat-service] call:request ${verifiedUserId} -> ${to} type=${type} callId=${callId}`)
     }
   )
 
   socket.on('call:accept', (data: { from: string; to: string; callId: string }) => {
-    const { from, to, callId } = data
-    if (!from || !to || !callId) return
-    io.to(`user:${to}`).emit('call:accepted', { from, callId })
-    console.log(`[chat-service] call:accept ${from} -> ${to} callId=${callId}`)
+    const verifiedUserId = socket.data.userId
+    if (!verifiedUserId) return
+    const { to, callId } = data
+    if (!data.from || !to || !callId) return
+    if (data.from !== verifiedUserId) return // reject spoofed `from`
+    io.to(`user:${to}`).emit('call:accepted', { from: verifiedUserId, callId })
+    console.log(`[chat-service] call:accept ${verifiedUserId} -> ${to} callId=${callId}`)
   })
 
   socket.on('call:reject', (data: { from: string; to: string; callId: string }) => {
-    const { from, to, callId } = data
-    if (!from || !to || !callId) return
-    io.to(`user:${to}`).emit('call:rejected', { from, callId })
-    console.log(`[chat-service] call:reject ${from} -> ${to} callId=${callId}`)
+    const verifiedUserId = socket.data.userId
+    if (!verifiedUserId) return
+    const { to, callId } = data
+    if (!data.from || !to || !callId) return
+    if (data.from !== verifiedUserId) return // reject spoofed `from`
+    io.to(`user:${to}`).emit('call:rejected', { from: verifiedUserId, callId })
+    console.log(`[chat-service] call:reject ${verifiedUserId} -> ${to} callId=${callId}`)
   })
 
   socket.on('call:end', (data: { from: string; to: string; callId: string }) => {
-    const { from, to, callId } = data
-    if (!from || !to || !callId) return
-    io.to(`user:${to}`).emit('call:ended', { from, callId })
-    console.log(`[chat-service] call:end ${from} -> ${to} callId=${callId}`)
+    const verifiedUserId = socket.data.userId
+    if (!verifiedUserId) return
+    const { to, callId } = data
+    if (!data.from || !to || !callId) return
+    if (data.from !== verifiedUserId) return // reject spoofed `from`
+    io.to(`user:${to}`).emit('call:ended', { from: verifiedUserId, callId })
+    console.log(`[chat-service] call:end ${verifiedUserId} -> ${to} callId=${callId}`)
   })
 
   // WebRTC signaling relay — SDP offer/answer + ICE candidates.
@@ -262,9 +398,12 @@ io.on('connection', (socket) => {
   socket.on(
     'call:signal',
     (data: { from: string; to: string; callId: string; signal: any }) => {
-      const { from, to, callId, signal } = data
-      if (!from || !to || !callId) return
-      io.to(`user:${to}`).emit('call:signal', { from, callId, signal })
+      const verifiedUserId = socket.data.userId
+      if (!verifiedUserId) return
+      const { to, callId, signal } = data
+      if (!data.from || !to || !callId) return
+      if (data.from !== verifiedUserId) return // reject spoofed `from`
+      io.to(`user:${to}`).emit('call:signal', { from: verifiedUserId, callId, signal })
     }
   )
 

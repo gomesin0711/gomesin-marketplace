@@ -3,6 +3,7 @@ import { writeFile, mkdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { db, isDbAvailable } from "@/lib/db";
+import { requireAdmin } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +70,8 @@ const MAX_SIZE: Record<string, number> = {
 const PUBLIC_DIR = join(process.cwd(), "public");
 
 export async function POST(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   try {
     const formData = await req.formData();
     const file = formData.get("file");

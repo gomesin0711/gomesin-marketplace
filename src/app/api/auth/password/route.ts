@@ -2,19 +2,31 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/auth";
 import { fallbackChangePassword } from "@/lib/auth-fallback";
+import { getSessionUser } from "@/lib/session";
 
-// PATCH /api/auth/password — change user password
+// PATCH /api/auth/password — change the CURRENT user's password.
+//
+// SECURITY: userId is resolved EXCLUSIVELY from the verified session cookie.
+// The body's `userId` field is IGNORED. This prevents account A from changing
+// account B's password by simply passing B's userId.
 export async function PATCH(req: NextRequest) {
+  const session = getSessionUser(req);
+  if (!session) {
+    return NextResponse.json(
+      { error: "Sesi berakhir. Silakan masuk kembali." },
+      { status: 401 }
+    );
+  }
+
   const body = await req.json();
-  const { userId, currentPassword, newPassword } = body as {
-    userId?: string;
+  const { currentPassword, newPassword } = body as {
+    userId?: string; // ignored — resolved from session
     currentPassword?: string;
     newPassword?: string;
   };
 
-  if (!userId) {
-    return NextResponse.json({ error: "User ID wajib diisi." }, { status: 400 });
-  }
+  const userId = session.id;
+
   if (!currentPassword || !newPassword) {
     return NextResponse.json({ error: "Kata sandi lama dan baru wajib diisi." }, { status: 400 });
   }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, isDbAvailable } from "@/lib/db";
-
+import { requireAdmin } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 // ---------------------------------------------------------------------------
@@ -104,6 +104,8 @@ export async function GET() {
 
 // PUT — admin: upsert the banner-2 config
 export async function PUT(req: NextRequest) {
+  const adminCheck = requireAdmin(req);
+  if (!adminCheck.ok) return adminCheck.response;
   try {
     const body = await req.json();
     const { title, desc, cta, imageUrl, link, gradient, active } = body as Partial<BannerConfig>;
