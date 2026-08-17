@@ -370,24 +370,6 @@ export function DetailView() {
             >
               <Phone className="size-4" /> WhatsApp
             </a>
-            <Button
-              variant="outline"
-              className="w-full gap-2 rounded-full"
-              size="lg"
-              onClick={() => toggleFavorite(l.id)}
-            >
-              <Heart className={cn("size-4", fav && "fill-rose-500 text-rose-500")} />
-              {fav ? tr("saved") : tr("saveAd")}
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full gap-2 rounded-full"
-              size="lg"
-              onClick={share}
-            >
-              <Share2 className="size-4" />
-              {tr("share")}
-            </Button>
           </div>
 
           {/* seller profile (moved from seller sidebar) */}
