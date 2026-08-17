@@ -7337,3 +7337,312 @@ Stage Summary:
   * Playwright script: `/home/z/my-project/verify-detail-1.py`
   * Result JSON:       `/home/z/my-project/verify-detail-1-result.json`
   * Screenshots:        `/home/z/my-project/verify-detail-1-{desktop,mobile}-{1-home,2-detail-top,3-detail-full,4-after-back}.png`
+
+---
+Task ID: verify-detail-2
+Agent: general-purpose (sub agent)
+Task: Verify the detail (ad) page header behavior fix — (1) Mobile: global app Header (logo, search, category nav) HIDDEN on detail view; (2) Desktop: global app Header VISIBLE & sticky at top on detail view; (3) Back-chevron icon button (ChevronLeft in white circle) remains INSIDE the gallery image at top-left on BOTH viewports.
+
+Work Log:
+- Read `/home/z/my-project/worklog.md` for prior context (Tasks 1–23 and
+  verify-detail-1). Recall from verify-detail-1:
+  * `app-shell.tsx` line 115 was `{view !== "detail" && <Header />}` — header
+    was hidden on detail view on BOTH desktop and mobile.
+  * `detail.tsx` had the new back-chevron circular white button at
+    `absolute left-3 top-3` inside the gallery container, and the old
+    "Kembali" text button was removed from the main success render.
+- The CURRENT fix in `src/components/gomesin/app-shell.tsx` lines 115-121:
+    ```tsx
+    {view === "detail" ? (
+      <div className="hidden md:contents">
+        <Header />
+      </div>
+    ) : (
+      <Header />
+    )}
+    ```
+  - Mobile: the wrapper div has `hidden` (display:none) → Header (and its
+    sticky inner `<header>`) is invisible.
+  - Desktop (md+, ≥768px): the wrapper div has `md:contents`
+    (display:contents) → the wrapper itself "disappears" from the box tree,
+    so the sticky `<header>` inside behaves exactly as if it were a direct
+    child of the parent flex column — sticky at top works normally.
+- Wrote `/home/z/my-project/verify-detail-2.py` (Playwright sync script) that
+  runs on desktop (1280×800, 2× DPR) and mobile (iPhone 13 device,
+  390×844, 3× DPR).
+  * Pre-seeds localStorage/sessionStorage with PWA-install dismissal keys
+    via `page.add_init_script` so the PWA install modal does not intercept
+    clicks on listing cards.
+  * Navigates to `http://localhost:3000/`, waits for
+    `article[data-listing-id]`, clicks the first visible listing card.
+  * Waits for the detail view's gallery container (`div.cursor-zoom-in`)
+    or the back button (`button[aria-label='Kembali']`).
+  * Captures: (a) home screenshot, (b) detail top screenshot,
+    (c) detail full-page screenshot, (d) after-scroll-400px screenshot.
+  * Inspects the DOM to confirm:
+    - `header_dom_count` — count of `<header>` / `[role=banner]` elements.
+    - `logo_visible_top_110px` + `logo_info` — any mesinKU/BeliMesin logo
+      image in the top 110px.
+    - `search_input_top_150px` + `search_info` — any `<input>` inside
+      `<header>` visible in the top 200px (uses broad selector
+      `header input, [role='banner'] input` because shadcn `<Input>` does
+      not explicitly set `type="text"`).
+    - `nav_top_200px` — any `<nav>` in the top 200px.
+    - `header_computed_styles` — JS evaluate of header's computed
+      `position`, `top`, `zIndex`, bounding rect, classes, display.
+    - `wrapper_hidden_md_contents` — JS evaluate that locates the
+      `<div class="hidden md:contents">` wrapper, returns its computed
+      `display`, `position`, rect, and the child header's computed style.
+    - `gallery_box` — bounding box of the gallery container.
+    - `kembali_text_buttons_above_gallery` — list of visible buttons whose
+      text starts with "Kembali"/"Back" AND sit above the gallery
+      (should be empty list — old text button is gone).
+    - `back_btn_in_gallery` — the back-chevron button inside the gallery
+      top-left (must have `rounded-full`, `bg-white`, ~36×36 square,
+      empty inner text → icon-only).
+    - `fav_share_buttons_top_right` — favorit + bagikan buttons at the
+      top-right of the gallery.
+    - `after_scroll_400_header_state` — after `window.scrollTo(0, 400)`,
+      re-evaluate the header's rect to confirm it stays sticky at top
+      (desktop) or stays at 0×0 size (mobile).
+  * Captures all console messages and page errors.
+- Wrote `/home/z/my-project/debug-desktop-header.py` to dump the desktop
+  header's internal DOM (inputs, forms, logos, brand spans, nav elements)
+  to verify the search input and brand text are present and visible inside
+  the sticky header on the detail view.
+- Ran both scripts. Results saved to `/home/z/my-project/verify-detail-2-result.json`.
+
+Verification Results:
+
+DESKTOP (1280×800 Chromium, 2× DPR → 2560×1600 screenshots):
+- Clicked listing: YES (83 listing articles on home; first visible one
+  clicked successfully → navigated to detail view, listing slug:
+  `excavator-komatsu-pc200-8-bekas-qwhc8`, API returned 200 in 110ms).
+- Global Header VISIBLE on detail? YES ✅
+  * `header_dom_count` = 1 (single `<header>` element present).
+  * `header_computed_styles`:
+    - position = "sticky", top = "0px", zIndex = "40"
+    - rect = {x:0, y:0, w:1280, h:65}
+    - classes = "sticky top-0 z-40 w-full border-b border-border
+      bg-background/95 backdrop-blur supports-[backdrop-filter]:
+      bg-background/80"
+    - display = "block"
+  * `wrapper_hidden_md_contents`:
+    - classes = "hidden md:contents"
+    - display = "contents" ← the wrapper adopts display:contents on
+      desktop so it does NOT create a wrapping box; the sticky <header>
+      inside becomes a direct flex child of the app's root column and
+      sticks to the top of the viewport.
+    - rect = {x:0, y:0, w:0, h:0} (the wrapper has no box of its own —
+      as expected with display:contents).
+    - childHeaderDisplay.position = "sticky", childHeaderDisplay.top = "0px"
+      ← the inner header's sticky positioning is intact.
+  * `logo_visible_top_110px` = true — BeliMesin logo image at
+    (x=16, y=14, w=36, h=36).
+  * `search_input_top_150px` = true — search input (type="text",
+    placeholder="Temukan MESIN CETAK yang berkualitas.") at
+    (x=232, y=12, w=654, h=40), visible=true. ✅
+    - Brand text "BeliMesin" at (x=60, y=18, w=87, h=28).
+    - "Pasang Iklan" (Post Ad) button at (x=1151, y=22, w=101, h=20).
+- Header STICKY after scrolling 400px? YES ✅
+  * `after_scroll_400_header_state`: header at
+    {x:0, y:0, w:1280, h:65} — STILL pinned to top after scrolling.
+    position="sticky", top="0px".
+- Category nav visible on detail? NO (expected — pre-existing behavior).
+  * `nav_top_200px` = false. This is because `header.tsx` line 187:
+    `hideCategoryNav = [..., "detail", "home", "seller", ...].includes(
+    currentView)` — the CategoryNav row is intentionally hidden on the
+    detail view (and home view, etc.) regardless of viewport. This is
+    PRE-EXISTING behavior from before this fix and is NOT related to the
+    `hidden md:contents` wrapper change. The task description mentions
+    "category nav" in the header but the actual desired behavior (and
+    existing behavior) is that the global Header bar itself (with logo +
+    search + actions) is visible on desktop detail, while the
+    category-nav strip below the header is hidden on detail — same as it
+    was on home. ✅ (logo + search + actions = the meaningful part of
+    the global Header is visible & sticky on desktop detail view).
+- Back-chevron circular white button INSIDE gallery top-left? YES ✅
+  * `back_btn_in_gallery`:
+    - found = true
+    - position: x=13, y=94 (gallery top y=82, so y_offset=12px = `top-3`)
+    - size: 36×36 (size-9 = 2.25rem ≈ 36px)
+    - `rounded_full` = true (className contains "rounded-full")
+    - `bg_white` = true (className contains "bg-white/90")
+    - `is_square` = true (36×36 — equal width/height, a circle)
+    - `text_empty` = true (icon-only button — no "Kembali" text label)
+    - class = "grid size-9 place-items-center rounded-full bg-white/90
+      shadow backdrop-blur transition hover:bg-white"
+- Favorite + share buttons at top-right of gallery? YES ✅
+  * favorit button: x=811, y=94, 36×36, rounded-full, bg-white
+  * bagikan (share) button: x=855, y=94, 36×36, rounded-full, bg-white
+  * Gallery right edge ≈ 903 (x=1 + w=902); both buttons sit inside the
+    top-right corner of the gallery. ✅
+- Old "Kembali" text button above image GONE? YES ✅
+  * `kembali_text_buttons_above_gallery` = [] (no visible text button
+    starting with "Kembali"/"Back" anywhere above the gallery image).
+- Console errors: 4 total, ALL pre-existing WebSocket chat-service transport
+  failures: `ws://localhost:3000/?XTransformPort=3003&EIO=4&transport=
+  websocket failed: Connection closed before receiving a handshake
+  response`. These are the same pre-existing Caddy→chat-service (port
+  3003) transport failures seen in Tasks 23-verify and verify-detail-1;
+  they have nothing to do with the detail page header changes.
+  * 0 page errors (no uncaught exceptions).
+
+MOBILE (iPhone 13, 390×844 viewport, 3× DPR → 1170×2532 screenshots):
+- Clicked listing: YES.
+- Global Header HIDDEN on detail? YES ✅
+  * `header_dom_count` = 1 (the `<header>` element is technically in the
+    DOM, but it has 0×0 size because its parent wrapper is display:none).
+  * `header_computed_styles`:
+    - position = "sticky", top = "0px", zIndex = "40"
+    - rect = {x:0, y:0, w:0, h:0} ← ZERO size, so nothing is visible.
+    - display = "block" (the header's own display is block, but it's
+      trapped inside a display:none parent).
+  * `wrapper_hidden_md_contents`:
+    - classes = "hidden md:contents"
+    - display = "none" ← on mobile, the wrapper is hidden, so the
+      Header inside it does NOT render visually.
+    - rect = {x:0, y:0, w:0, h:0}
+    - childHeaderDisplay.position = "sticky", top = "0px"
+      (the inner header is still sticky-positioned in CSS terms, but
+      since its parent wrapper has display:none, it has no rendered box).
+  * `logo_visible_top_110px` = false — no BeliMesin logo image in top 110px.
+  * `search_input_top_150px` = false — no search input visible in top 200px.
+  * `nav_top_200px` = false — no `<nav>` in top 200px.
+  * After scrolling 400px: header rect still {0,0,0,0} — remains hidden. ✅
+- Gallery image flush at top? YES ✅
+  * `gallery_box` = {x:-16, y:16, w:422, h:316.5}
+    - y=16 means the gallery starts 16px from the top of the viewport
+      (the small 16px top offset is the parent container's top padding,
+      but the gallery image itself is essentially flush at the top of the
+      visible page — there is NO header above it).
+    - x=-16 and w=422 reflects the full-bleed `-mx-4` negative margin
+      (Task 23 fix): the gallery extends 16px beyond both the left and
+      right edges of the 390px viewport, making it truly edge-to-edge.
+- Back-chevron circular white button INSIDE gallery top-left? YES ✅
+  * `back_btn_in_gallery`:
+    - found = true
+    - position: x=-4, y=28 (gallery top y=16, so y_offset=12px = `top-3`;
+      x=-4 is because the gallery is full-bleed with x=-16, and the
+      button's `left-3` (12px) inside the gallery places it at
+      -16+12 = -4 visually).
+    - size: 36×36
+    - `rounded_full` = true, `bg_white` = true, `is_square` = true,
+      `text_empty` = true — same icon-only circular white button.
+    - class = "grid size-9 place-items-center rounded-full bg-white/90
+      shadow backdrop-blur transition hover:bg-white"
+- Favorite + share buttons at top-right of gallery? YES ✅
+  * favorit: x=314, y=28, 36×36, rounded-full, bg-white
+  * bagikan: x=358, y=28, 36×36, rounded-full, bg-white
+  * Gallery right edge ≈ 406 (x=-16 + w=422); both buttons sit inside the
+    top-right corner of the gallery. ✅
+- Old "Kembali" text button above image GONE? YES ✅
+  * `kembali_text_buttons_above_gallery` = [].
+- Console errors: 4 total, ALL pre-existing WebSocket chat-service transport
+  failures (same as desktop). 0 page errors.
+
+dev.log check (last ~30 lines):
+- No new runtime errors related to the detail page header changes. All
+  API requests during the visit returned 200, including:
+  * `GET /api/listings/excavator-komatsu-pc200-8-bekas-qwhc8 200 in 110ms`
+    (the listing we navigated to).
+  * All home page listing/category/banner API calls returned 200.
+  * Multiple `GET /api/messages?userId=...` polling calls returned 200
+    (the 3-second message polling from the Header's NotificationBell
+    and message badge).
+- The only error in dev.log is the PRE-EXISTING
+  `[admin/settings] Prisma GET error, trying Supabase: TypeError: Cannot
+  read properties of undefined (reading 'findMany')` at
+  `src/app/api/admin/settings/route.ts:65:41` — this is the documented
+  Prisma→Supabase fallback path (dev DB initialization quirk; the code
+  recovers by falling back to Supabase, and the API still returns 200).
+  It is unrelated to the header changes.
+
+SCREENSHOTS (all saved to /home/z/my-project/):
+- `verify-detail-2-desktop-1-home.png` (2560×1600) — desktop home page
+  (PWA popup suppressed, listings visible).
+- `verify-detail-2-desktop-2-detail-top.png` (2560×1600) — desktop detail
+  page top viewport: the global Header bar (BeliMesin logo + search bar +
+  Pasang Iklan button + actions) IS visible at the top, sticky. Below it,
+  the gallery image (with rounded corners, border) has the circular white
+  back-chevron button overlaying its top-left corner and the heart +
+  share buttons overlaying its top-right corner.
+- `verify-detail-2-desktop-3-detail-full.png` (2560×~6000) — desktop full-page
+  detail view (title/price card to the right of the gallery, description/
+  specs/seller/related listings below).
+- `verify-detail-2-desktop-4-scrolled.png` (2560×1600) — desktop detail page
+  after scrolling down 400px: the global Header bar REMAINS pinned/sticky
+  at the top of the viewport (logo + search still visible at top). The
+  gallery has scrolled out of view, confirming the sticky behavior works.
+- `verify-detail-2-mobile-1-home.png` (1170×1992) — mobile home page.
+- `verify-detail-2-mobile-2-detail-top.png` (1170×1992) — mobile detail page
+  top: full-bleed gallery image (edge-to-edge), NO global Header above it
+  (no logo, no search bar, no category nav at the top). The circular
+  white back-chevron button overlays the top-left corner INSIDE the image;
+  the heart + share buttons overlay the top-right corner INSIDE the image.
+- `verify-detail-2-mobile-3-detail-full.png` (1170×~8000) — mobile full-page
+  detail view.
+- `verify-detail-2-mobile-4-scrolled.png` (1170×1992) — mobile detail page
+  after scrolling down 400px: still NO header bar at the top (header
+  remains hidden via display:none on the wrapper). The page content has
+  scrolled up normally.
+
+Stage Summary:
+- VERIFICATION PASSED on BOTH desktop (1280×800) and mobile (iPhone 13,
+  390×844).
+- Change 1 — Mobile: global app Header HIDDEN on detail view: ✅ CONFIRMED.
+  * `app-shell.tsx` lines 115-121: the wrapper `<div className="hidden
+    md:contents">` around `<Header />` has computed `display: none` on
+    mobile, so the entire Header (logo, search bar, category nav,
+    actions) is invisible. Header rect = {0,0,0,0}. No logo, no search
+    input, no nav in the top 200px of the mobile detail page.
+  * Gallery image is flush at the top (y=16, full-bleed edge-to-edge
+    via the existing `-mx-4` from Task 23).
+- Change 2 — Desktop: global app Header VISIBLE & sticky at top on
+  detail view: ✅ CONFIRMED.
+  * `app-shell.tsx` lines 115-121: the wrapper `<div className="hidden
+    md:contents">` has computed `display: contents` on desktop (≥768px),
+    so the wrapper itself does NOT create a box — the sticky `<header>`
+    inside behaves as a direct flex child of the app's root column.
+  * Header rect = {x:0, y:0, w:1280, h:65}, position=sticky, top=0,
+    z=40. Logo "BeliMesin" image at (16, 14, 36, 36) visible. Search
+    input (type=text, placeholder="Temukan MESIN CETAK yang berkualitas.")
+    visible at (232, 12, 654, 40). "Pasang Iklan" button visible.
+  * After scrolling 400px down, header is STILL pinned at the top
+    (rect stays at y=0, h=65). Sticky behavior is fully functional.
+  * Note: the CategoryNav strip (below the main header row) is
+    intentionally hidden on detail view via the PRE-EXISTING
+    `hideCategoryNav` check in `header.tsx` line 187 (which includes
+    "detail", "home", "seller", etc.) — this is unchanged behavior and
+    is not part of the `hidden md:contents` wrapper fix. The task
+    description's mention of "category nav" in the header is satisfied
+    by the global Header bar (logo + search + actions) being visible &
+    sticky; the secondary category-nav strip was already hidden on
+    detail view before this fix.
+- Change 3 — Back-chevron icon (ChevronLeft inside a white circle button)
+  remains INSIDE the gallery image at top-left on BOTH viewports:
+  ✅ CONFIRMED.
+  * `detail.tsx` (unchanged from verify-detail-1): `<div
+    className="absolute left-3 top-3">` containing `<button
+    className="... rounded-full bg-white/90 ...">` with `<ChevronLeft
+    className="size-5" />`.
+  * DOM inspection confirms a 36×36 circular (rounded-full + bg-white)
+    icon-only button (text_empty=true) on BOTH viewports:
+    - Desktop: x=13, y=94 (gallery top y=82 → 12px offset = top-3).
+    - Mobile:  x=-4, y=28 (gallery top y=16 → 12px offset = top-3;
+      x=-4 due to full-bleed -mx-4 gallery offset).
+  * Both sit inside the gallery's top-left corner. ✅
+- BONUS — Favorite (heart) + share buttons remain at top-right of the
+  gallery: ✅ CONFIRMED. Both 36×36 circular white buttons present at
+  the top-right corner of the gallery on both desktop and mobile.
+- No new console or page errors related to the changes. Only pre-existing
+  WebSocket chat-service (port 3003 via Caddy) transport failures appear
+  — unrelated to the detail page header changes. dev.log shows all
+  detail-page API requests returned 200; the only error in dev.log is
+  the pre-existing Prisma→Supabase fallback for /api/admin/settings
+  (returns 200 after fallback), unrelated to the header fix.
+- Artifacts:
+  * Playwright script: `/home/z/my-project/verify-detail-2.py`
+  * Debug script:      `/home/z/my-project/debug-desktop-header.py`
+  * Result JSON:        `/home/z/my-project/verify-detail-2-result.json`
+  * Screenshots:        `/home/z/my-project/verify-detail-2-{desktop,mobile}-{1-home,2-detail-top,3-detail-full,4-scrolled}.png`
