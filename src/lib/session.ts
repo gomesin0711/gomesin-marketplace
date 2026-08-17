@@ -175,32 +175,106 @@ export function requireAdmin(req: NextRequest):
 }
 
 /**
+ * Detect whether the request was made over HTTPS / from a non-local origin.
+ *
+ * WHY WE NEED THIS: the preview panel is rendered inside a cross-origin
+ * iframe (e.g. preview-xxx.space-z.ai). Cookies marked `SameSite=Lax` are
+ * NOT sent on cross-origin iframe fetch() requests — only top-level
+ * navigations. To make the session cookie work inside the iframe, we MUST
+ * set `SameSite=None; Secure`. The `Secure` attribute is accepted by the
+ * browser because the browser's connection to the preview panel host is
+ * HTTPS (terminated upstream of our HTTP Caddy gateway).
+ *
+ * DETECTION STRATEGY (multi-layered — any one is sufficient):
+ *   1. `X-Forwarded-Proto: https` — explicitly tells us the upstream was HTTPS.
+ *      NOTE: in our sandbox, the HTTP Caddy gateway overwrites this to `http`
+ *      (because Caddy itself is HTTP on port 81), so this check alone is
+ *      insufficient — that's why we also check Host/Origin.
+ *   2. `Host` header is NOT localhost / 127.0.0.1 — means the request came
+ *      through a gateway / proxy / production domain. We treat any non-IP
+ *      host as cross-origin HTTPS.
+ *   3. `Origin` header present and its host != request Host — cross-origin
+ *      request (e.g. iframe POST from space-z.ai to our API).
+ *   4. NODE_ENV=production — assume HTTPS in prod.
+ *
+ * ONLY if none of these fire (true localhost direct HTTP dev) do we fall
+ * back to `SameSite=Lax` so cookies work in the local dev browser.
+ */
+function isHttpsOrCrossOriginRequest(req?: NextRequest): boolean {
+  if (!req) return process.env.NODE_ENV === "production";
+
+  // (1) Explicit proxy hint.
+  const xfp = req.headers.get("x-forwarded-proto");
+  if (xfp && xfp.includes("https")) return true;
+
+  // (4) Production build always HTTPS.
+  if (process.env.NODE_ENV === "production") return true;
+
+  const host = req.headers.get("host") || "";
+  const isLocalhostHost =
+    host.startsWith("localhost") ||
+    host.startsWith("127.0.0.1") ||
+    host.startsWith("0.0.0.0") ||
+    host.startsWith("[::1]");
+
+  // (2) Non-localhost Host = via gateway / domain → treat as HTTPS.
+  if (host && !isLocalhostHost) return true;
+
+  // (3) Origin header's host differs from request Host = cross-origin.
+  const origin = req.headers.get("origin");
+  if (origin) {
+    try {
+      const originHost = new URL(origin).host;
+      if (originHost && originHost !== host) return true;
+    } catch {
+      // malformed origin — ignore
+    }
+  }
+
+  // Direct localhost dev (no proxy, no cross-origin) → Lax is fine.
+  return false;
+}
+
+/** Cookie options that adapt to the request's transport security / origin. */
+function cookieOptions(req?: NextRequest) {
+  const https = isHttpsOrCrossOriginRequest(req);
+  // Cross-origin iframe (preview panel) REQUIRES SameSite=None + Secure.
+  // Same-origin / top-level HTTPS can also use SameSite=None safely.
+  // Plain HTTP local dev keeps SameSite=Lax so cookies work in the browser.
+  return {
+    httpOnly: true,
+    sameSite: https ? ("none" as const) : ("lax" as const),
+    secure: https,
+    path: "/",
+  };
+}
+
+/**
  * Set the session cookie on a NextResponse (login/register success).
- * The cookie is httpOnly (no JS access), SameSite=Lax, and Secure in
- * production. TTL = 7 days.
+ * The cookie is httpOnly (no JS access) and adapts its SameSite/Secure
+ * attributes to the request's transport security so it works inside
+ * cross-origin iframes (preview panel). TTL = 7 days.
+ *
+ * Pass the `req` so the helper can read `X-Forwarded-Proto` to detect HTTPS
+ * behind the Caddy gateway.
  */
 export function setSessionCookie(
   res: NextResponse,
   id: string,
-  role: string = "user"
+  role: string = "user",
+  req?: NextRequest
 ): void {
   const token = createSessionToken(id, role);
   res.cookies.set(COOKIE_NAME, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
+    ...cookieOptions(req),
     maxAge: TOKEN_TTL_SECONDS,
   });
 }
 
 /** Clear the session cookie on a NextResponse (logout). */
-export function clearSessionCookie(res: NextResponse): void {
+export function clearSessionCookie(res: NextResponse, req?: NextRequest): void {
   res.cookies.set(COOKIE_NAME, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
+    ...cookieOptions(req),
     maxAge: 0,
   });
 }

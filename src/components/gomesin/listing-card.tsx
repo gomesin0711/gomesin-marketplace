@@ -39,7 +39,10 @@ export function ListingCard({ listing, spotlight = false }: { listing: Listing; 
 
   const openSeller = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const uid = (listing as any).user?.id;
+    // Fallback to seller.id for legacy listings that have no `user` relation
+    // (listings seeded before the userId field was populated). Without this
+    // fallback, the "view seller" button is a no-op for those listings.
+    const uid = (listing as any).user?.id || (listing as any).seller?.id;
     if (uid) goToSeller(uid);
   };
 

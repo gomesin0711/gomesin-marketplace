@@ -7,9 +7,12 @@ import { setSessionCookie } from "@/lib/session";
 
 // Wrap a successful auth response (login/register) with a session cookie.
 // All successful login paths MUST go through this helper so the cookie is set.
-function authResponse(user: { id: string; role?: string }, status: number = 200) {
+// `req` is passed so setSessionCookie can read X-Forwarded-Proto and choose
+// SameSite=None+Secure (HTTPS / preview iframe) vs SameSite=Lax (local HTTP).
+type AuthUser = { id: string; role?: string; [key: string]: unknown };
+function authResponse(user: AuthUser, status: number = 200, req?: NextRequest) {
   const res = NextResponse.json({ user }, { status });
-  setSessionCookie(res, user.id, user.role || "user");
+  setSessionCookie(res, user.id, user.role || "user", req);
   return res;
 }
 
@@ -77,7 +80,7 @@ export async function POST(req: NextRequest) {
             user.createdAt instanceof Date
               ? user.createdAt.toISOString()
               : user.createdAt,
-        });
+        }, 200, req);
     } catch {
       // SQLite unavailable — use fallback
     }
@@ -88,7 +91,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    return authResponse(result.user);
+    return authResponse(result.user, 200, req);
   }
 
   // ===== Email + Password login =====
@@ -126,7 +129,7 @@ export async function POST(req: NextRequest) {
         logoImage: user.logoImage,
         role: user.role,
         createdAt: user.createdAt,
-      });
+      }, 200, req);
     }
     // If Prisma found no user OR password didn't match, fall through to
     // the Supabase fallback (the user may exist in Supabase but not in
@@ -167,7 +170,7 @@ export async function POST(req: NextRequest) {
         logoImage: supaUser.logoImage,
         role: supaUser.role,
         createdAt: supaUser.createdAt,
-      });
+      }, 200, req);
     }
   } catch (supaErr) {
     console.error("[auth/login] Supabase fallback error:", supaErr);
@@ -180,5 +183,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
-  return authResponse(result.user);
+  return authResponse(result.user, 200, req);
 }

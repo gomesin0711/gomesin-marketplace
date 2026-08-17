@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
       // Issue session cookie alongside the new user response so subsequent
       // requests are authenticated (multi-user data isolation).
       const res = NextResponse.json({ user }, { status: 201 });
-      setSessionCookie(res, user.id, user.role || "user");
+      setSessionCookie(res, user.id, user.role || "user", req);
       return res;
     } catch (prismaErr) {
       console.error("[auth/register] Prisma error, falling back to Supabase:", prismaErr);
@@ -242,7 +242,7 @@ export async function POST(req: NextRequest) {
       // fall through to in-memory fallback as last resort
     } else {
       const res = NextResponse.json({ user: newRow }, { status: 201 });
-      setSessionCookie(res, newRow.id, newRow.role || "user");
+      setSessionCookie(res, newRow.id, newRow.role || "user", req);
       return res;
     }
   } catch (supaErr) {
@@ -268,6 +268,6 @@ export async function POST(req: NextRequest) {
   }
 
   const res = NextResponse.json({ user: result.user }, { status: 201 });
-  setSessionCookie(res, result.user.id, result.user.role || "user");
+  setSessionCookie(res, result.user.id, result.user.role || "user", req);
   return res;
 }
