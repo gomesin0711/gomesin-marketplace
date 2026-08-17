@@ -598,11 +598,8 @@ export function PostAdView() {
         onChange={handleFileSelect}
       />
 
-      {/* Green step title + Reset button */}
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-green-600">
-          Pasang Iklan (Step {step}/6)
-        </p>
+      {/* Reset button (aligned right) */}
+      <div className="flex justify-end">
         <Button
           type="button"
           variant="outline"
