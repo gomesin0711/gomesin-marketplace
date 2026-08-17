@@ -9018,3 +9018,44 @@ Stage Summary:
   - Logout clears the cookie (subsequent /api/auth/me returns 401)
 - Files created: `src/lib/session.ts`, `src/app/api/auth/logout/route.ts`, `src/app/api/auth/me/route.ts`
 - Files modified: login, register, profile, password, messages, favorites, my-listings, listings, listings/[slug], store.ts, app-shell.tsx, all /api/admin/* routes, chat-service/index.ts
+
+---
+Task ID: fix-supabase-not-connect
+Agent: Main (NextResponse import fix)
+Task: User reported "supabase tidak connect. check and fix"
+
+Work Log:
+- Diagnosed: User reported Supabase not connecting. Investigated all env files (.env, .env.local, .env.production) — only DATABASE_URL is set, NEXT_PUBLIC_SUPABASE_URL/ANON_KEY are not in env but have hard-coded fallbacks in 13+ route files pointing to https://yzxeinqoryvprhuibtzn.supabase.co.
+- Tested Supabase connectivity directly with curl: REST endpoint /rest/v1/ returns HTTP 401 (expected — needs apikey header). With apikey header + User select query: returns valid data `[{"id":"cmsvvmvwjm9zgt9aq"}]`. Supabase server is REACHABLE and the anon key is VALID. Not a Supabase network/auth issue.
+- Searched dev.log for Supabase-specific errors (fetch failed, ECONNREFUSED, ETIMEDOUT, network) — found NONE. The actual error was `ReferenceError: NextResponse is not defined` at src/lib/session.ts:153 in requireAdmin().
+- Root cause: line 2 of src/lib/session.ts had `import type { NextRequest, NextResponse } from "next/server";` — a TYPE-ONLY import. Since `requireAdmin()` calls `NextResponse.json(...)` at RUNTIME (lines 153 and 162), TypeScript compiled fine (type-only imports are erased at compile time), but JavaScript threw ReferenceError when the code path executed.
+- Impact: Every admin route (stats, listings, users, categories, monthly-report, sellers) crashed with HTTP 500. Login worked (login route imports NextResponse as runtime value), but since requireAdmin crashed, the entire admin panel appeared broken — user concluded "supabase tidak connect".
+- Fix: Split the type-only import into two lines:
+    import { NextResponse } from "next/server";            // runtime value, needed by requireAdmin
+    import type { NextRequest } from "next/server";        // type-only, used for parameter typing
+  Added a comment explaining WHY the runtime import is mandatory (so future devs don't "optimize" it back to type-only).
+- Searched codebase for any other file with the same `import type {... NextResponse ...}` pattern → none found. Only session.ts had this bug.
+- Verified dev server (PID 25345, port 3000) picked up the change via Next.js HMR — no manual restart needed.
+- End-to-end verification (all PASSED):
+    1. /api/admin/stats without cookie → HTTP 401 (was 500 before fix) ✓
+    2. /api/admin/listings without cookie → HTTP 401 (was 500 before fix) ✓
+    3. /api/admin/users without cookie → HTTP 401 (was 500 before fix) ✓
+    4. Body of /api/admin/stats → valid JSON `{"error":"Sesi berakhir. Silakan masuk kembali."}` ✓
+    5. POST /api/auth/login with admin credentials → HTTP 200, set-cookie: mesinku_session=<HMAC-signed-token> ✓
+    6. GET /api/auth/me with admin cookie → HTTP 200, returns admin user object ✓
+    7. GET /api/admin/stats with admin cookie → HTTP 200 (was 500 before fix) ✓
+    8. GET /api/admin/listings with admin cookie → HTTP 200 ✓
+    9. GET /api/admin/users with admin cookie → HTTP 200 ✓
+    10. GET /api/admin/categories with admin cookie → HTTP 200 ✓
+    11. GET /api/admin/monthly-report with admin cookie → HTTP 200 ✓
+    12. GET /api/admin/sellers with admin cookie → HTTP 200 ✓
+    13. GET /api/messages?userId=<admin> with admin cookie → HTTP 200 (admin reads own messages) ✓
+    14. GET /api/messages?userId=<other user> with admin cookie → HTTP 200 (admin override works) ✓
+- Checked latest 15 log lines — no new ReferenceError. Only stale error from before the fix remains further up in the log.
+
+Stage Summary:
+- **Single-file fix**: src/lib/session.ts line 2 changed from `import type { NextRequest, NextResponse } from "next/server";` to two separate imports (runtime NextResponse + type-only NextRequest).
+- **Supabase was NOT the problem** — it was reachable and the anon key was valid the whole time. The "supabase tidak connect" symptom was actually a cascade from the NextResponse ReferenceError: admin routes returned 500, the admin panel couldn't load data, and the user (understandably) concluded the database connection was broken.
+- **All admin routes now return correct status codes**: 401 when unauthenticated, 403 when non-admin, 200 when admin. Previously they all returned 500.
+- **Multi-user isolation intact**: admin override still works (admin can view any user's data via ?userId=), regular users are still scoped to their own data via the session cookie.
+- **No data migration needed**, no env var change needed — this was purely a TypeScript import bug.

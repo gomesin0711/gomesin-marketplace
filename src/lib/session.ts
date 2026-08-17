@@ -1,5 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { NextRequest, NextResponse } from "next/server";
+// IMPORTANT: NextResponse must be a RUNTIME import (not `import type`) because
+// requireAdmin() below calls NextResponse.json(...) at runtime. A type-only
+// import (`import type { NextResponse }`) compiles fine but throws
+// `ReferenceError: NextResponse is not defined` when the code path executes.
+// NextRequest is kept as type-only since we only use it for parameter typing.
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // session.ts — Server-side session management via HMAC-signed httpOnly cookie.
