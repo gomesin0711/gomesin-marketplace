@@ -159,7 +159,18 @@ export function DetailView() {
   const specsEntries = Object.entries(listingSpecs(l, mounted ? lang : "id"));
 
   return (
-    <div className="mx-auto max-w-7xl py-4 animate-fade-up">
+    <div className="mx-auto max-w-7xl px-4 py-4 animate-fade-up">
+      {/* back button */}
+      <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+        <button
+          onClick={goBack}
+          className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm font-medium text-foreground shadow-sm transition hover:bg-accent"
+          aria-label={tr("back")}
+        >
+          <ChevronLeft className="size-4" /> {tr("back")}
+        </button>
+      </div>
+
       {/* TOP: gallery + title/price card side by side */}
       <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_360px]">
         {/* gallery — left — full-bleed on mobile (no margins/rounded/border), card style on desktop */}
@@ -196,17 +207,6 @@ export function DetailView() {
                 <ZoomIn className="size-3.5" />
                 {tr("photoZoom") || "Klik untuk perbesar"}
               </div>
-            </div>
-
-            {/* back button (top-left, inside image) */}
-            <div className="absolute left-3 top-3" onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={goBack}
-                className="grid size-9 place-items-center rounded-full bg-white/90 shadow backdrop-blur transition hover:bg-white"
-                aria-label={tr("back")}
-              >
-                <ChevronLeft className="size-5" />
-              </button>
             </div>
 
             {/* favorite + share (top-right) */}

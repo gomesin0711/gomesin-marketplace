@@ -112,13 +112,7 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      {view === "detail" ? (
-        <div className="hidden md:contents">
-          <Header />
-        </div>
-      ) : (
-        <Header />
-      )}
+      <Header />
       {showSidebar ? (
         <div className="flex flex-1">
           <AdminSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
