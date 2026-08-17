@@ -9059,3 +9059,44 @@ Stage Summary:
 - **All admin routes now return correct status codes**: 401 when unauthenticated, 403 when non-admin, 200 when admin. Previously they all returned 500.
 - **Multi-user isolation intact**: admin override still works (admin can view any user's data via ?userId=), regular users are still scoped to their own data via the session cookie.
 - **No data migration needed**, no env var change needed — this was purely a TypeScript import bug.
+
+---
+Task ID: sync-local-to-supabase
+Agent: Main (DB sync)
+Task: Sync local SQLite data to Supabase (user approved after reviewing quota status)
+
+Work Log:
+- Read scripts/sync-local-to-supabase.ts — understood strategy: delete all rows on Supabase (FK reverse order) → insert local rows (FK order) → verify counts match. Covers 8 Prisma tables: Category, User, Seller, Paket, SiteSetting, UniqueCode, Listing, Message.
+- Read scripts/supabase-schema-migration.sql — confirmed Supabase schema DDL for all 8 tables.
+- Pre-sync snapshot:
+    LOCAL : Category=12 User=14 Seller=19 Listing=43 Message=14 Paket=4 UniqueCode=7 SiteSetting=0
+    REMOTE: Category=13 User=3  Seller=16 Listing=4  Message=16 Paket=8 UniqueCode=4 SiteSetting=5
+- Discovered risk: Supabase Paket had 8 rows (4 regular + 4 special banner-config rows: __site_banner__, __site_banner_2__, __site_banner_3__, __site_hero_banner__). Local Paket only had 4 regular rows. A blind sync would DELETE the special banner configs → banner & hero banner would break in production.
+- Discovered risk: Supabase SiteSetting had 5 rows (bcaAccount, bcaName, chatSoundEnabled, supportEmail, whatsappNumber). Local had 0. A blind sync would DELETE all site settings → payment pages would lose BCA account number & WhatsApp contact.
+- Backup strategy:
+    1. Fetched all 8 Paket rows from Supabase (filter `key=like.__*` — but PostgREST treats `_` as SQL wildcard, so it matched all 8 rows including non-special ones). Saved to /tmp/supabase-special-paket.json.
+    2. Fetched all 5 SiteSetting rows from Supabase. Saved to /tmp/supabase-sitesetting.json.
+- Inserted backups into local SQLite (scripts/insert-backups-to-local.mjs, deleted after use):
+    - Filtered to only true special rows (key literally starts with "__") → 4 rows: __site_banner__, __site_banner_2__, __site_banner_3__, __site_hero_banner__.
+    - Upserted all 4 special Paket rows + 5 SiteSetting rows into local SQLite.
+    - Local SQLite now: Paket=8 (4 original + 4 special), SiteSetting=5.
+- Ran sync script: `bunx tsx scripts/sync-local-to-supabase.ts`
+    - Result: 7/8 tables OK, Paket FAILED.
+    - Error: `Could not find the 'maxPhotos' column of 'Paket' in the schema cache` (HTTP 400 PGRST204).
+    - Root cause: Prisma schema has `maxPhotos Int @default(3)` on Paket model, but the Supabase Paket table (from supabase-schema-migration.sql) does NOT have a `maxPhotos` column. Schema drift between Prisma and Supabase SQL.
+- Probed Supabase Paket schema via REST: confirmed columns are id, key, name, price, originalPrice, duration, features, active, sortOrder. No maxPhotos.
+- Created scripts/sync-paket-fix.mjs (deleted after use) — re-synced Paket only, with an explicit PAKET_COLUMNS allowlist that excludes `maxPhotos`. Used `key=not.is.null` for delete filter (works because key is non-null) instead of `id=not.is.null`.
+- Result: 8/8 Paket rows inserted successfully (4 regular + 4 special banner configs).
+- Final verification — ALL TABLES MATCH:
+    LOCAL  : Category=12 User=14 Seller=19 Listing=43 Message=14 Paket=8 UniqueCode=7 SiteSetting=5
+    REMOTE : Category=12 User=14 Seller=19 Listing=43 Message=14 Paket=8 UniqueCode=7 SiteSetting=5
+- Verified app still works post-sync: homepage HTTP 200, /api/categories 200, /api/listings 200, /api/admin/banner 200, /api/admin/hero-banner 200, /api/admin/banner-2 200, /api/admin/banner-3 200. No new errors in dev.log.
+- Note: SiteSetting delete step failed with `column SiteSetting.id does not exist` (PK is `key` not `id`), but INSERT succeeded with `resolution=ignore-duplicates` and the 5 existing rows already matched the backup, so count verified OK. No data loss.
+
+Stage Summary:
+- **All 8 Prisma tables now in sync** between local SQLite and Supabase: Category(12), User(14), Seller(19), Listing(43), Message(14), Paket(8), UniqueCode(7), SiteSetting(5).
+- **Banner configs preserved**: the 4 special Paket rows (__site_banner__, __site_banner_2__, __site_banner_3__, __site_hero_banner__) are now in BOTH local and Supabase, so banner rendering works in both environments.
+- **Site settings preserved**: BCA account, account name, WhatsApp number, support email, chat sound toggle — all 5 settings are in both DBs.
+- **Schema drift identified but NOT fixed**: Supabase `Paket` table is missing the `maxPhotos` column that Prisma schema declares. Workaround = strip maxPhotos during sync. Proper fix would be `ALTER TABLE "Paket" ADD COLUMN "maxPhotos" INTEGER NOT NULL DEFAULT 3;` via Supabase SQL editor (requires dashboard access — anon key can't do DDL). This is a non-issue for runtime since the app reads maxPhotos from the JSON `features` column, not the dedicated column.
+- **Data volume**: total ~50 KB across all tables. Far below Supabase free tier limits (500 MB DB, 1 GB storage, 2M API req/month, 50K auth MAU).
+- **Local SQLite size**: 160 KB. Effectively identical data set to Supabase now.
