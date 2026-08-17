@@ -7646,3 +7646,310 @@ Stage Summary:
   * Debug script:      `/home/z/my-project/debug-desktop-header.py`
   * Result JSON:        `/home/z/my-project/verify-detail-2-result.json`
   * Screenshots:        `/home/z/my-project/verify-detail-2-{desktop,mobile}-{1-home,2-detail-top,3-detail-full,4-scrolled}.png`
+
+---
+Task ID: verify-detail-3
+Agent: Verification Agent (general-purpose)
+Task: Verify the detail (ad) page back-button relocation fix — old "Kembali"
+text back button removed from above the gallery; NEW circular white
+ChevronLeft icon button added INSIDE the gallery top-left; global app
+Header STILL visible on ALL viewports (app-shell.tsx NOT changed to hide
+it this time); favorite/share buttons remain at top-right; clicking the
+new back icon navigates back (goBack).
+
+Work Log:
+- Read most recent worklog entries (verify-detail-2 / Task 23 follow-ups)
+  to understand prior state: verify-detail-2 had introduced a
+  `<div className="hidden md:contents">` wrapper around `<Header />` in
+  app-shell.tsx that HID the header on mobile detail view. This new task
+  (verify-detail-3) REVERTS that header-hiding behavior — app-shell.tsx
+  is back to rendering `<Header />` directly, so the header shows on ALL
+  viewports again.
+- Confirmed source code matches the implementation context:
+  * `src/components/gomesin/app-shell.tsx` line 115: `<Header />` is
+    rendered DIRECTLY (no `hidden md:contents` wrapper). The header's
+    parent wrapper is `<div className="flex min-h-screen flex-col
+    bg-background">` (display:flex) — so the header is a visible flex
+    child on every viewport.
+  * `src/components/gomesin/views/detail.tsx` lines 201-210: inside the
+    gallery's relative container (the `div.cursor-zoom-in` block),
+    added:
+        <div className="absolute left-3 top-3" onClick={(e) => e.stopPropagation()}>
+          <button onClick={goBack}
+            className="grid size-9 place-items-center rounded-full
+                       bg-white/90 shadow backdrop-blur transition
+                       hover:bg-white"
+            aria-label={tr("back")}>
+            <ChevronLeft className="size-5" />
+          </button>
+        </div>
+    The favorite (heart) + share buttons remain at lines 212-228 inside
+    `absolute right-3 top-3`. The OLD text back button block above the
+    gallery (previously `<div className="mb-3 flex items-center gap-2">`
+    with ChevronLeft + "Kembali" label) is GONE — a `rg` search for
+    "Kembali" / "mb-3 flex items-center gap-2" above the gallery returns
+    no matches in detail.tsx.
+- Wrote `/home/z/my-project/verify-detail-3.py` — Playwright (Chromium)
+  script that runs BOTH viewports:
+    * desktop: 1280×800, device_scale_factor=2
+    * mobile:  iPhone 13 (390×844) via `p.devices["iPhone 13"]`
+  For each viewport, the script:
+    1. Loads home (`http://localhost:3000/`), suppresses PWA popup,
+       screenshots home.
+    2. Clicks the first visible `article[data-listing-id]` listing card
+       and waits for the detail view (`div.cursor-zoom-in` gallery OR
+       `button[aria-label='Kembali'/'Back']`).
+    3. Screenshots detail-top + detail-full.
+    4. Inspects the global `<header>`: rect, position, top, display,
+       classes, AND the immediate parent wrapper's tag/classes/display
+       (to confirm it is the root `flex min-h-screen flex-col
+       bg-background` div, NOT a `hidden md:contents` wrapper).
+    5. Checks the BeliMesin logo image is visible in the top 110px and
+       (desktop only, due to compact mobile header) the search input in
+       the top 200px.
+    6. Locates the gallery box (`div.cursor-zoom-in`).
+    7. Checks for ANY visible button whose innerText starts with
+       "Kembali"/"Back" sitting ABOVE the gallery — must be empty list.
+    8. Locates the new back button by `aria-label='Kembali'/'Back'`,
+       confirms it is INSIDE the gallery top-left (x/y within ~100px of
+       gallery's top-left), is `rounded-full` + `bg-white`, is square
+       (36×36), has empty innerText (icon-only), and contains exactly
+       one `<svg>` (the ChevronLeft icon).
+    9. Locates favorite + share buttons at the gallery top-right.
+   10. Clicks the back button (via `goBack`), waits for the home
+       `article[data-listing-id]` to re-appear, captures the destination
+       URL, and re-checks the global `<header>` is STILL visible on the
+       destination (home) page.
+  Captures all console messages and page errors.
+- Ran the script. Results saved to
+  `/home/z/my-project/verify-detail-3-result.json`.
+
+Verification Results:
+
+DESKTOP (1280×800 Chromium, 2× DPR → 2560×1600 screenshots):
+- Clicked listing: YES (83 listing articles on home; first visible one
+  clicked → navigated to detail view, listing slug:
+  `excavator-komatsu-pc200-8-bekas-qwhc8`, API returned 200 in 101ms).
+- Old "Kembali" text button above image GONE? YES ✅
+  * `kembali_text_buttons_above_gallery` = [] (no visible text button
+    starting with "Kembali"/"Back" anywhere above the gallery image).
+- New icon back button present INSIDE image? YES ✅
+  * `back_btn_in_gallery`:
+    - found = true
+    - position: x=29, y=94 (gallery top y=82, so y_offset=12px = `top-3`;
+      x_offset=12px = `left-3`).
+    - size: 36×36 (size-9 = 2.25rem ≈ 36px) — `is_square` = true.
+    - `rounded_full` = true (className contains "rounded-full").
+    - `bg_white` = true (className contains "bg-white/90").
+    - `text_empty` = true (icon-only — no "Kembali" text label).
+    - `svg_count` = 1 (single ChevronLeft SVG icon inside the button).
+    - class = "grid size-9 place-items-center rounded-full bg-white/90
+      shadow backdrop-blur transition hover:bg-white".
+- Header STILL visible? YES ✅
+  * `detail_header_visible` = true.
+  * `detail_header_info`:
+    - position = "sticky", top = "0px", zIndex = "40", display = "block".
+    - rect = {x:0, y:0, w:1280, h:65} — full viewport width, 65px tall,
+      pinned to the very top.
+    - classes = "sticky top-0 z-40 w-full border-b border-border
+      bg-background/95 backdrop-blur supports-[backdrop-filter]:
+      bg-background/80".
+  * `detail_header_parent_wrapper`:
+    - tag = "DIV", classes = "flex min-h-screen flex-col bg-background",
+      display = "flex".
+    - This is the ROOT app container — NOT the `hidden md:contents`
+      wrapper from verify-detail-2. The `<Header />` is a direct flex
+      child of the root column → visible on desktop (and mobile).
+  * `detail_logo_top_110px` = true — BeliMesin logo image at
+    (x=16, y=14, w=36, h=36). ✅
+  * `detail_search_input_top_200px` = true — search input at
+    (x=231.9, y=12, w=654.4, h=40). ✅
+- Favorite (heart) + share buttons remain at top-right? YES ✅
+  * favorit button: x=795, y=94, 36×36, rounded-full, bg-white.
+  * bagikan (share) button: x=839, y=94, 36×36, rounded-full, bg-white.
+  * Gallery right edge ≈ 887 (x=17 + w=870); both buttons sit inside the
+    top-right corner of the gallery. ✅
+- Back button click navigates back? YES ✅
+  * `back_click` = {clicked: true, navigated_back: true,
+    before_view: "detail", after_url: "http://localhost:3000/"}.
+  * `home_after_back_header_visible` = true — header STILL visible on
+    the destination (home) page after navigating back.
+  * `home_after_back_header_info.rect` = {x:0, y:0, w:1280, h:65} —
+    sticky header intact.
+  * `home_after_back_logo_top` = true — logo at (16,14,36,36).
+
+MOBILE (iPhone 13, 390×844 viewport, 3× DPR → 1170×2532 screenshots):
+- Clicked listing: YES (83 listing articles on home; clicked into
+  detail view).
+- Old "Kembali" text button above image GONE? YES ✅
+  * `kembali_text_buttons_above_gallery` = [].
+- New icon back button present INSIDE image? YES ✅
+  * `back_btn_in_gallery`:
+    - found = true
+    - position: x=12, y=85 (gallery top y=73, so y_offset=12px = `top-3`;
+      x_offset=12px = `left-3`; gallery is full-bleed x=0..390).
+    - size: 36×36 — `is_square` = true.
+    - `rounded_full` = true, `bg_white` = true, `text_empty` = true.
+    - `svg_count` = 1 (single ChevronLeft SVG icon).
+    - class = "grid size-9 place-items-center rounded-full bg-white/90
+      shadow backdrop-blur transition hover:bg-white".
+- Header STILL visible? YES ✅ (KEY change vs verify-detail-2)
+  * `detail_header_visible` = true.
+  * `detail_header_info`:
+    - position = "sticky", top = "0px", zIndex = "40", display = "block".
+    - rect = {x:0, y:0, w:390, h:57} — full viewport width, 57px tall,
+      pinned to the very top of the mobile detail page.
+    - classes = "sticky top-0 z-40 w-full border-b border-border
+      bg-background/95 backdrop-blur supports-[backdrop-filter]:
+      bg-background/80".
+  * `detail_header_parent_wrapper`:
+    - tag = "DIV", classes = "flex min-h-screen flex-col bg-background",
+      display = "flex".
+    - This is the ROOT app container — NOT the `hidden md:contents`
+      wrapper from verify-detail-2 (which had display:none on mobile
+      and trapped the header at 0×0 size). Now the header is a direct
+      flex child → visible on mobile. ✅
+  * `detail_logo_top_110px` = true — BeliMesin logo image at
+    (x=12, y=10, w=36, h=36). ✅
+  * `detail_search_input_top_200px` = false — expected: the mobile
+    header (h=57) is more compact than desktop (h=65) and uses a
+    search icon button / menu rather than an inline 654px-wide search
+    input. The header itself with the logo IS visible, satisfying the
+    requirement "global app Header should STILL be visible". The
+    absence of a wide inline search input on mobile is pre-existing
+    responsive header design and is NOT a regression from this change.
+- Favorite (heart) + share buttons remain at top-right? YES ✅
+  * favorit: x=298, y=85, 36×36, rounded-full, bg-white.
+  * bagikan: x=342, y=85, 36×36, rounded-full, bg-white.
+  * Gallery right edge = 390 (x=0 + w=390); both buttons sit inside the
+    top-right corner of the gallery. ✅
+- Back button click navigates back? YES ✅
+  * `back_click` = {clicked: true, navigated_back: true,
+    before_view: "detail", after_url: "http://localhost:3000/"}.
+  * `home_after_back_header_visible` = true — header STILL visible on
+    the destination (home) page after navigating back.
+  * `home_after_back_header_info.rect` = {x:0, y:0, w:390, h:105} —
+    sticky header intact on home.
+  * `home_after_back_logo_top` = true — logo at (12,10,36,36).
+
+Console / runtime errors:
+- 0 page_errors (no uncaught exceptions) on EITHER viewport.
+- Console errors observed (both viewports): only the PRE-EXISTING
+  WebSocket chat-service transport failures:
+    `ws://localhost:3000/?XTransformPort=3003&EIO=4&transport=websocket
+    failed: Connection closed before receiving a handshake response`.
+  These are the same pre-existing Caddy→chat-service (port 3003)
+  transport failures seen in Tasks 23-verify, verify-detail-1, and
+  verify-detail-2; they have NOTHING to do with the detail page back
+  button changes.
+- On desktop, one additional console "error" of type=error was a
+  generic Next.js SSR hydration attribute-mismatch warning ("A tree
+  hydrated but some attributes of the server rendered HTML didn't match
+  the client properties…"). This is a known dev-mode warning unrelated
+  to the back button change (it appears on home page load too).
+- dev.log check (last ~40 lines): ALL API requests during the visit
+  returned 200, including:
+  * `GET /api/listings/excavator-komatsu-pc200-8-bekas-qwhc8 200 in
+    101ms` (the listing we navigated to).
+  * All home page listing/category/banner API calls returned 200.
+  * Multiple `GET /api/messages?userId=...` polling calls returned 200.
+- The ONLY error in dev.log is the PRE-EXISTING
+  `[admin/settings] Prisma GET error, trying Supabase: TypeError:
+  Cannot read properties of undefined (reading 'findMany')` at
+  `src/app/api/admin/settings/route.ts:65:41` — this is the documented
+  Prisma→Supabase fallback path (dev DB initialization quirk; the code
+  recovers by falling back to Supabase, and the API still returns 200).
+  It is UNRELATED to the detail page back button changes.
+
+SCREENSHOTS (all saved to /home/z/my-project/):
+- `verify-detail-3-desktop-1-home.png` (2560×1600) — desktop home page.
+- `verify-detail-3-desktop-2-detail-top.png` (2560×1600) — desktop
+  detail page top: global Header bar (BeliMesin logo + search bar +
+  Pasang Iklan button) visible at top. Below it, the gallery image has
+  the circular white back-chevron button overlaying its top-left corner
+  and the heart + share buttons overlaying its top-right corner. NO
+  "Kembali" text button above the image.
+- `verify-detail-3-desktop-3-detail-full.png` (2560×~6000) — desktop
+  full-page detail view.
+- `verify-detail-3-desktop-4-after-back.png` (2560×1600) — desktop
+  home page after clicking the back button: header still visible,
+  listing grid restored.
+- `verify-detail-3-mobile-1-home.png` (1170×~1700) — mobile home page.
+- `verify-detail-3-mobile-2-detail-top.png` (1170×~1700) — mobile
+  detail page top: global Header bar (BeliMesin logo) visible at the
+  very top (h=57). Below it, the full-bleed gallery image with the
+  circular white back-chevron button overlaying its top-left corner and
+  the heart + share buttons overlaying its top-right corner. NO
+  "Kembali" text button above the image. (KEY difference vs
+  verify-detail-2: the header is now VISIBLE on mobile too.)
+- `verify-detail-3-mobile-3-detail-full.png` (1170×~8000) — mobile
+  full-page detail view.
+- `verify-detail-3-mobile-4-after-back.png` (1170×~1700) — mobile home
+  page after clicking the back button: header still visible, listing
+  grid restored.
+
+Stage Summary:
+- VERIFICATION PASSED on BOTH desktop (1280×800) and mobile (iPhone 13,
+  390×844).
+- Change 1 — Old "Kembali" text back button (ChevronLeft + text label)
+  ABOVE the gallery image REMOVED: ✅ CONFIRMED on both viewports.
+  * `kembali_text_buttons_above_gallery` = [] on both desktop and
+    mobile. The previous `<div className="mb-3 flex items-center
+    gap-2">` text-back-button block is gone from detail.tsx.
+- Change 2 — NEW back icon button (ChevronLeft only, no text, inside a
+  white circular button) at the TOP-LEFT corner, INSIDE the gallery
+  image: ✅ CONFIRMED on both viewports.
+  * `detail.tsx` lines 201-210: `<div className="absolute left-3 top-3">`
+    containing `<button className="... rounded-full bg-white/90 ...">`
+    with `<ChevronLeft className="size-5" />`.
+  * DOM inspection confirms a 36×36 circular (rounded-full + bg-white)
+    icon-only button (text_empty=true, svg_count=1, aria-label="kembali")
+    on BOTH viewports:
+    - Desktop: x=29, y=94 (gallery top y=82 → 12px offset = top-3;
+      12px from gallery left = left-3).
+    - Mobile:  x=12, y=85 (gallery top y=73 → 12px offset = top-3;
+      12px from gallery left = left-3; gallery is full-bleed x=0).
+  * Both sit INSIDE the gallery's top-left corner. ✅
+- Change 3 — Global app Header STILL VISIBLE on ALL viewports (NOT
+  hidden this time): ✅ CONFIRMED on both viewports.
+  * `app-shell.tsx` line 115: `<Header />` rendered DIRECTLY (no
+    `hidden md:contents` wrapper). The header's parent is the root
+    `<div className="flex min-h-screen flex-col bg-background">`
+    (display:flex), so the sticky `<header>` is a direct flex child of
+    the root column on EVERY viewport.
+  * Desktop: header rect = {x:0, y:0, w:1280, h:65}, position=sticky,
+    top=0, z=40. Logo "BeliMesin" image at (16, 14, 36, 36) visible.
+    Search input visible at (231.9, 12, 654.4, 40).
+  * Mobile: header rect = {x:0, y:0, w:390, h:57}, position=sticky,
+    top=0, z=40. Logo "BeliMesin" image at (12, 10, 36, 36) visible.
+    (No wide inline search input on mobile — expected, as the compact
+    mobile header uses a search icon button / menu; this is pre-existing
+    responsive design and not a regression.)
+  * This is the KEY difference vs verify-detail-2: in verify-detail-2
+    the header was HIDDEN on mobile (rect=0×0 via the `hidden
+    md:contents` wrapper with display:none on mobile). In verify-detail-3
+    that wrapper was REMOVED, so the header is visible on mobile too.
+- Change 4 — Favorite (heart) + share buttons remain at top-right of the
+  gallery: ✅ CONFIRMED on both viewports. Both 36×36 circular white
+  buttons present at the top-right corner of the gallery on both
+  desktop (favorit x=795, bagikan x=839) and mobile (favorit x=298,
+  bagikan x=342).
+- Change 5 — Clicking the new back icon button navigates back (goBack):
+  ✅ CONFIRMED on both viewports.
+  * `back_click` = {clicked: true, navigated_back: true,
+    before_view: "detail", after_url: "http://localhost:3000/"} on both
+    desktop and mobile.
+  * After navigation, the home `article[data-listing-id]` grid is
+    restored, and the global `<header>` is STILL visible on the
+    destination page (desktop rect {0,0,1280,65}, mobile rect
+    {0,0,390,105}), with the BeliMesin logo at the top.
+- No new console or page errors related to the changes. Only pre-existing
+  WebSocket chat-service (port 3003 via Caddy) transport failures appear
+  in the browser console — unrelated to the detail page back button
+  changes. dev.log shows all detail-page API requests returned 200; the
+  only dev.log error is the pre-existing Prisma→Supabase fallback for
+  /api/admin/settings (returns 200 after fallback), also unrelated.
+- Artifacts:
+  * Playwright script: `/home/z/my-project/verify-detail-3.py`
+  * Result JSON:        `/home/z/my-project/verify-detail-3-result.json`
+  * Screenshots:        `/home/z/my-project/verify-detail-3-{desktop,mobile}-{1-home,2-detail-top,3-detail-full,4-after-back}.png`
