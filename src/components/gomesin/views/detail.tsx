@@ -20,6 +20,8 @@ import {
   Clock,
   XCircle,
   AlertTriangle,
+  X,
+  ZoomIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +56,7 @@ export function DetailView() {
   const isFav = useStore((s) => (slug ? false : false));
   const favIds = useStore((s) => s.favorites);
   const [activeImg, setActiveImg] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const touchStartX = useRef<number | null>(null);
   const { t, lang } = useLang();
   const mounted = useMounted();
@@ -173,7 +176,8 @@ export function DetailView() {
         {/* gallery — left */}
         <div className="overflow-hidden rounded-xl border border-border bg-card">
           <div
-            className="relative aspect-[4/3] w-full overflow-hidden bg-muted"
+            className="group relative aspect-[4/3] w-full cursor-zoom-in overflow-hidden bg-muted"
+            onClick={() => setLightboxOpen(true)}
             onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
             onTouchEnd={(e) => {
               if (touchStartX.current === null) return;
@@ -192,13 +196,21 @@ export function DetailView() {
                 fill
                 priority
                 sizes="(max-width: 1024px) 100vw, 1280px"
-                className="object-cover"
+                className="object-cover transition-transform duration-300 group-hover:scale-105"
                 unoptimized
               />
             ) : null}
 
+            {/* zoom hint badge (appears on hover, desktop) */}
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-200 group-hover:bg-black/20 group-hover:opacity-100">
+              <div className="flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-foreground shadow-lg backdrop-blur">
+                <ZoomIn className="size-3.5" />
+                {tr("photoZoom") || "Klik untuk perbesar"}
+              </div>
+            </div>
+
             {/* favorite + share (top-right) */}
-            <div className="absolute right-3 top-3 flex gap-2">
+            <div className="absolute right-3 top-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={() => toggleFavorite(l.id)}
                 className="grid size-9 place-items-center rounded-full bg-white/90 shadow backdrop-blur hover:bg-white"
@@ -217,22 +229,22 @@ export function DetailView() {
 
             {/* prev/next arrows (desktop, show if >1 image) */}
             {l.images.length > 1 && (
-              <>
+              <div className="absolute inset-0 flex items-center justify-between px-2 pointer-events-none" onClick={(e) => e.stopPropagation()}>
                 <button
                   onClick={() => setActiveImg((p) => (p - 1 + l.images.length) % l.images.length)}
-                  className="absolute left-2 top-1/2 hidden -translate-y-1/2 grid size-9 place-items-center rounded-full bg-white/90 text-foreground shadow backdrop-blur transition hover:bg-white sm:grid"
+                  className="pointer-events-auto absolute left-2 top-1/2 hidden -translate-y-1/2 grid size-9 place-items-center rounded-full bg-white/90 text-foreground shadow backdrop-blur transition hover:bg-white sm:grid"
                   aria-label={tr("photoPrev")}
                 >
                   <ChevronLeft className="size-5" />
                 </button>
                 <button
                   onClick={() => setActiveImg((p) => (p + 1) % l.images.length)}
-                  className="absolute right-2 top-1/2 hidden -translate-y-1/2 grid size-9 place-items-center rounded-full bg-white/90 text-foreground shadow backdrop-blur transition hover:bg-white sm:grid"
+                  className="pointer-events-auto absolute right-2 top-1/2 hidden -translate-y-1/2 grid size-9 place-items-center rounded-full bg-white/90 text-foreground shadow backdrop-blur transition hover:bg-white sm:grid"
                   aria-label={tr("photoNext")}
                 >
                   <ChevronRight className="size-5" />
                 </button>
-              </>
+              </div>
             )}
 
             {/* counter */}
@@ -521,6 +533,151 @@ export function DetailView() {
         </section>
       )}
 
+      {/* ===== Full-screen image lightbox ===== */}
+      {lightboxOpen && l.images.length > 0 && (
+        <ImageLightbox
+          images={l.images}
+          index={activeImg}
+          onClose={() => setLightboxOpen(false)}
+          onIndexChange={setActiveImg}
+          alt={listingTitle(l, mounted ? lang : "id")}
+        />
+      )}
+
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Full-screen Image Lightbox                                         */
+/* ------------------------------------------------------------------ */
+
+interface LightboxProps {
+  images: string[];
+  index: number;
+  onClose: () => void;
+  onIndexChange: (i: number) => void;
+  alt: string;
+}
+
+function ImageLightbox({ images, index, onClose, onIndexChange, alt }: LightboxProps) {
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+
+  // Lock body scroll while lightbox is open + keyboard nav
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowLeft") onIndexChange((index - 1 + images.length) % images.length);
+      else if (e.key === "ArrowRight") onIndexChange((index + 1) % images.length);
+    };
+    window.addEventListener("keydown", onKey);
+
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [index, images.length, onClose, onIndexChange]);
+
+  const goPrev = () => onIndexChange((index - 1 + images.length) % images.length);
+  const goNext = () => onIndexChange((index + 1) % images.length);
+
+  return (
+    <div
+      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/95 animate-in fade-in duration-200"
+      onClick={onClose}
+      onTouchStart={(e) => {
+        touchStartX.current = e.touches[0].clientX;
+        touchStartY.current = e.touches[0].clientY;
+      }}
+      onTouchEnd={(e) => {
+        if (touchStartX.current === null) return;
+        const dx = e.changedTouches[0].clientX - touchStartX.current;
+        const dy = e.changedTouches[0].clientY - touchStartY.current!;
+        // Horizontal swipe → prev/next (only if vertical movement is small)
+        if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+          if (dx < 0) goNext();
+          else goPrev();
+        }
+        touchStartX.current = null;
+        touchStartY.current = null;
+      }}
+    >
+      {/* Top bar: close + counter */}
+      <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between p-4" onClick={(e) => e.stopPropagation()}>
+        <span className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-medium text-white backdrop-blur">
+          {index + 1} / {images.length}
+        </span>
+        <button
+          onClick={onClose}
+          className="grid size-10 place-items-center rounded-full bg-white/10 text-white backdrop-blur transition hover:bg-white/20"
+          aria-label="Tutup"
+        >
+          <X className="size-5" />
+        </button>
+      </div>
+
+      {/* Prev arrow */}
+      {images.length > 1 && (
+        <button
+          onClick={(e) => { e.stopPropagation(); goPrev(); }}
+          className="absolute left-3 top-1/2 z-10 grid size-12 -translate-y-1/2 place-items-center rounded-full bg-white/10 text-white backdrop-blur transition hover:bg-white/20"
+          aria-label="Sebelumnya"
+        >
+          <ChevronLeft className="size-6" />
+        </button>
+      )}
+
+      {/* Image */}
+      <div
+        className="relative mx-auto h-full w-full max-w-5xl p-4 sm:p-8"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="relative flex h-full w-full items-center justify-center">
+          <img
+            src={proxyUrl(images[index])}
+            alt={alt}
+            className="max-h-full max-w-full rounded-lg object-contain shadow-2xl animate-in zoom-in-95 fade-in duration-200"
+          />
+        </div>
+      </div>
+
+      {/* Next arrow */}
+      {images.length > 1 && (
+        <button
+          onClick={(e) => { e.stopPropagation(); goNext(); }}
+          className="absolute right-3 top-1/2 z-10 grid size-12 -translate-y-1/2 place-items-center rounded-full bg-white/10 text-white backdrop-blur transition hover:bg-white/20"
+          aria-label="Berikutnya"
+        >
+          <ChevronRight className="size-6" />
+        </button>
+      )}
+
+      {/* Thumbnail strip */}
+      {images.length > 1 && (
+        <div
+          className="absolute bottom-0 left-0 right-0 z-10 flex justify-center p-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex max-w-full gap-2 overflow-x-auto rounded-2xl bg-black/40 p-2 backdrop-blur no-scrollbar">
+            {images.map((img, i) => (
+              <button
+                key={i}
+                onClick={() => onIndexChange(i)}
+                className={cn(
+                  "relative size-14 shrink-0 overflow-hidden rounded-lg border-2 bg-muted transition",
+                  i === index ? "border-primary opacity-100" : "border-transparent opacity-60 hover:opacity-100"
+                )}
+              >
+                <Image src={proxyUrl(img)} alt="" fill className="object-cover" unoptimized sizes="56px" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
