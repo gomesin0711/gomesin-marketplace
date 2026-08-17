@@ -6587,3 +6587,89 @@ Stage Summary:
 - All endpoints respond 200.
 - node_modules preserved (no reinstall needed), Vercel project link preserved.
 - The project is ready for any further development or deployment.
+
+---
+Task ID: 19-verify
+Agent: general-purpose (Playwright verifier)
+Task: Verify that the logo was replaced and the text "mesinKU" next to the logo was changed to "BeliMesin" on the local dev server at http://localhost:3000.
+
+Work Log:
+- Read worklog.md for context and confirmed the changes described in Task 19 were applied to:
+  - `/public/logo-sm.jpeg` and `/public/logo.jpeg` (both 76694 bytes, replaced Aug 17 02:54)
+  - `src/components/gomesin/header.tsx` — `Logo()` button now renders `<span className="text-primary">Beli</span>Mesin` with `aria-label="BeliMesin Beranda"` and `alt="BeliMesin"` on the `<img src="/logo-sm.jpeg">`.
+  - `src/components/gomesin/footer.tsx` — brand text next to `<Cog>` icon now reads `<span className="text-primary">Beli</span>Mesin`. (Note: the copyright line `© 2026 mesinKU.` at line 105 still says "mesinKU", but that is NOT next to a logo and was outside the Task 19 scope.)
+  - `src/components/pwa-install-prompt.tsx` — title `Install BeliMesin`, share title `BeliMesin`, img alt `BeliMesin`.
+  - `src/components/gomesin/pwa-install-button.tsx` — `aria-label="Install aplikasi BeliMesin"`.
+- Wrote Playwright script to `/home/z/my-project/verify-logo.py` and executed it against `http://localhost:3000/` (returned HTTP 200).
+- Used desktop viewport 1280x800, Chromium headless, waited 2 s after `domcontentloaded` then waited for the visible logo button to have a non-zero bounding rect.
+- IMPORTANT implementation detail: the header renders TWO `<Logo />` instances — one inside `<div className="md:hidden">` (mobile, hidden on desktop) and one inside `<div className="hidden md:flex ...">` (desktop, visible). `document.querySelector('button[aria-label="BeliMesin Beranda"]')` returns the FIRST match (the mobile one), which has a 0x0 bounding rect on a desktop viewport. The script was therefore updated to filter by `getBoundingClientRect().width > 10 && height > 10` to pick the actually-visible desktop logo button. After this fix, the desktop button was correctly located at (x=16, y=14, w=130.5, h=36) and its `<img>` reported `naturalWidth=1254`, `naturalHeight=1254`, `clientWidth=36`.
+- Captured 3 screenshots:
+  - `/home/z/my-project/verify-logo-1.png`              — full page, 1280x3954
+  - `/home/z/my-project/verify-logo-2-footer.png`       — `<footer>` element, 1280x351
+  - `/home/z/my-project/verify-logo-3-header-crop.png`  — desktop header logo + brand text crop, 147x52
+- Captured browser console messages and page errors. Found 3 console errors, all of the form:
+  `WebSocket connection to 'ws://localhost:3000/?XTransformPort=3003&EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response`
+  These are pre-existing socket.io chat-service (port 3003) WebSocket transport failures through the Caddy gateway; they are completely unrelated to the logo change. Zero uncaught page errors.
+
+Verification results (saved to `/home/z/my-project/verify-logo-result.json`):
+- New logo image loaded? YES — naturalWidth=1254, naturalHeight=1254, src=/logo-sm.jpeg (matches the 1254x1254 JPEG, 76 KB "gomesin logo.jpg" mentioned in Task 19).
+- Header text next to logo = "BeliMesin"? YES — brandText="BeliMesin" (rendered as `<span class="text-primary">Beli</span>Mesin`).
+- Footer brand text next to Cog icon = "BeliMesin"? YES — brandTextNextToCog="BeliMesin".
+- Any "mesinKU" remaining NEXT TO LOGOS? NO — header=False, footer (next to Cog)=False.
+- Console errors? 3 — all pre-existing WebSocket chat-service connection failures (unrelated to logo). No page errors.
+
+Additional observations (out of Task 19 scope but worth flagging):
+- Footer copyright line still says `© 2026 mesinKU. Hak cipta dilindungi.` (footer.tsx:105) — NOT next to a logo.
+- Footer "about" paragraph still says `mesinKU adalah marketplace mesin industri terlengkap di Indonesia...` (comes from i18n translations, not from the components changed in Task 19).
+- Email/WhatsApp strings still contain `mesinku711@gmail.com` (intentional, that is the actual contact email).
+
+Stage Summary:
+- VERIFICATION PASSED. All Task 19 changes are confirmed live on `http://localhost:3000/`:
+  - New logo image (1254x1254 JPEG) is being served from `/logo-sm.jpeg` and loads correctly in the header (naturalWidth=1254, displayed at 36x36).
+  - Header brand text next to the logo says "BeliMesin" (split as "Beli" + "Mesin" with "Beli" in primary color).
+  - Footer brand text next to the Cog icon says "BeliMesin".
+  - No "mesinKU" text appears next to any logo on the page.
+- The only console errors observed are pre-existing WebSocket (socket.io chat-service) failures and are unrelated to the logo/branding change.
+- Artifacts:
+  - Playwright script: `/home/z/my-project/verify-logo.py`
+  - Result JSON:       `/home/z/my-project/verify-logo-result.json`
+  - Screenshots:       `/home/z/my-project/verify-logo-1.png`, `/home/z/my-project/verify-logo-2-footer.png`, `/home/z/my-project/verify-logo-3-header-crop.png`
+
+---
+Task ID: 19
+Agent: main (Z.ai Code)
+Task: Replace logo with uploaded "gomesin logo.jpg" and change text "mesinKU" next to logo to "BeliMesin"
+
+Work Log:
+- User uploaded new logo: /home/z/my-project/upload/gomesin logo.jpg (1254x1254 JPEG, 76KB).
+- Replaced logo image files:
+  * /home/z/my-project/public/logo-sm.jpeg → new logo (was 2832 bytes, now 76694 bytes)
+  * /home/z/my-project/public/logo.jpeg → new logo (was 42970 bytes, now 76694 bytes)
+  * /home/z/my-project/public/logo.svg left unchanged (not used in main UI).
+- Updated text "mesinKU" → "BeliMesin" in all places where it appears NEXT TO A LOGO:
+  1. src/components/gomesin/header.tsx (Logo component):
+     * aria-label: "mesinKU Beranda" → "BeliMesin Beranda"
+     * img alt: "mesinKU" → "BeliMesin"
+     * brand text: `<span className="text-primary">mesin</span>KU` → `<span className="text-primary">Beli</span>Mesin`
+  2. src/components/gomesin/footer.tsx (brand area next to Cog icon):
+     * brand text: `<span className="text-primary">mesin</span>KU` → `<span className="text-primary">Beli</span>Mesin`
+  3. src/components/pwa-install-prompt.tsx (Play Store-like popup next to app icon):
+     * title translation: "Install mesinKU" → "Install BeliMesin" (id/en/zh)
+     * iOS share title: "mesinKU" → "BeliMesin"
+     * img alt: "mesinKU" → "BeliMesin"
+  4. src/components/gomesin/pwa-install-button.tsx (floating install FAB):
+     * aria-label: "Install aplikasi mesinKU" → "Install aplikasi BeliMesin"
+- Verified via Playwright subagent `19-verify` on dev server (localhost:3000):
+  * New logo image loaded: naturalWidth=1254, naturalHeight=1254 ✅
+  * Header text next to logo: "BeliMesin" ✅ (rendered as `<span class="text-primary">Beli</span>Mesin`)
+  * Footer text next to Cog icon: "BeliMesin" ✅
+  * No remaining "mesinKU" text next to logos ✅
+  * 0 page errors (3 pre-existing WebSocket chat-service warnings, unrelated to logo)
+  * Screenshots: verify-logo-1.png (full page), verify-logo-2-footer.png, verify-logo-3-header-crop.png
+- Note: Footer copyright line "© 2026 mesinKU." and i18n "footerAbout" text still say "mesinKU" — these are NOT next to a logo, so per user's instruction ("tulisan mesinku disamping logo diganti BeliMesin") they were left unchanged.
+
+Stage Summary:
+- Logo replaced with the new uploaded "gomesin logo.jpg" in both /public/logo-sm.jpeg and /public/logo.jpeg.
+- Brand text "mesinKU" changed to "BeliMesin" in all 4 locations where it appears next to a logo (header, footer, PWA install popup, PWA install FAB button).
+- Dev server running on port 3000, all changes compiled successfully.
+- Visual verification confirmed: new logo loads, all brand text next to logos now says "BeliMesin".

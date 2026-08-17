@@ -23,7 +23,7 @@ export function Footer() {
                 <Cog className="size-5" />
               </span>
               <span className="text-xl font-extrabold tracking-tight">
-                <span className="text-primary">mesin</span>KU
+                <span className="text-primary">Beli</span>Mesin
               </span>
             </div>
             <p className="text-sm text-muted-foreground">

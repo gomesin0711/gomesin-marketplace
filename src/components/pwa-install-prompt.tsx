@@ -147,7 +147,7 @@ function detectPlatform(): Platform {
 /* ------------------------------------------------------------------ */
 
 const T: Record<string, Record<string, string>> = {
-  title:        { id: "Install mesinKU", en: "Install mesinKU", zh: "\u5b89\u88c5 mesinKU" },
+  title:        { id: "Install BeliMesin", en: "Install BeliMesin", zh: "\u5b89\u88c5 BeliMesin" },
   subtitle:     { id: "Marketplace Mesin Industri #1", en: "#1 Industrial Machinery Marketplace", zh: "#1 \u5de5\u4e1a\u673a\u68b0\u5e02\u573a" },
   desc:         { id: "Akses marketplace mesin industri terlengkap langsung dari home screen Anda.", en: "Access the largest industrial machinery marketplace directly from your home screen.", zh: "\u4ece\u4e3b\u5c4f\u5e55\u76f4\u63a5\u8bbf\u95ee\u6700\u5927\u7684\u5de5\u4e1a\u673a\u68b0\u5e02\u573a\u3002" },
   install:      { id: "Install", en: "Install", zh: "\u5b89\u88c5" },
@@ -273,7 +273,7 @@ export function PwaInstallPrompt() {
     if (platform === "ios" && typeof navigator !== "undefined" && navigator.share) {
       try {
         await navigator.share({
-          title: "mesinKU",
+          title: "BeliMesin",
           text: "Marketplace Mesin Industri #1 di Indonesia",
           url: window.location.href,
         });
@@ -330,7 +330,7 @@ export function PwaInstallPrompt() {
             <div className="flex items-center gap-4">
               {/* App icon */}
               <div className="grid size-20 shrink-0 place-items-center rounded-2xl bg-white shadow-xl ring-2 ring-white/40">
-                <img src="/pwa-icon-192.png" alt="mesinKU" className="size-16 rounded-xl" />
+                <img src="/pwa-icon-192.png" alt="BeliMesin" className="size-16 rounded-xl" />
               </div>
               {/* App name + rating — like Play Store */}
               <div className="min-w-0 flex-1 text-white">

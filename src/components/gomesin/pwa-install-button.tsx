@@ -165,7 +165,7 @@ export function PwaInstallButton() {
       type="button"
       onClick={handleInstall}
       disabled={installing}
-      aria-label="Install aplikasi mesinKU"
+      aria-label="Install aplikasi BeliMesin"
       className="group fixed right-4 bottom-20 z-[90] flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-orange-600 px-4 py-3 text-sm font-bold text-white shadow-xl shadow-primary/30 transition-all hover:scale-105 hover:shadow-2xl active:scale-95 md:bottom-6 md:px-5 md:py-3.5"
     >
       {/* Pulsing ring to draw attention */}

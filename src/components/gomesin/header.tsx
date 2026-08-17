@@ -29,17 +29,17 @@ function Logo() {
       <button
         onClick={() => useStore.getState().goHome()}
         className="flex items-center gap-2"
-        aria-label="mesinKU Beranda"
+        aria-label="BeliMesin Beranda"
       >
         <img
           src="/logo-sm.jpeg"
-          alt="mesinKU"
+          alt="BeliMesin"
           width={36}
           height={36}
           className="size-9 rounded-lg object-cover shadow-sm"
         />
         <span className="tracking-tight text-xl font-bold" style={{ fontFamily: 'var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif' }}>
-          <span className="text-primary">mesin</span>KU
+          <span className="text-primary">Beli</span>Mesin
         </span>
       </button>
       <button
