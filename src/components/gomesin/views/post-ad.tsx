@@ -1493,19 +1493,26 @@ export function PostAdView() {
 
                       setUploadingProof(true);
 
-                      // === CRITICAL: Create the listing FIRST, before anything that
-                      // might navigate the page away (WhatsApp, etc.).
-                      // doSubmit() fires mutation.mutate() which sends the POST
-                      // /api/listings request immediately. With keepalive:true on
-                      // the fetch, the request completes even if the page later
-                      // navigates away when WhatsApp opens.
-                      // Previously doSubmit() was called AFTER openWhatsAppWithUrl(),
-                      // which meant the listing was never created if WhatsApp
-                      // navigated the page away (iframe sandbox fallback to
-                      // window.location.href). This is the root cause of
-                      // "pasang iklan tidak bisa".
-                      doSubmit();
-
+                      // === ORDER IS CRITICAL ===
+                      // 1. Upload proof + ad images → get public URLs
+                      // 2. Send proof to admin chat (via socket.io, realtime)
+                      // 3. Open WhatsApp with proof URL (new tab via anchor-click)
+                      // 4. Create the listing LAST (doSubmit → POST /api/listings)
+                      //
+                      // WHY doSubmit() is LAST:
+                      // doSubmit() fires mutation.mutate() which calls POST /api/listings.
+                      // When the POST completes (~100ms), mutation.onSuccess calls
+                      // goToProfilePanel("iklan-saya") which NAVIGATES AWAY from this
+                      // page. If doSubmit() were called FIRST, the page would navigate
+                      // away before the proof upload / chat / WhatsApp steps complete
+                      // — those async operations would be aborted (component unmounted).
+                      // That was the bug: proof was never sent to chat/WhatsApp.
+                      //
+                      // By putting doSubmit() LAST, we ensure all proof delivery
+                      // (chat + WhatsApp) completes BEFORE the listing is created and
+                      // the page navigates away. WhatsApp opens via anchor-click (new
+                      // tab), so it does NOT navigate the current page away — the
+                      // current page stays and doSubmit() still executes after.
                       try {
                         // === Ad image (gambar iklan) ===
                         const adImage = images[0] || PLACEHOLDER_IMAGES[0];
@@ -1647,17 +1654,28 @@ export function PostAdView() {
                           toast.success("Bukti pembayaran terkirim ke WhatsApp admin!");
                         } else if (showWhatsAppFallbackToast(result)) {
                           // Fallback toast shown (popup was blocked in iframe).
-                          // Listing + proof-via-chat already succeeded above.
+                          // Proof was already sent to admin chat above.
                         } else if (result.status === "error") {
                           toast.error("Gagal membuka WhatsApp");
                         }
+
+                        // === STEP 4: Create the listing LAST ===
+                        // doSubmit() fires mutation.mutate() → POST /api/listings.
+                        // On success, mutation.onSuccess navigates to "Iklan Saya".
+                        // This is intentionally LAST so that proof delivery (chat +
+                        // WhatsApp) has already completed before the page navigates.
+                        // WhatsApp opens via anchor-click (new tab), so the current
+                        // page is NOT navigated away — doSubmit() still executes.
+                        doSubmit();
                       } catch {
                         toast.error("Gagal mengirim bukti");
                       } finally {
                         setUploadingProof(false);
                       }
-                      setQrisModal(false);
-                      // doSubmit() already called above — do NOT call again.
+                      // NOTE: do NOT close the QRIS modal here.
+                      // doSubmit() → mutation.onSuccess → goToProfilePanel navigates
+                      // away (which implicitly hides the modal). If the listing
+                      // creation fails, the modal stays open so the user can retry.
                     }}
                   >
                     {uploadingProof ? <Loader2 className="size-4 animate-spin" /> : mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}

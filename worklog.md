@@ -9248,3 +9248,29 @@ Stage Summary:
 - When it does appear, the "Buka WhatsApp" button uses anchor-click (not window.open) so it works reliably
 - Final fallback: copy URL to clipboard so user can paste manually
 - Listing creation (doSubmit) still runs BEFORE WhatsApp — ad is always saved regardless of WhatsApp outcome
+
+---
+Task ID: fix-proof-not-sent
+Agent: Main
+Task: Fix "bukti pembayaran tidak dikirim ke chat dan WhatsApp admin" — proof never delivered when clicking "Kirim & Pasang Iklan"
+
+Work Log:
+- Root cause: In the previous fix (fix-pasang-iklan), doSubmit() was moved to the BEGINNING of the onClick handler. However, doSubmit() fires mutation.mutate() which calls POST /api/listings. When the POST completes (~100ms), mutation.onSuccess calls goToProfilePanel("iklan-saya") which NAVIGATES AWAY from the PostAdView page.
+- The proof upload (STEP 1, ~2 seconds), chat send (STEP 2), and WhatsApp open (STEP 3) all run AFTER doSubmit() — but the page navigates away before they complete (~100ms vs ~2s), causing the component to unmount and all pending async operations to be ABORTED.
+- Result: listing was created, but proof was NEVER sent to admin chat or WhatsApp.
+
+Fix applied in src/components/gomesin/views/post-ad.tsx:
+- Moved doSubmit() from the BEGINNING to the END of the onClick handler (now STEP 4, after WhatsApp)
+- New order: (1) upload proof+ad images → (2) send chat to admin → (3) open WhatsApp → (4) doSubmit() creates listing
+- This ensures proof delivery (chat + WhatsApp) completes BEFORE the listing is created and the page navigates away
+- WhatsApp opens via anchor-click (new tab) — does NOT navigate the current page away, so doSubmit() still executes after
+- Removed setQrisModal(false) at the end — let mutation.onSuccess navigation handle modal dismissal (if listing creation fails, modal stays open for retry)
+- Added detailed comments explaining the ordering rationale
+
+package-activate-dialog.tsx was already correct — it uses setTimeout(doSubmit, 500) after WhatsApp, so proof is sent first.
+
+Stage Summary:
+- "Kirim & Pasang Iklan" now correctly: uploads proof → sends to admin chat → opens WhatsApp → creates listing
+- Proof is delivered to BOTH admin chat (via socket.io) AND WhatsApp before the listing is created
+- Listing creation is the LAST step — its onSuccess navigates to "Iklan Saya" only after everything else is done
+- If listing creation fails, modal stays open so user can retry without re-uploading proof
