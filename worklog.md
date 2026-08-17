@@ -6673,3 +6673,118 @@ Stage Summary:
 - Brand text "mesinKU" changed to "BeliMesin" in all 4 locations where it appears next to a logo (header, footer, PWA install popup, PWA install FAB button).
 - Dev server running on port 3000, all changes compiled successfully.
 - Visual verification confirmed: new logo loads, all brand text next to logos now says "BeliMesin".
+
+---
+Task ID: 20-verify
+Agent: general-purpose (Playwright verifier)
+Task: Verify that sample ads (listings) are now visible on the local dev server homepage at http://localhost:3000 after the SQLite DB was recreated with `prisma db push` and seeded (39 listings, 12 categories, 4 pakets, 8 sellers).
+
+Work Log:
+- Read /home/z/my-project/worklog.md for context (most recent task was Task 19 — logo replacement). Confirmed the DB-recreate + seed happened outside the logged task list (the brief itself describes it).
+- Pre-flight checks before writing the script:
+  * `/home/z/my-project/db/custom.db` exists (159,744 bytes, mtime Aug 17 03:03).
+  * `curl http://localhost:3000/` → HTTP 200 in 71 ms (dev server is up).
+  * `curl http://localhost:3000/api/categories` → 12 categories with non-zero listingCounts (Mesin Cetak=4, Mesin Digital Printing=3, Mesin Kemasan & Packaging=3, …).
+  * `curl http://localhost:3000/api/listings?limit=50` → JSON with 39 listings, each with `images` array referencing `/listing-images/*.jpg` (e.g. `/listing-images/sparepart-4.jpg`, `/listing-images/alatberat-2.jpg`).
+  * `/home/z/my-project/public/listing-images/` contains 85 image files (mix of UUID-style jpgs and named jpgs like `laser-3.jpg`, `kompressor-2.jpg`).
+- Inspected `src/components/gomesin/listing-card.tsx` — each listing card is rendered as `<article data-listing-id={listing.id} className="card-hover group flex h-full cursor-pointer flex-col overflow-hidden rounded-xl border ...">`. So `article[data-listing-id]` is the canonical selector for counting listing cards.
+- Inspected `src/components/gomesin/views/home.tsx` — the home page renders listings across multiple sections, each backed by a separate react-query fetch:
+    * Featured (spotlight, limit=8)        → CarouselSection
+    * Dahsyat (highlight, limit=8)         → CarouselSection
+    * Popular (spotlight, sort=popular, limit=12) → ListingSection (grid/table)
+    * Brand New (condition=baru, limit=24) → ListingSection
+    * Jasa (condition=jasa, limit=24)      → ListingSection
+    * Fresh (sort=newest, limit=48)        → ListingSection
+  Because the same listing can satisfy multiple filters (e.g. a spotlight listing that is also `baru` will appear in Featured + Popular + Brand New + Fresh), the count of `<article>` elements on the page can exceed the number of seeded listings.
+- Wrote `/home/z/my-project/verify-ads.py` (Playwright, Chromium headless, desktop viewport 1280x800). Pre-seeds `localStorage` (`gomesin-pwa-dismissed=1`, `gomesin-pwa-installed=1`) via `context.add_init_script` so the auto-shown PWA install popup does NOT cover the listings. Captures all console messages, page errors, failed HTTP requests, and `/api/listings*` response counts. Counts `article[data-listing-id]` elements and filters for "actually visible" (rect width>0 AND height>0 AND computed `display!=none` AND `visibility!=hidden` AND `opacity!=0`). Samples the first 12 visible card titles via the `<h3>` inside each card. Checks `<img src*='/listing-images/'>` for `naturalWidth>0` — both immediately after the 3 s wait AND again after scroll+extra wait (to distinguish "still downloading" from "truly broken").
+- Ran the script. All 8 `/api/listings*` endpoints returned HTTP 200:
+    * /api/listings?sort=newest&limit=24                       → 24 listings
+    * /api/listings?packageType=spotlight&limit=8&sort=newest  → 7 listings
+    * /api/listings?sort=newest&limit=48                       → 39 listings (all 39 seeded listings)
+    * /api/listings?packageType=spotlight&limit=12&sort=popular → 7 listings
+    * /api/listings?condition=baru&sort=newest&limit=24        → 23 listings
+    * /api/listings?packageType=highlight&limit=8&sort=newest  → 7 listings
+    * /api/listings?condition=jasa&sort=newest&limit=24        → 0 listings (no jasa listings seeded — expected)
+    * /api/listings/most-searched?limit=12                     → 12 listings
+
+Verification results (saved to `/home/z/my-project/verify-ads-result.json`):
+- Homepage HTTP status: 200 ✅
+- Total `<article data-listing-id>` cards on the page: 83 (visible: 83). After scroll: still 83/83. The count is higher than 39 because the home page shows listings in 6 different sections (Featured, Dahsyat, Popular, Brand New, Jasa, Fresh, Most-searched) and many listings satisfy multiple filters (e.g. a spotlight+baru listing appears in Featured carousel, Popular grid, Brand New grid, and Fresh grid).
+- All 4 expected title hints from the task brief are visible on the page:
+    * "Mesin Cetak"   → "Mesin Cetak Offset Heidelberg SM 52 4 Warna" ✅
+    * "Mesin CNC"     → "Mesin CNC Router Woodworking 1325 3 Axis", "Mesin Bubut CNC 2 Axis Slant Bed Mazak QT-200" ✅
+    * "Excavator Komatsu" → "Excavator Komatsu PC200-8 Bekas" ✅
+    * "Forklift Toyota"   → "Forklift Toyota 3 Ton Diesel" ✅
+- Sample listing titles visible (first 12 of 83 cards, in DOM order):
+    1. Excavator Komatsu PC200-8 Bekas
+    2. Mesin Table Saw Sliding 3000mm + Scoring
+    3. Mesin Bubut Logam Conventional WD6150 1500mm Swing 500mm
+    4. Mesin CNC Router Woodworking 1325 3 Axis
+    5. Mesin Injection Molding 150 Ton Bekas
+    6. Mesin Digital Printing Large Format Eco-Solvent 1.6m
+    7. Mesin Cetak Offset Heidelberg SM 52 4 Warna
+    8. Forklift Toyota 3 Ton Diesel
+    9. Mesin Jahit Industri Juki DDL-8700 (1 Jarum)
+   10. Mesin Bubut CNC 2 Axis Slant Bed Mazak QT-200
+   11. Mesin Laser Cutting CO2 1300x900 130W
+   12. Air Compressor Screw 30 HP Atlas Copco
+- Listing images loading correctly? YES ✅
+    * At the 3-second mark: 65 of 83 listing `<img>` elements had `naturalWidth>0`.
+    * After scroll + extra 1.5 s wait + `networkidle`: ALL 83 of 83 listing images had `naturalWidth>0` and `complete=true`.
+    * The 18 "naturalWidth=0" entries at the 3 s sample (laser-3.jpg, kompressor-2.jpg, plastik-3.jpg, kemasan-3.jpg, digitalprint-2.jpg, …) were NOT broken — `curl` confirms each returns HTTP 200 with valid JPEG content (40–60 KB each). They simply had not finished decoding yet at the 3 s mark because the page loads 83 listing images simultaneously and some are ~40–60 KB. After the network settled, every single one loaded successfully.
+- Console errors? Only pre-existing, listing-unrelated items:
+    * 3 × `WebSocket connection to 'ws://localhost:3000/?XTransformPort=3003&EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response` — pre-existing socket.io chat-service (port 3003) transport failures through the Caddy gateway. Unrelated to listings.
+    * 2 × `The resource http://localhost:3000/_next/static/media/0c89a48fa5027cee-s.p.4564287c.woff2 was preloaded using link preload but not used within a few seconds…` — Next.js font preload optimization warning, cosmetic, not an error.
+    * 0 uncaught page errors.
+    * 0 failed HTTP requests (no 4xx/5xx for any listing image or API call).
+- Screenshots (both valid PNG, 1280×7821 px, full-page):
+    * `/home/z/my-project/verify-ads-1.png` (4,789,892 bytes) — initial full-page screenshot after 3 s + networkidle.
+    * `/home/z/my-project/verify-ads-2-scrolled.png` (5,824,226 bytes) — full-page screenshot after scrolling to the bottom of the page.
+
+Stage Summary:
+- VERIFICATION PASSED. The sample ads (listings) are fully visible and rendering correctly on `http://localhost:3000/`:
+  - 83 visible listing cards across 6 home-page sections (Featured carousel, Dahsyat carousel, Popular grid, Brand New grid, Jasa grid [empty — no jasa seeded], Fresh grid, Most-searched carousel). The DB's 39 seeded listings appear multiple times because the same listing can match multiple section filters.
+  - All 4 expected title hints from the task brief are present (Mesin Cetak, Mesin CNC, Excavator Komatsu, Forklift Toyota).
+  - All 83 listing images load correctly with `naturalWidth>0` once the network settles (0 truly broken images; the 18 that were `naturalWidth=0` at the strict 3 s mark were just still-decoding, all resolved after `networkidle`).
+  - All 8 `/api/listings*` endpoints return HTTP 200 with the expected counts (39 total listings, 23 baru, 7 spotlight, 7 highlight, 7 popular-spotlight, 12 most-searched, 0 jasa, 24 newest).
+  - 0 page errors, 0 failed HTTP requests. The only console errors are pre-existing WebSocket chat-service transport failures (port 3003 through Caddy) — unrelated to listings.
+- The DB-recreate + seed operation fully succeeded. The homepage is now showing the 39 sample listings exactly as expected.
+- Artifacts:
+  - Playwright script: `/home/z/my-project/verify-ads.py`
+  - Result JSON:       `/home/z/my-project/verify-ads-result.json`
+  - Screenshot 1:      `/home/z/my-project/verify-ads-1.png` (1280×7821, 4.6 MB)
+  - Screenshot 2:      `/home/z/my-project/verify-ads-2-scrolled.png` (1280×7821, 5.5 MB)
+
+---
+Task ID: 20
+Agent: main (Z.ai Code)
+Task: Fix missing sample ads — recreate SQLite DB and re-seed sample listings after archive replacement wiped the database
+
+Work Log:
+- User reported "sample iklan hilang semua" (all sample ads are gone).
+- Root cause: The workspace (16) archive replacement in Task 17 used `rsync --delete` which wiped the `/home/z/my-project/db/` directory (containing `custom.db`). The archive didn't include `node_modules` or the SQLite DB file (both are in .gitignore). The dev server was running with `DATABASE_URL=file:/home/z/my-project/db/custom.db` (set in daemon.cjs), but the DB file no longer existed → Prisma threw "Unable to open the database file" on every query → API returned empty results → no listings on the homepage.
+- Fix 1 — Created the db directory: `mkdir -p /home/z/my-project/db`
+- Fix 2 — Set DATABASE_URL env var: `export DATABASE_URL="file:/home/z/my-project/db/custom.db"`
+- Fix 3 — Pushed the Prisma schema to create a fresh SQLite DB: `bun run db:push` → "SQLite database custom.db created... Your database is now in sync with your Prisma schema."
+- Fix 4 — Ran seed scripts in order:
+  * `bun run prisma/seed-users.ts` → created 12 users (including admin mesinku711@gmail.com), 14 messages, 1 admin. (seed-admin.ts requires ADMIN_PASSWORD env var which wasn't set, but seed-users.ts includes the admin user directly.)
+  * `bun run prisma/seed.ts` → created 12 categories, 8 sellers, 39 sample listings (Mesin Cetak, Digital Printing, Kemasan, Plastik, Kompressor, CNC, Laser, Bubut, Makanan, Tekstil, Kayu, Alat Berat, Sparepart), and upserted 4 pakets (Gold/colek, Boost/sundul, Platinum/highlight, Titanium/spotlight).
+- Fix 5 — Created `/home/z/my-project/.env` with `DATABASE_URL=file:/home/z/my-project/db/custom.db` so future dev server restarts (via `next dev` directly, not daemon.cjs) also pick up the correct DB path. Dev server detected the new .env ("Reload env: .env" in dev.log).
+- Verified via API:
+  * GET /api/listings?sort=newest&limit=48 → 39 listings ✅
+  * GET /api/categories → 12 categories ✅
+  * GET /api/admin/paket → 4 pakets ✅
+  * GET /api/listings/popular?limit=8 → 5 popular listings ✅
+- Verified via Playwright subagent `20-verify` on dev server (localhost:3000):
+  * 83 listing card elements visible on homepage (listings appear in multiple sections: Featured, Dahsyat, Popular, Brand New, Fresh) ✅
+  * All listing images loading (naturalWidth>0) — 0 broken images ✅
+  * Sample titles confirmed visible: "Excavator Komatsu PC200-8 Bekas", "Mesin Cetak Offset Heidelberg SM 52 4 Warna", "Mesin CNC Router Woodworking 1325 3 Axis", "Forklift Toyota 3 Ton Diesel", "Mesin Bubut Logam Conventional WD6150" ✅
+  * 0 page errors, 0 failed HTTP requests ✅
+  * Screenshots: verify-ads-1.png, verify-ads-2-scrolled.png
+
+Stage Summary:
+- Sample ads restored: 39 listings across 12 categories, 8 sellers, 4 pakets, 12 users, 14 messages.
+- SQLite database recreated at /home/z/my-project/db/custom.db (was wiped by archive replacement in Task 17).
+- .env file created with DATABASE_URL for persistence across restarts.
+- Dev server (port 3000) and chat-service (port 3003) both running with the correct DB.
+- Homepage now displays all sample ads with images loading correctly.
