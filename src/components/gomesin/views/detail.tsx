@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { useLang, translations as i18nTranslations, formatT, listingTitle, listingDesc, listingSpecs } from "@/lib/i18n";
 import { useMounted } from "@/lib/use-mounted";
 import { proxyUrl } from "@/lib/image";
+import { openExternalUrl } from "@/lib/external-url";
 
 async function fetchDetail(slug: string) {
   const res = await fetch("/api/listings/" + slug);
@@ -137,6 +138,14 @@ export function DetailView() {
   const waText = encodeURIComponent(
     formatT(tr("whatsappMsg"), { name: l.seller.name, title: l.title })
   );
+  const waUrl = `https://wa.me/${waNumber}?text=${waText}`;
+
+  // Open WhatsApp in a new tab — escapes sandboxed iframes (Preview Panel)
+  // by using window.top.open via the shared openExternalUrl helper.
+  const handleWhatsApp = () => {
+    const ok = openExternalUrl(waUrl);
+    if (!ok) toast.error("Tidak bisa membuka WhatsApp");
+  };
 
   const share = async () => {
     try {
@@ -365,14 +374,13 @@ export function DetailView() {
             >
               {tr("chatSeller")}
             </Button>
-            <a
-              href={`https://wa.me/${waNumber}?text=${waText}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex w-full items-center justify-center gap-2 rounded-full bg-[#25D366] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1ebe5d]"
+            <Button
+              onClick={handleWhatsApp}
+              className="w-full gap-2 rounded-full bg-[#25D366] font-semibold text-white hover:bg-[#1ebe5d]"
+              size="lg"
             >
               <Phone className="size-4" /> WhatsApp
-            </a>
+            </Button>
           </div>
 
           {/* seller profile (moved from seller sidebar) */}
@@ -528,14 +536,12 @@ export function DetailView() {
           >
             {tr("chatSeller")}
           </Button>
-          <a
-            href={`https://wa.me/${waNumber}?text=${waText}`}
-            target="_blank"
-            rel="noopener noreferrer"
+          <Button
+            onClick={handleWhatsApp}
             className="flex flex-1 items-center justify-center gap-2 rounded-full bg-[#25D366] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1ebe5d]"
           >
             <Phone className="size-4" /> WhatsApp
-          </a>
+          </Button>
         </div>
       </div>
 

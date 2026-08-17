@@ -27,6 +27,8 @@
  * bisa berjalan normal.
  */
 
+import { openExternalUrl } from "@/lib/external-url";
+
 export interface ShareImageOptions {
   blob: Blob;
   fileName: string;
@@ -47,26 +49,12 @@ function isMobile(): boolean {
 
 /** Resolve the most reliable way to open a wa.me URL on the current device. */
 function openWaUrl(waUrl: string): ShareImageResult {
-  // Always prefer window.open(_blank, noopener) — opens a new tab without
-  // navigating the current page, so in-flight JS (listing submit, chat send)
-  // continues uninterrupted. This works on both mobile (opens WhatsApp app
-  // via intent) and desktop (opens web.whatsapp.com in a new tab).
-  let popupWin: Window | null = null;
-  try {
-    popupWin = window.open(waUrl, "_blank", "noopener,noreferrer");
-  } catch {
-    popupWin = null;
-  }
-  if (popupWin) {
-    return { status: "opened" };
-  }
-  // Last-resort fallback: navigate current tab. This may abort in-flight JS.
-  try {
-    window.location.href = waUrl;
-    return { status: "opened" };
-  } catch {
-    return { status: "error", error: "Tidak bisa membuka WhatsApp (popup diblokir browser)" };
-  }
+  // Use the shared openExternalUrl helper which handles sandboxed iframes
+  // (Preview Panel) by trying window.top.open → window.open → top.location.href.
+  // See src/lib/external-url.ts for the full strategy chain.
+  const ok = openExternalUrl(waUrl);
+  if (ok) return { status: "opened" };
+  return { status: "error", error: "Tidak bisa membuka WhatsApp (popup diblokir browser)" };
 }
 void isMobile;
 

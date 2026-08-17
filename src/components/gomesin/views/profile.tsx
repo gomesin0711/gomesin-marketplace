@@ -108,6 +108,7 @@ import { NewListingsNotificationList } from "../notification-bell";
 import EmojiPicker, { EmojiStyle, Theme } from "emoji-picker-react";
 import { useTheme } from "next-themes";
 import { useChatBg } from "@/lib/use-chat-bg";
+import { openExternalUrl } from "@/lib/external-url";
 import {
   Popover,
   PopoverContent,
@@ -3606,14 +3607,13 @@ export function ProfileView() {
                             >
                               <MessageSquare className="size-4" /> Chat Support
                             </Button>
-                            <a
-                              href="https://wa.me/6285888082208?text=Halo%20mesinKU%2C%20saya%20butuh%20bantuan"
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <button
+                              type="button"
+                              onClick={() => openExternalUrl("https://wa.me/6285888082208?text=Halo%20mesinKU%2C%20saya%20butuh%20bantuan")}
                               className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-[#25D366] px-3 text-sm font-semibold text-white hover:bg-[#1ebe5d]"
                             >
                               <Phone className="size-4" /> WhatsApp
-                            </a>
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -3739,10 +3739,9 @@ export function ProfileView() {
                             </div>
                             <ExternalLink className="size-3.5 text-muted-foreground" />
                           </a>
-                          <a
-                            href="https://wa.me/6285888082208"
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => openExternalUrl("https://wa.me/6285888082208")}
                             className="flex items-center gap-3 rounded-lg border border-border p-2.5 transition hover:bg-accent"
                           >
                             <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-orange-500/10 text-orange-600">
@@ -3753,7 +3752,7 @@ export function ProfileView() {
                               <p className="text-sm font-semibold">0858-8808-2208</p>
                             </div>
                             <ExternalLink className="size-3.5 text-muted-foreground" />
-                          </a>
+                          </button>
                           <div className="flex items-center gap-3 rounded-lg border border-border p-2.5">
                             <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
                               <MapPin className="size-4" />
