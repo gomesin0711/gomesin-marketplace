@@ -9336,3 +9336,27 @@ Stage Summary:
 - Logout in one tab does NOT log out other tabs (per-tab token cleared, shared cookie untouched for other tabs)
 - Jasa category icon restored in the category nav bar (HardHat icon, filters condition=jasa)
 - All existing fetch calls work transparently via the global fetch patch
+
+---
+Task ID: deploy-vercel
+Agent: main
+Task: Deploy the Next.js project to https://gomesin.vercel.app using provided Vercel token
+
+Work Log:
+- Verified project structure: Next.js 16 with App Router, Prisma (SQLite local / Supabase production)
+- Confirmed vercel CLI installed (v59.1.3)
+- Authenticated with Vercel token as user `gomesin0711-1596`
+- Confirmed existing Vercel project `gomesin` already linked (project ID prj_mJFlErTv5qJcEloX0EnCa2Scxxkt) to https://gomesin.vercel.app
+- Verified production env vars already configured on Vercel: SUPABASE_SERVICE_ROLE_KEY, NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_SUPABASE_URL, FONNTE_API_KEY, DATABASE_URL
+- Confirmed app has dual-path DB strategy: local dev uses Prisma+SQLite, Vercel production uses raw Supabase client (see src/app/api/categories/route.ts)
+- Ran `vercel deploy --prod --yes --token <token>` from project root
+- Build completed successfully (prisma generate + next build) in ~2m
+- Deployment aliased to https://gomesin.vercel.app
+
+Stage Summary:
+- Deployment URL: https://gomesin.vercel.app (production alias)
+- Build: succeeded, all 28 API routes + static assets deployed
+- Verification: HTTP 200 on /, /api/categories, /api/listings, /api/listings/popular
+- Categories API returns real data from Supabase (e.g. "Mesin Cetak" with listingCount: 4)
+- Supabase backend is live and serving production data correctly
+- No code changes were required — the existing dual-path DB architecture (Prisma local / Supabase Vercel) handled the deployment cleanly
