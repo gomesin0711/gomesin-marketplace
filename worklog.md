@@ -7121,3 +7121,219 @@ Stage Summary:
 - Desktop layout unchanged — gallery still has rounded corners, border, and normal margins.
 - Production deployed and verified.
 - Files modified: `src/components/gomesin/header.tsx` (hide search on detail view), `src/components/gomesin/views/detail.tsx` (full-bleed gallery on mobile).
+
+---
+Task ID: verify-detail-1
+Agent: general-purpose (sub agent)
+Task: Verify the detail (ad) page UI changes — (1) global Header HIDDEN on detail view, (2) old "Kembali" text back button GONE, (3) new back-chevron icon (ChevronLeft in white circle) at TOP-LEFT INSIDE the gallery image.
+
+Work Log:
+- Read `/home/z/my-project/worklog.md` for prior context (Tasks 1–23).
+  Identified the relevant source changes already in place:
+  * `src/components/gomesin/app-shell.tsx` line 115:
+    `{view !== "detail" && <Header />}` — global Header is NOT rendered on the
+    detail view.
+  * `src/components/gomesin/views/detail.tsx` (git diff vs HEAD~3):
+    the old `<div className="mb-3 flex items-center gap-2 ...">` block with
+    `<button> <ChevronLeft/> {tr("back")} </button>` has been REMOVED from the
+    main success render (it remains only in the rare `isError || !data`
+    fallback at line 121-130, which is never shown for a successful ad load).
+    The `px-4` on the outer container was also removed (line 162), so the
+    gallery now sits flush at the top.
+  * `src/components/gomesin/views/detail.tsx` lines 201-210 — NEW back button:
+    `<div className="absolute left-3 top-3" onClick={(e) => e.stopPropagation()}>
+       <button onClick={goBack}
+         className="grid size-9 place-items-center rounded-full bg-white/90 shadow backdrop-blur transition hover:bg-white"
+         aria-label={tr("back")}>
+         <ChevronLeft className="size-5" />
+       </button>
+     </div>`
+    This is positioned INSIDE the gallery image container (`cursor-zoom-in`
+    relative div), at the top-left corner (`absolute left-3 top-3`). The
+    favorite (heart) + share buttons remain at the top-right
+    (`absolute right-3 top-3 flex gap-2`) — unchanged.
+  * `tr("back")` resolves to "Kembali" in Indonesian (`src/lib/i18n.ts` line 88),
+    so the back button's `aria-label` is "Kembali".
+- Wrote `/home/z/my-project/verify-detail-1.py` (Playwright sync script) which
+  runs on both desktop (1280×800 Chromium, 2× DPR) and mobile (iPhone 13 via
+  `p.devices["iPhone 13"]`, 390×844, 3× DPR).
+  * Pre-seeds localStorage/sessionStorage with the PWA-install dismissal keys
+    (`gomesin-pwa-installed=1`, `gomesin-pwa-hard-dismissed=<ts>`,
+    `gomesin-pwa-session-dismissed=1`) via `page.add_init_script` so the PWA
+    install prompt modal does NOT intercept clicks on listing cards.
+  * Navigates to `http://localhost:3000/`, waits for
+    `article[data-listing-id]`, then clicks the first visible listing card.
+  * Waits for the detail view's gallery container (`div.cursor-zoom-in`) or
+    the back button (`button[aria-label='Kembali']`).
+  * Captures: (a) home screenshot, (b) detail top screenshot,
+    (c) detail full-page screenshot, (d) after-back screenshot.
+  * Inspects the DOM to confirm:
+    - `header_dom_count` — count of `<header>` / `[role=banner]` elements
+      (should be 0 on detail view).
+    - `logo_visible_top_90px` — any mesinKU/BeliMesin logo in the top 90px
+      (should be false).
+    - `search_input_top_110px` — any text/search input in the top 110px
+      (should be false).
+    - `nav_top_130px` — any `<nav>` in the top 130px (should be false).
+    - `gallery_box` — bounding box of the gallery container.
+    - `kembali_text_buttons_above_gallery` — list of visible buttons whose
+      text starts with "Kembali"/"Back" AND sit above the gallery
+      (should be empty list).
+    - `back_btn_in_gallery` — the back button inside the gallery top-left
+      (must have `rounded-full`, `bg-white`, be square ~36px, and have
+      empty inner text → icon-only).
+    - `fav_share_buttons_top_right` — heart + share buttons at the top-right
+      of the gallery (should be 2 buttons: favorit + bagikan).
+    - `back_clicked` — whether the click succeeded.
+    - `after_back_header_count` — header count after going back (should be 1,
+      confirming we left the detail view and the header re-appeared on home).
+    - `after_back_gallery_at_top` — whether the gallery is still at the top
+      after going back (should be false).
+  * Captures all console messages and page errors.
+- Ran the script. Results saved to `/home/z/my-project/verify-detail-1-result.json`.
+
+Verification Results:
+
+DESKTOP (1280×800 Chromium, 2× DPR → 2560×1600 screenshots):
+- Clicked listing: YES (83 listing articles on home; first visible one clicked
+  successfully → navigated to detail view, listing slug:
+  `excavator-komatsu-pc200-8-bekas-qwhc8`, API returned 200).
+- Header hidden on detail? YES ✅
+  * `header_dom_count` = 0 (no `<header>` / `[role=banner]` elements on the
+    detail page).
+  * `logo_visible_top_90px` = false (no mesinKU/BeliMesin logo in the top 90px).
+  * `search_input_top_110px` = false (no search input in the top 110px).
+  * `nav_top_130px` = false (no category `<nav>` in the top 130px).
+- Old "Kembali" text button above image GONE? YES ✅
+  * `kembali_text_buttons_above_gallery` = [] (no visible text button starting
+    with "Kembali"/"Back" anywhere above the gallery image).
+- New circular white back-chevron button INSIDE gallery top-left? YES ✅
+  * `back_btn_in_gallery`:
+    - found = true
+    - position: x=13, y=29 (inside the gallery box at x=1, y=17, w=902, h=676.5)
+    - size: 36×36 (size-9 = 2.25rem ≈ 36px)
+    - `rounded_full` = true (className contains "rounded-full")
+    - `bg_white` = true (className contains "bg-white/90")
+    - `is_square` = true (36×36 — equal width/height, a circle)
+    - `text_empty` = true (icon-only button — no "Kembali" text label visible)
+    - class = "grid size-9 place-items-center rounded-full bg-white/90 shadow
+              backdrop-blur transition hover:bg-white"
+- Favorite + share buttons at top-right? YES ✅
+  * favorit button: x=811, y=29, 36×36, rounded-full, bg-white
+  * bagikan (share) button: x=855, y=29, 36×36, rounded-full, bg-white
+  * Both sit in the top-right corner of the gallery (gallery right edge ≈ 903).
+- Click new back button → navigates back? YES ✅
+  * `back_clicked` = true.
+  * After click: `after_back_header_count` = 1 (global Header re-appeared —
+    confirms we left the detail view and returned to the home view).
+  * `after_back_gallery_at_top` = false (gallery no longer at the top of the
+    page — confirms navigation occurred).
+- Console errors: 6 total, ALL pre-existing WebSocket chat-service transport
+  failures: `ws://localhost:3000/?XTransformPort=3003&EIO=4&transport=websocket
+  failed: Connection closed before receiving a handshake response`. These are
+  the same pre-existing Caddy→chat-service (port 3003) transport failures seen
+  in Task 23-verify; they have nothing to do with the detail page changes.
+  * 0 page errors (no uncaught exceptions).
+  * 1 benign font preload warning (.woff2 preloaded but not used — Next.js
+    font-loading warning, also pre-existing).
+
+MOBILE (iPhone 13, 390×844 viewport, 3× DPR → 1170×2532 screenshots):
+- Clicked listing: YES.
+- Header hidden on detail? YES ✅
+  * `header_dom_count` = 0, `logo_visible_top_90px` = false,
+    `search_input_top_110px` = false, `nav_top_130px` = false.
+- Old "Kembali" text button above image GONE? YES ✅
+  * `kembali_text_buttons_above_gallery` = [].
+- New circular white back-chevron button INSIDE gallery top-left? YES ✅
+  * `back_btn_in_gallery`: found=true, position x=-4, y=28 (the x=-4 is the
+    expected negative coordinate because the mobile gallery uses `-mx-4`
+    full-bleed margin per Task 23, so left-3 inside the gallery renders at
+    viewport x≈-4 + 12 = ~8px visually). size 36×36, rounded-full, bg-white,
+    is_square, text_empty — same icon-only circular white button.
+- Favorite + share buttons at top-right? YES ✅
+  * favorit: x=314, y=28, 36×36, rounded-full, bg-white.
+  * bagikan: x=358, y=28, 36×36, rounded-full, bg-white.
+  * Gallery width is 422 (full-bleed), so right edge ≈ 406; the favorite
+    button ends at 314+36=350, share button ends at 358+36=394 — both sit
+    inside the top-right corner of the gallery. ✅
+- Click new back button → navigates back? YES ✅
+  * `back_clicked` = true, `after_back_header_count` = 1,
+    `after_back_gallery_at_top` = false.
+- Console errors: 5 total, ALL pre-existing WebSocket chat-service transport
+  failures (same as desktop). 0 page errors.
+
+dev.log check:
+- No new runtime errors related to the detail page. All API requests during
+  the visit returned 200, including:
+  * `GET /api/listings/excavator-komatsu-pc200-8-bekas-qwhc8 200 in 132ms`
+    (the listing we navigated to).
+  * All home page listing/category/banner API calls returned 200.
+- The only error in dev.log is the PRE-EXISTING
+  `[admin/settings] Prisma GET error, trying Supabase: TypeError: Cannot read
+  properties of undefined (reading 'findMany')` — this is the documented
+  Prisma→Supabase fallback path (dev DB initialization quirk, code recovers
+  by falling back to Supabase which returns 200). Unrelated to the detail
+  page changes.
+
+SCREENSHOTS (all saved to /home/z/my-project/):
+- `verify-detail-1-desktop-1-home.png` (2560×1600) — desktop home page
+  (PWA popup suppressed, listings visible).
+- `verify-detail-1-desktop-2-detail-top.png` (2560×1600) — desktop detail
+  page top viewport: gallery image at top-left with the new circular white
+  back-chevron button overlaying the top-left corner, and the heart + share
+  buttons overlaying the top-right corner. NO global header bar above the
+  image — the gallery starts at y=17 (essentially the top of the viewport).
+- `verify-detail-1-desktop-3-detail-full.png` (2560×~6000) — desktop full-page
+  detail view (for context: title/price card to the right of the gallery on
+  desktop, description/specs/seller/related listings below).
+- `verify-detail-1-desktop-4-after-back.png` (2560×1600) — desktop after
+  clicking the new back button: back on the home view, global Header
+  re-appeared (logo + search + category nav visible at top).
+- `verify-detail-1-mobile-1-home.png` (1170×1992) — mobile home page.
+- `verify-detail-1-mobile-2-detail-top.png` (1170×1992) — mobile detail page
+  top: full-bleed gallery image (edge-to-edge), circular white back-chevron
+  at top-left inside the image, heart + share at top-right inside the image.
+  No header, no Kembali text button above.
+- `verify-detail-1-mobile-3-detail-full.png` (1170×~8000) — mobile full-page
+  detail view.
+- `verify-detail-1-mobile-4-after-back.png` (1170×1992) — mobile after back
+  click: home view with global Header (logo + mobile search row) restored.
+
+Stage Summary:
+- VERIFICATION PASSED on BOTH desktop (1280×800) and mobile (iPhone 13,
+  390×844).
+- Change 1 — Global app Header is HIDDEN on the detail view: ✅ CONFIRMED.
+  * `app-shell.tsx` line 115: `{view !== "detail" && <Header />}`.
+  * DOM has 0 `<header>`/`[role=banner]` elements on detail; no logo, no
+    search bar, no category nav in the top 130px.
+- Change 2 — Old "Kembali" text back button (with text label) is GONE: ✅
+  CONFIRMED.
+  * The old `<div className="mb-3 flex items-center gap-2 ...">` block with
+    `<ChevronLeft/> {tr("back")}` has been removed from the main success view
+    of `detail.tsx` (only remains in the rare `isError || !data` fallback).
+  * No visible text button starting with "Kembali"/"Back" sits above the
+    gallery image (`kembali_text_buttons_above_gallery` = [] on both
+    viewports).
+- Change 3 — New back icon (ChevronLeft inside a white circle button) is
+  visible at the TOP-LEFT corner, positioned INSIDE the gallery image: ✅
+  CONFIRMED.
+  * `detail.tsx` lines 201-210: `<div className="absolute left-3 top-3">`
+    containing a `<button className="... rounded-full bg-white/90 ...">`
+    with `<ChevronLeft className="size-5" />`.
+  * DOM inspection confirms a 36×36 circular (rounded-full + bg-white)
+    icon-only button (text_empty=true) at x≈13, y≈29 (desktop) / x≈-4, y≈28
+    (mobile, negative because of full-bleed gallery) — inside the gallery's
+    top-left corner.
+  * Clicking it triggers `goBack` (Zustand store) and navigates back to the
+    previous view (home), confirmed by header reappearing (header_count
+    0→1) and gallery no longer at top.
+- BONUS — Favorite (heart) + share buttons remain at top-right of the image:
+  ✅ CONFIRMED. Both 36×36 circular white buttons present at the top-right
+  corner of the gallery on both desktop and mobile.
+- No new console or page errors. Only pre-existing WebSocket chat-service
+  (port 3003 via Caddy) transport failures appear — unrelated to the detail
+  page changes. dev.log shows all detail-page API requests returned 200.
+- Artifacts:
+  * Playwright script: `/home/z/my-project/verify-detail-1.py`
+  * Result JSON:       `/home/z/my-project/verify-detail-1-result.json`
+  * Screenshots:        `/home/z/my-project/verify-detail-1-{desktop,mobile}-{1-home,2-detail-top,3-detail-full,4-after-back}.png`
