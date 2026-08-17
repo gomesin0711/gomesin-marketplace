@@ -81,7 +81,7 @@ async function postListing(payload: any) {
 // Year options: 2025 down to 1990
 const YEAR_OPTIONS = Array.from({ length: 2025 - 1990 + 1 }, (_, i) => String(2025 - i));
 
-const STEP_LABELS = ["Informasi Dasar", "Detail & Deskripsi", "Paket Iklan", "Foto Mesin", "Ringkasan Iklan", "Pembayaran"];
+const STEP_LABELS = ["Informasi Dasar", "Detail & Deskripsi", "Paket Iklan", "Foto Mesin", "Preview Iklan", "Pembayaran"];
 
 export function PostAdView() {
   const { qrisImageUrl } = useSiteAssets();
@@ -367,7 +367,7 @@ export function PostAdView() {
         if (images.length < 1) { toast.error("Upload minimal 1 foto mesin"); return false; }
         return true;
       }
-      // s === 5 (Ringkasan) — review only, no validation
+      // s === 5 (Preview) — review only, no validation
       // s === 6 (Pembayaran) — payment method validated at submit time
       return true;
     },
@@ -601,7 +601,7 @@ export function PostAdView() {
       {/* Green step title + Reset button */}
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-semibold text-green-600">
-          Pasang Iklan (Step {step}/4)
+          Pasang Iklan (Step {step}/6)
         </p>
         <Button
           type="button"
@@ -627,45 +627,42 @@ export function PostAdView() {
         <div className="w-10" />
       </div>
 
-      {/* Progress Stepper — horizontally scrollable on mobile (6 steps) */}
-      <div className="mb-6 overflow-x-auto no-scrollbar">
-        <div className="flex items-center justify-between min-w-[640px] px-2">
+      {/* Progress Stepper — compact, fits mobile viewport without horizontal scroll.
+          All 6 step circles visible at once; current step label shown below. */}
+      <div className="mb-5">
+        <div className="flex items-center px-1">
           {[1, 2, 3, 4, 5, 6].map((s) => (
-            <div key={s} className="flex flex-1 items-center">
+            <div key={s} className="flex flex-1 items-center last:flex-none">
               {/* Step circle */}
-              <div className="flex flex-col items-center">
-                <div
-                  className={cn(
-                    "grid size-8 place-items-center rounded-full text-sm font-bold transition-all",
-                    s < step
-                      ? "bg-green-500 text-white"
-                      : s === step
-                        ? "bg-green-500 text-white ring-4 ring-green-100"
-                        : "bg-gray-200 text-gray-400"
-                  )}
-                >
-                  {s < step ? <Check className="size-4" /> : s}
-                </div>
-                <span
-                  className={cn(
-                    "mt-1 whitespace-nowrap text-[10px] font-medium",
-                    s <= step ? "text-green-600" : "text-gray-400"
-                  )}
-                >
-                  {STEP_LABELS[s - 1]}
-                </span>
+              <div
+                className={cn(
+                  "grid size-7 shrink-0 place-items-center rounded-full text-xs font-bold transition-all",
+                  s < step
+                    ? "bg-green-500 text-white"
+                    : s === step
+                      ? "bg-green-500 text-white ring-4 ring-green-100"
+                      : "bg-gray-200 text-gray-400"
+                )}
+              >
+                {s < step ? <Check className="size-3.5" /> : s}
               </div>
               {/* Connector line */}
               {s < 6 && (
                 <div
                   className={cn(
-                    "mx-1.5 h-0.5 flex-1 rounded-full transition-all",
+                    "mx-1 h-0.5 flex-1 rounded-full transition-all",
                     s < step ? "bg-green-500" : "bg-gray-200"
                   )}
                 />
               )}
             </div>
           ))}
+        </div>
+        {/* Current step label — single line, never cut off */}
+        <div className="mt-2 text-center">
+          <p className="text-xs font-semibold text-green-600">
+            Step {step} dari 6 — {STEP_LABELS[step - 1]}
+          </p>
         </div>
       </div>
 
@@ -1087,10 +1084,10 @@ export function PostAdView() {
           </div>
         )}
 
-        {/* ========== STEP 5: Ringkasan Iklan ========== */}
+        {/* ========== STEP 5: Preview Iklan ========== */}
         {step === 5 && (
           <div className="space-y-4">
-            <h2 className="text-base font-bold text-foreground">Ringkasan Iklan</h2>
+            <h2 className="text-base font-bold text-foreground">Preview Iklan</h2>
             <p className="text-xs text-muted-foreground">
               Periksa kembali informasi iklan Anda sebelum melanjutkan ke pembayaran.
             </p>
@@ -1112,9 +1109,9 @@ export function PostAdView() {
               </div>
             </div>
 
-            {/* Ringkasan Iklan (Summary) */}
+            {/* Preview Iklan (Summary) */}
             <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-              <h3 className="text-sm font-bold text-foreground">Ringkasan Iklan</h3>
+              <h3 className="text-sm font-bold text-foreground">Preview Iklan</h3>
 
               {/* Thumbnail + Title + Price */}
               <div className="flex gap-3">
