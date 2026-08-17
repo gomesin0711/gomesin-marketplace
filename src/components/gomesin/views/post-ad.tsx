@@ -73,6 +73,11 @@ async function postListing(payload: any) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    // keepalive: true ensures the request completes even if the page
+    // navigates away (e.g. when WhatsApp opens via window.location.href).
+    // Without this, the browser cancels the in-flight fetch on navigation
+    // and the listing is never created.
+    keepalive: true,
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || tr("postFailed"));
@@ -1486,6 +1491,20 @@ export function PostAdView() {
                       const pkgName = paketMap[selectedPackage]?.name || selectedPackage;
 
                       setUploadingProof(true);
+
+                      // === CRITICAL: Create the listing FIRST, before anything that
+                      // might navigate the page away (WhatsApp, etc.).
+                      // doSubmit() fires mutation.mutate() which sends the POST
+                      // /api/listings request immediately. With keepalive:true on
+                      // the fetch, the request completes even if the page later
+                      // navigates away when WhatsApp opens.
+                      // Previously doSubmit() was called AFTER openWhatsAppWithUrl(),
+                      // which meant the listing was never created if WhatsApp
+                      // navigated the page away (iframe sandbox fallback to
+                      // window.location.href). This is the root cause of
+                      // "pasang iklan tidak bisa".
+                      doSubmit();
+
                       try {
                         // === Ad image (gambar iklan) ===
                         const adImage = images[0] || PLACEHOLDER_IMAGES[0];
@@ -1631,7 +1650,7 @@ export function PostAdView() {
                         setUploadingProof(false);
                       }
                       setQrisModal(false);
-                      doSubmit();
+                      // doSubmit() already called above — do NOT call again.
                     }}
                   >
                     {uploadingProof ? <Loader2 className="size-4 animate-spin" /> : mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}

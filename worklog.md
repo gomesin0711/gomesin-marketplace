@@ -9156,3 +9156,27 @@ Stage Summary:
     - Chat-service socket.io also verifies session cookie on handshake (verified in prior task).
 - **Files modified**: src/lib/session.ts (isHttpsRequest → isHttpsOrCrossOriginRequest, 4-layer detection), src/components/gomesin/listing-card.tsx (openSeller fallback), src/app/api/user-profile/route.ts (Seller table fallback).
 - **Note for production deployment**: On Vercel (NODE_ENV=production), the cookie will always be `SameSite=None; Secure` (layer 2 fires). This is correct for HTTPS production. The Host/Origin detection (layers 3 & 4) is for the sandbox preview panel where Caddy :81 is HTTP but the upstream is HTTPS.
+
+---
+Task ID: fix-pasang-iklan
+Agent: Main
+Task: Fix "pasang iklan tidak bisa" — listing not created when using paid package (QRIS payment flow)
+
+Work Log:
+- Investigated the pasang iklan (post ad) flow in src/components/gomesin/views/post-ad.tsx
+- Found root cause: In the QRIS payment modal's "Kirim & Pasang Iklan" button onClick handler, doSubmit() (which creates the listing via POST /api/listings) was called AFTER openWhatsAppWithUrl()
+- openWhatsAppWithUrl() calls openExternalUrl() which, in the sandboxed iframe (Preview Panel), may fall back to window.location.href = url — navigating the page away
+- When the page navigates away, doSubmit() at line 1634 either: (a) never executes, or (b) executes but the browser cancels the in-flight fetch request
+- Result: the listing was never created when using paid packages (QRIS/BCA payment), even though proof was sent to admin via WhatsApp/chat
+- Free packages (colek, price=0) worked fine because they call doSubmit() directly without the QRIS modal
+
+Fix applied (2 changes in src/components/gomesin/views/post-ad.tsx):
+1. Added keepalive: true to the fetch in postListing() function (line 72-85) — ensures the POST /api/listings request completes even if the page navigates away when WhatsApp opens
+2. Moved doSubmit() call to BEFORE the proof-upload/chat/WhatsApp steps in the QRIS modal onClick handler (now at line 1506, was at line 1634) — the listing creation request is now sent BEFORE any navigation can occur
+3. Removed the duplicate doSubmit() call at the end of the handler (line 1653)
+
+Stage Summary:
+- Root cause: doSubmit() called after openWhatsAppWithUrl() which navigates page away in iframe sandbox
+- Fix: doSubmit() now fires FIRST (before WhatsApp), + keepalive:true on fetch as safety net
+- Free package flow (direct doSubmit) was already working — no change needed there
+- Paid package flow (QRIS modal) now creates the listing before opening WhatsApp
