@@ -1341,13 +1341,6 @@ export function ProfileView() {
 
       {/* ===== MAIN CONTENT (next to permanent sidebar on desktop) ===== */}
       <main className={cn("min-w-0 flex-1 px-4 py-4 md:px-6 md:py-6", (panel === "pesan" || panel === "iklan-saya" || panel === "favorit-saya") && "max-md:px-0 max-md:pt-2 max-md:pb-0")}>
-        {/* breadcrumb — hidden on mobile when Pesan (cleaner chat view); hidden entirely for Iklan Saya & Favorit Saya panels */}
-        <div className={cn("mb-4 flex items-center gap-1 text-xs text-muted-foreground", (panel === "pesan" || panel === "iklan-saya" || panel === "favorit-saya") && "max-md:hidden", (panel === "iklan-saya" || panel === "favorit-saya") && "hidden")}>
-          <button onClick={goHome} className="hover:text-primary">{tr("home2")}</button>
-          <ChevronRight className="size-3" />
-          <span className="text-foreground">{tr("account")}</span>
-        </div>
-
         {/* Header — greeting + date + motivation + stat cards (HANYA di overview profil, panel === null) */}
         {panel === null && (
         <div className="mb-5">

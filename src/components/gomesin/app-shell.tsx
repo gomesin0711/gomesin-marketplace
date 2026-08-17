@@ -167,8 +167,8 @@ export function AppShell() {
           {isAdminView && !isAdmin && <AdminView key={view} />}
         </main>
       )}
-      {/* Hide footer on account/dashboard/admin views for cleaner UX */}
-      {!["profile", "dashboard", "favorites", "login", "post", ...ADMIN_VIEWS].includes(view) && <Footer />}
+      {/* Hide footer on account/dashboard/admin/detail views for cleaner UX */}
+      {!["profile", "dashboard", "favorites", "login", "post", "detail", ...ADMIN_VIEWS].includes(view) && <Footer />}
       {/* Spacer so the fixed bottom nav (mobile) doesn't cover footer content */}
       {view !== "detail" && <div className="h-[4.25rem] shrink-0 md:hidden" aria-hidden="true" />}
       {view !== "detail" && <BottomNav />}
