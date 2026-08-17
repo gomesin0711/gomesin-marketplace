@@ -45,6 +45,31 @@ function isMobile(): boolean {
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
+/** Resolve the most reliable way to open a wa.me URL on the current device. */
+function openWaUrl(waUrl: string): ShareImageResult {
+  // Always prefer window.open(_blank, noopener) — opens a new tab without
+  // navigating the current page, so in-flight JS (listing submit, chat send)
+  // continues uninterrupted. This works on both mobile (opens WhatsApp app
+  // via intent) and desktop (opens web.whatsapp.com in a new tab).
+  let popupWin: Window | null = null;
+  try {
+    popupWin = window.open(waUrl, "_blank", "noopener,noreferrer");
+  } catch {
+    popupWin = null;
+  }
+  if (popupWin) {
+    return { status: "opened" };
+  }
+  // Last-resort fallback: navigate current tab. This may abort in-flight JS.
+  try {
+    window.location.href = waUrl;
+    return { status: "opened" };
+  } catch {
+    return { status: "error", error: "Tidak bisa membuka WhatsApp (popup diblokir browser)" };
+  }
+}
+void isMobile;
+
 /**
  * Convert blob → base64 data URL untuk dikirim ke /api/upload-proof.
  * Server-side route akan handle upload ke tmpfiles.org (expire 60 hari)
@@ -108,51 +133,7 @@ export async function shareImageToWhatsApp({
   // Bangun URL WhatsApp ke nomor admin (6285888082208).
   const waUrl = buildWhatsAppUrl(phone, caption, imageUrl);
 
-  // ============================================================
-  // MOBILE: window.location.href langsung ke wa.me URL.
-  // Ini paling reliable di mobile — langsung buka WhatsApp app
-  // dan navigate ke chat admin (085888082208) dengan pesan
-  // pre-fill. User tinggal tap "Kirim".
-  // ============================================================
-  if (isMobile()) {
-    try {
-      window.location.href = waUrl;
-      return { status: "opened" };
-    } catch {
-      return { status: "error", error: "Tidak bisa membuka WhatsApp" };
-    }
-  }
-
-  // ============================================================
-  // DESKTOP: popup-blocker-safe pattern.
-  // Buka window KOSONG sync di click handler (sebelum await upload)
-  // untuk preserve user gesture context → popup tidak diblokir.
-  // Setelah upload selesai, set location window ke wa.me URL.
-  // Fallback: window.location.href kalau popup benar-benar diblokir.
-  // ============================================================
-  let popupWin: Window | null = null;
-  try {
-    popupWin = window.open("", "_blank");
-  } catch {
-    popupWin = null;
-  }
-
-  if (popupWin && !popupWin.closed) {
-    try {
-      popupWin.location.href = waUrl;
-      return { status: "opened" };
-    } catch {
-      try { popupWin.close(); } catch {}
-    }
-  }
-
-  // Fallback: navigasi tab saat ini ke wa.me URL.
-  try {
-    window.location.href = waUrl;
-    return { status: "opened" };
-  } catch {
-    return { status: "error", error: "Tidak bisa membuka WhatsApp" };
-  }
+  return openWaUrl(waUrl);
 }
 
 /**
@@ -172,36 +153,5 @@ export async function openWhatsAppWithUrl({
   phone?: string;
 }): Promise<ShareImageResult> {
   const waUrl = buildWhatsAppUrl(phone, caption, imageUrl);
-
-  if (isMobile()) {
-    try {
-      window.location.href = waUrl;
-      return { status: "opened" };
-    } catch {
-      return { status: "error", error: "Tidak bisa membuka WhatsApp" };
-    }
-  }
-
-  let popupWin: Window | null = null;
-  try {
-    popupWin = window.open("", "_blank");
-  } catch {
-    popupWin = null;
-  }
-
-  if (popupWin && !popupWin.closed) {
-    try {
-      popupWin.location.href = waUrl;
-      return { status: "opened" };
-    } catch {
-      try { popupWin.close(); } catch {}
-    }
-  }
-
-  try {
-    window.location.href = waUrl;
-    return { status: "opened" };
-  } catch {
-    return { status: "error", error: "Tidak bisa membuka WhatsApp" };
-  }
+  return openWaUrl(waUrl);
 }

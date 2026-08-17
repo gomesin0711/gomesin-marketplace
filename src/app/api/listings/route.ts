@@ -374,6 +374,11 @@ export async function POST(req: NextRequest) {
         if (userId) {
           dbUser = await db.user.findUnique({ where: { id: userId } });
         }
+        // CRITICAL: if the userId from the client doesn't exist in the local DB
+        // (e.g. a Supabase session userId that's not in SQLite), the listing.create
+        // below would throw P2003 FK violation. Guard by nulling out the userId.
+        // The listing will still be created, just without a user link.
+        const safeUserId = dbUser ? userId : null;
         const finalName = dbUser?.name || userName || "Anda (Pengguna mesinKU)";
         const finalPhone = dbUser?.phone || userPhone || "0812-0000-0000";
 
@@ -381,9 +386,9 @@ export async function POST(req: NextRequest) {
         // Each user gets their own seller profile so their ads are isolated.
         // Try to find existing seller by matching listings with this userId.
         let seller = null;
-        if (userId) {
+        if (safeUserId) {
           const userListings = await db.listing.findFirst({
-            where: { userId },
+            where: { userId: safeUserId },
             include: { seller: true },
           });
           if (userListings) {
@@ -480,7 +485,7 @@ export async function POST(req: NextRequest) {
             uniqueCode: typeof uniqueCode === "number" && uniqueCode > 0 ? uniqueCode : null,
             categoryId: finalCategoryId,
             sellerId: seller.id,
-            userId: userId || null,
+            userId: safeUserId,
           },
           include: { category: true, seller: true, user: { select: { id: true, name: true, phone: true, email: true, city: true, logoImage: true, bannerImage: true } } },
         });

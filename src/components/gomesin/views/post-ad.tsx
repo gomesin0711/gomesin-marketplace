@@ -38,6 +38,7 @@ import {
   Check,
   RotateCcw,
   Gift,
+  Lightbulb,
 } from "lucide-react";
 import { toast } from "sonner";
 import { compressImage } from "@/lib/image";
@@ -137,6 +138,7 @@ export function PostAdView() {
   const [adType, setAdType] = useState<"mesin" | "jasa">("mesin");
   const [brand, setBrand] = useState("");
   const [modelType, setModelType] = useState("");
+  const [modelTypes, setModelTypes] = useState<string[]>([]);
   const [capacity, setCapacity] = useState("");
   const [yearProduced, setYearProduced] = useState("");
   const [city, setCity] = useState("");
@@ -177,6 +179,7 @@ export function PostAdView() {
         if (d.adType) setAdType(d.adType);
         if (d.brand) setBrand(d.brand);
         if (d.modelType) setModelType(d.modelType);
+        if (Array.isArray(d.modelTypes)) setModelTypes(d.modelTypes);
         if (d.capacity) setCapacity(d.capacity);
         if (d.yearProduced) setYearProduced(d.yearProduced);
         if (d.city) setCity(d.city);
@@ -213,6 +216,7 @@ export function PostAdView() {
           adType,
           brand,
           modelType,
+          modelTypes,
           capacity,
           yearProduced,
           city,
@@ -223,7 +227,7 @@ export function PostAdView() {
         })
       );
     } catch {}
-  }, [hydrated, step, title, categoryId, description, price, priceType, condition, availability, adType, brand, modelType, capacity, yearProduced, city, province, images, specs, selectedPackage]);
+  }, [hydrated, step, title, categoryId, description, price, priceType, condition, availability, adType, brand, modelType, modelTypes, capacity, yearProduced, city, province, images, specs, selectedPackage]);
 
   // --- Validate hydrated categoryId against fetched categories ---
   // If the DB was re-seeded, a stale categoryId from localStorage may no
@@ -249,6 +253,7 @@ export function PostAdView() {
     setAdType("mesin");
     setBrand("");
     setModelType("");
+    setModelTypes([]);
     setCapacity("");
     setYearProduced("");
     setCity("");
@@ -465,7 +470,12 @@ export function PostAdView() {
     }
     // Add optional fields from step 2 (Detail & Deskripsi)
     if (brand.trim()) specObj["Merk/Brand"] = brand.trim();
-    if (modelType.trim()) specObj["Tipe/Model"] = modelType.trim();
+    // Combine the single modelType input + any added modelTypes entries
+    const allModels = [
+      ...(modelType.trim() ? [modelType.trim()] : []),
+      ...modelTypes.map((m) => m.trim()).filter(Boolean),
+    ];
+    if (allModels.length) specObj["Tipe/Model"] = allModels.join(", ");
     if (capacity.trim()) specObj["Kapasitas"] = capacity.trim();
 
     mutation.mutate({
@@ -524,6 +534,15 @@ export function PostAdView() {
       userPhone: user?.phone,
       saveAsDraft: true,
     } as any);
+  };
+
+  // --- Add a Tipe/Model entry to the list ---
+  const addModelType = () => {
+    const v = modelType.trim();
+    if (!v) { toast.error("Isi tipe/model terlebih dahulu sebelum menambah."); return; }
+    if (modelTypes.includes(v)) { toast.error("Tipe/model sudah ditambahkan."); return; }
+    setModelTypes((prev) => [...prev, v]);
+    setModelType("");
   };
 
   // --- Helper: get category name ---
@@ -695,13 +714,15 @@ export function PostAdView() {
               <Label className="text-sm font-medium">
                 Judul Iklan <span className="text-destructive">*</span>
               </Label>
-              <Input
+              <Textarea
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Contoh: Mesin Press Hidrolik 100 Ton"
                 maxLength={120}
-                className="h-12 rounded-lg"
+                rows={2}
+                className="rounded-lg resize-none text-base"
               />
+              <p className="text-right text-[11px] text-muted-foreground">{title.length}/120</p>
             </div>
 
             {/* Harga */}
@@ -996,6 +1017,38 @@ export function PostAdView() {
               {images.length} / {paketMap[selectedPackage]?.maxPhotos ?? 3} foto diunggah {images.length < 1 && "(min. 1)"}
             </p>
 
+            {/* Tips Foto yang Baik */}
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="grid size-7 place-items-center rounded-full bg-amber-100">
+                  <Lightbulb className="size-4 text-amber-600" />
+                </span>
+                <h3 className="text-sm font-bold text-amber-900">Tips Foto yang Baik</h3>
+              </div>
+              <ul className="space-y-1.5 text-[12px] leading-snug text-amber-900/90">
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-amber-200/70 text-[10px] font-bold text-amber-800">1</span>
+                  <span>Pakai pencahayaan terang (foto di luar ruangan atau dekat jendela) agar detail mesin terlihat jelas.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-amber-200/70 text-[10px] font-bold text-amber-800">2</span>
+                  <span>Ambil foto dari beberapa sudut: depan, samping, dan close-up bagian penting (mesin, panel, label).</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-amber-200/70 text-[10px] font-bold text-amber-800">3</span>
+                  <span>Bersihkan mesin dari debu &amp; kotoran sebelum difoto agar terlihat terawat.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-amber-200/70 text-[10px] font-bold text-amber-800">4</span>
+                  <span>Foto plat nama / merk + tipe, dan nomor seri mesin untuk menambah kepercayaan pembeli.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-amber-200/70 text-[10px] font-bold text-amber-800">5</span>
+                  <span>Gunakan latar belakang rapi tanpa barang berantakan di belakang mesin.</span>
+                </li>
+              </ul>
+            </div>
+
             {/* Simpan Dulu button */}
             <div className="flex flex-col items-center gap-1.5">
               <Button
@@ -1028,7 +1081,7 @@ export function PostAdView() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Tuliskan detail spesifikasi, fitur, kondisi, dan informasi lainnya tentang mesin ini..."
-                rows={6}
+                rows={3}
                 maxLength={2000}
                 className="rounded-lg resize-none"
               />
@@ -1049,27 +1102,63 @@ export function PostAdView() {
                 />
               </div>
 
+              {/* Tipe/Model — multi-entry with + (add) button above Kapasitas */}
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-muted-foreground">Tipe/Model</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-medium text-muted-foreground">Tipe/Model</Label>
+                  <button
+                    type="button"
+                    onClick={addModelType}
+                    className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary transition hover:bg-primary/20"
+                  >
+                    <Plus className="size-3" />
+                    Tambah
+                  </button>
+                </div>
                 <Input
                   value={modelType}
                   onChange={(e) => setModelType(e.target.value)}
-                  placeholder="contoh: SM 52, Lithrone, Aquarius"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addModelType();
+                    }
+                  }}
+                  placeholder="contoh: SM 52, Lithrone, Aquarius (Enter untuk tambah)"
                   className="h-12 rounded-lg"
                 />
+                {/* Added Tipe/Model chips */}
+                {modelTypes.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {modelTypes.map((m, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary"
+                      >
+                        {m}
+                        <button
+                          type="button"
+                          onClick={() => setModelTypes((prev) => prev.filter((_, j) => j !== i))}
+                          className="grid size-4 place-items-center rounded-full bg-primary/20 hover:bg-primary/30"
+                          aria-label={`Hapus ${m}`}
+                        >
+                          <X className="size-2.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium text-muted-foreground">Kapasitas</Label>
-                <Textarea
+                <Input
                   value={capacity}
                   onChange={(e) => setCapacity(e.target.value)}
                   placeholder="contoh: 100 Ton, 5000 sheets/jam, 3 phase 380V"
-                  rows={3}
-                  maxLength={500}
-                  className="rounded-lg resize-none"
+                  maxLength={200}
+                  className="h-12 rounded-lg"
                 />
-                <p className="text-right text-[10px] text-muted-foreground">{capacity.length}/500</p>
               </div>
             </div>
 
