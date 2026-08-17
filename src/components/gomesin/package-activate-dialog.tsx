@@ -13,6 +13,7 @@ import { useLang, translations as i18nTranslations, listingTitle } from "@/lib/i
 import { useMounted } from "@/lib/use-mounted";
 import { compressImage } from "@/lib/image";
 import { openWhatsAppWithUrl } from "@/lib/share-image";
+import { showWhatsAppFallbackToast } from "@/lib/wa-fallback";
 import { useChatSocket } from "@/lib/use-chat-socket";
 import { useSiteAssets } from "@/lib/use-site-assets";
 import { useStore } from "@/lib/store";
@@ -791,6 +792,7 @@ export function PackageActivateDialog({
 
                         const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
                         if (result.status === "opened") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
+                        else if (showWhatsAppFallbackToast(result)) { /* popup blocked — fallback link shown */ }
                         else if (result.status === "error") toast.error("Gagal membuka WhatsApp");
                       } catch {
                         toast.error("Gagal mengirim bukti");
@@ -1067,6 +1069,7 @@ export function PackageActivateDialog({
 
                         const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
                         if (result.status === "opened") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
+                        else if (showWhatsAppFallbackToast(result)) { /* popup blocked — fallback link shown */ }
                         else if (result.status === "error") toast.error("Gagal membuka WhatsApp");
                       } catch { toast.error("Gagal mengirim bukti"); }
                       finally { setUploadingProof(false); }

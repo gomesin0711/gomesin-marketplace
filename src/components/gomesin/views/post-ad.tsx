@@ -43,6 +43,7 @@ import {
 import { toast } from "sonner";
 import { compressImage } from "@/lib/image";
 import { openWhatsAppWithUrl } from "@/lib/share-image";
+import { showWhatsAppFallbackToast } from "@/lib/wa-fallback";
 import { useChatSocket } from "@/lib/use-chat-socket";
 import { useSiteAssets } from "@/lib/use-site-assets";
 import {
@@ -1642,8 +1643,14 @@ export function PostAdView() {
                           `Gambar Iklan:\n${adImageUrl}`;
 
                         const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
-                        if (result.status === "opened") toast.success("Bukti pembayaran terkirim ke WhatsApp admin!");
-                        else if (result.status === "error") toast.error("Gagal membuka WhatsApp");
+                        if (result.status === "opened") {
+                          toast.success("Bukti pembayaran terkirim ke WhatsApp admin!");
+                        } else if (showWhatsAppFallbackToast(result)) {
+                          // Fallback toast shown (popup was blocked in iframe).
+                          // Listing + proof-via-chat already succeeded above.
+                        } else if (result.status === "error") {
+                          toast.error("Gagal membuka WhatsApp");
+                        }
                       } catch {
                         toast.error("Gagal mengirim bukti");
                       } finally {

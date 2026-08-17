@@ -109,6 +109,32 @@ import EmojiPicker, { EmojiStyle, Theme } from "emoji-picker-react";
 import { useTheme } from "next-themes";
 import { useChatBg } from "@/lib/use-chat-bg";
 import { openExternalUrl } from "@/lib/external-url";
+
+// Helper: open WhatsApp, show fallback toast with clickable link if popup blocked
+// (common in sandboxed iframes like the Preview Panel — prevents "wa.me refused to connect").
+const openWaWithFallback = (url: string) => {
+  const ok = openExternalUrl(url);
+  if (!ok) {
+    toast("Popup WhatsApp diblokir browser.", {
+      description: "Klik tombol di bawah untuk membuka WhatsApp.",
+      action: {
+        label: "Buka WhatsApp",
+        onClick: () => {
+          const w = window.open(url, "_blank", "noopener,noreferrer");
+          if (!w) {
+            try {
+              navigator.clipboard?.writeText(url);
+              toast.success("Link WhatsApp disalin ke clipboard.");
+            } catch {
+              toast.error("Tidak bisa membuka WhatsApp.");
+            }
+          }
+        },
+      },
+      duration: 15000,
+    });
+  }
+};
 import {
   Popover,
   PopoverContent,
@@ -3609,7 +3635,7 @@ export function ProfileView() {
                             </Button>
                             <button
                               type="button"
-                              onClick={() => openExternalUrl("https://wa.me/6285888082208?text=Halo%20mesinKU%2C%20saya%20butuh%20bantuan")}
+                              onClick={() => openWaWithFallback("https://wa.me/6285888082208?text=Halo%20mesinKU%2C%20saya%20butuh%20bantuan")}
                               className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-[#25D366] px-3 text-sm font-semibold text-white hover:bg-[#1ebe5d]"
                             >
                               <Phone className="size-4" /> WhatsApp
@@ -3741,7 +3767,7 @@ export function ProfileView() {
                           </a>
                           <button
                             type="button"
-                            onClick={() => openExternalUrl("https://wa.me/6285888082208")}
+                            onClick={() => openWaWithFallback("https://wa.me/6285888082208")}
                             className="flex items-center gap-3 rounded-lg border border-border p-2.5 transition hover:bg-accent"
                           >
                             <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-orange-500/10 text-orange-600">

@@ -10,20 +10,25 @@
  *      → browser shows "wa.me refused to connect"
  *
  * === THE FIX ===
- * Try strategies in order until one succeeds:
+ * Try ONLY popup-based strategies (never navigate the page away):
  *   1. `window.top.open(url, "_blank", "noopener,noreferrer")`
  *      — escapes the iframe; top window has full popup permissions
  *   2. `window.open(url, "_blank", "noopener,noreferrer")`
  *      — same-context popup (works if iframe has allow-popups)
- *   3. `window.top.location.href = url`
- *      — navigates the TOP window (escapes iframe entirely, no X-Frame-Options issue)
- *   4. `window.location.href = url`
- *      — final fallback (may navigate iframe → refused; last resort only)
  *
- * @returns true if any strategy successfully opened the URL
+ * If BOTH fail (popup blocked), return false. The caller is responsible for
+ * showing a fallback clickable link (e.g. via a toast with an action button).
+ *
+ * We intentionally DO NOT fall back to `window.location.href = url` or
+ * `top.location.href = url` because:
+ *   - Navigating the iframe to wa.me → "refused to connect" (X-Frame-Options)
+ *   - Navigating the top window → destroys the app session entirely
+ * Both are worse UX than simply showing a "click here to open WhatsApp" link.
+ *
+ * @returns true if a popup was successfully opened, false otherwise
  */
 export function openExternalUrl(url: string): boolean {
-  // Strategy 1: window.top.open (escapes sandboxed iframe)
+  // Strategy 1: window.top.open (escapes sandboxed iframe, opens new tab on parent)
   try {
     const top = (window as any).top;
     if (top && top !== window.self) {
@@ -34,7 +39,7 @@ export function openExternalUrl(url: string): boolean {
     // Cross-origin window.top access throws SecurityError — fall through
   }
 
-  // Strategy 2: window.open (same context)
+  // Strategy 2: window.open (same context popup)
   try {
     const w = window.open(url, "_blank", "noopener,noreferrer");
     if (w) return true;
@@ -42,23 +47,7 @@ export function openExternalUrl(url: string): boolean {
     // fall through
   }
 
-  // Strategy 3: navigate TOP window (escapes iframe, no X-Frame-Options issue)
-  try {
-    const top = (window as any).top;
-    if (top) {
-      top.location.href = url;
-      return true;
-    }
-  } catch {
-    // Cross-origin — fall through
-  }
-
-  // Strategy 4: navigate current location (last resort — may be blocked by
-  // X-Frame-Options if the URL refuses to be embedded in an iframe)
-  try {
-    window.location.href = url;
-    return true;
-  } catch {
-    return false;
-  }
+  // DO NOT navigate the page away. See header comment for why.
+  // Return false and let the caller show a clickable fallback link.
+  return false;
 }

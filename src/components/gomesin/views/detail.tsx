@@ -142,9 +142,31 @@ export function DetailView() {
 
   // Open WhatsApp in a new tab — escapes sandboxed iframes (Preview Panel)
   // by using window.top.open via the shared openExternalUrl helper.
+  // If popup is blocked (iframe without allow-popups), show a toast with a
+  // clickable link instead of navigating the iframe to wa.me (which would
+  // show "wa.me refused to connect" due to X-Frame-Options: DENY).
   const handleWhatsApp = () => {
     const ok = openExternalUrl(waUrl);
-    if (!ok) toast.error("Tidak bisa membuka WhatsApp");
+    if (!ok) {
+      toast("Popup WhatsApp diblokir browser.", {
+        description: "Klik tombol di bawah untuk membuka WhatsApp.",
+        action: {
+          label: "Buka WhatsApp",
+          onClick: () => {
+            const w = window.open(waUrl, "_blank", "noopener,noreferrer");
+            if (!w) {
+              try {
+                navigator.clipboard?.writeText(waUrl);
+                toast.success("Link WhatsApp disalin ke clipboard.");
+              } catch {
+                toast.error("Tidak bisa membuka WhatsApp.");
+              }
+            }
+          },
+        },
+        duration: 15000,
+      });
+    }
   };
 
   const share = async () => {

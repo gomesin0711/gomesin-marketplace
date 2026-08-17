@@ -40,7 +40,8 @@ export type ShareImageResult =
   | { status: "shared" }
   | { status: "opened" }
   | { status: "cancelled" }
-  | { status: "error"; error: string };
+  | { status: "blocked"; url: string }   // popup blocked — caller should show clickable link
+  | { status: "error"; error: string; url?: string };
 
 function isMobile(): boolean {
   if (typeof navigator === "undefined") return false;
@@ -50,11 +51,14 @@ function isMobile(): boolean {
 /** Resolve the most reliable way to open a wa.me URL on the current device. */
 function openWaUrl(waUrl: string): ShareImageResult {
   // Use the shared openExternalUrl helper which handles sandboxed iframes
-  // (Preview Panel) by trying window.top.open → window.open → top.location.href.
-  // See src/lib/external-url.ts for the full strategy chain.
+  // (Preview Panel) by trying window.top.open → window.open.
+  // If BOTH popups are blocked (e.g. iframe without allow-popups), return
+  // { status: "blocked", url } so the caller can show a clickable link
+  // instead of navigating the iframe to wa.me (which would show
+  // "wa.me refused to connect" due to X-Frame-Options: DENY).
   const ok = openExternalUrl(waUrl);
   if (ok) return { status: "opened" };
-  return { status: "error", error: "Tidak bisa membuka WhatsApp (popup diblokir browser)" };
+  return { status: "blocked", url: waUrl };
 }
 void isMobile;
 

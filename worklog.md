@@ -9180,3 +9180,33 @@ Stage Summary:
 - Fix: doSubmit() now fires FIRST (before WhatsApp), + keepalive:true on fetch as safety net
 - Free package flow (direct doSubmit) was already working — no change needed there
 - Paid package flow (QRIS modal) now creates the listing before opening WhatsApp
+
+---
+Task ID: fix-wa-me-refused
+Agent: Main
+Task: Fix "wa.me refused to connect" error in Preview Panel iframe
+
+Work Log:
+- Root cause: src/lib/external-url.ts had 4 strategies to open external URLs. Strategies 3 & 4 (top.location.href / window.location.href) navigated the iframe to wa.me, which sends X-Frame-Options: DENY → browser shows "wa.me refused to connect"
+- This happened when strategies 1 & 2 (window.top.open / window.open) returned null (popup blocked in sandboxed iframe without allow-popups)
+
+Fix applied:
+1. src/lib/external-url.ts — removed strategies 3 & 4 (navigation fallbacks). Now ONLY uses popup-based strategies. Returns false if both popups are blocked, instead of navigating the page away (which caused "refused to connect")
+
+2. src/lib/share-image.ts — added new "blocked" status to ShareImageResult type that includes the wa.me URL. openWaUrl() now returns { status: "blocked", url } instead of { status: "error" } when popup is blocked, so callers can show a clickable link
+
+3. src/lib/wa-fallback.ts (NEW) — shared helper showWhatsAppFallbackToast() that displays a Sonner toast with a "Buka WhatsApp" action button. When clicked, tries window.open() (works in direct user gesture), falls back to copying URL to clipboard. Toast stays visible for 15 seconds so user has time to click.
+
+4. src/components/gomesin/views/post-ad.tsx — imported showWhatsAppFallbackToast, added "blocked" branch to WhatsApp result handler (QRIS payment modal)
+
+5. src/components/gomesin/package-activate-dialog.tsx — imported showWhatsAppFallbackToast, added "blocked" branch to BOTH WhatsApp result handlers (QRIS + BCA upgrade modals)
+
+6. src/components/gomesin/views/detail.tsx — updated handleWhatsApp() to show the fallback toast with clickable link when popup is blocked (was just toast.error before)
+
+7. src/components/gomesin/views/profile.tsx — added openWaWithFallback() helper, updated both customer-support WhatsApp buttons (Chat Support + Contact list) to use it
+
+Stage Summary:
+- "wa.me refused to connect" no longer occurs — we never navigate the iframe to wa.me
+- When popup is blocked (Preview Panel iframe), user sees a toast with a "Buka WhatsApp" button they can click to open wa.me in a new tab (direct user gesture allows the popup)
+- All 5 WhatsApp entry points now have the fallback: pasang iklan payment, package upgrade (QRIS + BCA), seller contact, customer support x2
+- The listing creation (doSubmit) still runs BEFORE WhatsApp (from previous fix), so even if user dismisses the WhatsApp toast, the ad is already created and proof is sent to admin via chat
