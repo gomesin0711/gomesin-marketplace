@@ -6939,3 +6939,29 @@ Stage Summary:
 - Works on both desktop and mobile viewports.
 - Translation key `photoZoom` added in id/en/zh.
 - Files modified: `src/components/gomesin/views/detail.tsx` (added lightbox component + clickable gallery), `src/lib/i18n.ts` (added photoZoom translation).
+
+---
+Task ID: 22
+Agent: main (Z.ai Code)
+Task: Deploy all recent changes (logo replacement, BeliMesin rebrand, sample ads DB restore, image lightbox) to production
+
+Work Log:
+- Vercel CLI was missing (wiped during archive replacement in Task 17) — reinstalled via `npm install -g vercel`.
+- Deployed to Vercel production: `vercel --prod --token ***REDACTED_VERCEL_TOKEN*** --yes`. Build completed in 33s, all 46 routes deployed. Aliased to https://gomesin.vercel.app. Ready in 1m.
+- Production verification (all 200):
+  * Homepage (/): 200
+  * Manifest (/manifest.json): 200
+  * Service Worker (/sw.js): 200
+  * API /api/categories: 200
+  * Logo image (/logo-sm.jpeg): 200, size=76694 bytes (confirms new "gomesin logo.jpg" is live, old was 2832 bytes)
+- Production shows 1 listing ("Tes") from the Supabase production DB — this is expected because production uses Supabase (not the local SQLite that has 39 sample listings). The 39 sample listings are in the dev environment's local SQLite DB only.
+- All recent changes now live on production:
+  * Task 19: New logo + "BeliMesin" brand text next to logo (header, footer, PWA popup, FAB button)
+  * Task 21: Full-screen image lightbox on ad detail page (click gallery image → full-screen popup with prev/next/thumbnails/keyboard/touch support)
+
+Stage Summary:
+- Production deployment successful at https://gomesin.vercel.app.
+- New logo (76694 bytes) live on production.
+- Image lightbox feature live on production — click any listing's gallery image to see it full-screen.
+- Brand text "BeliMesin" live next to all logos on production.
+- Note: Production uses Supabase DB (separate from dev's local SQLite). Sample ads (39 listings) are only in the dev environment; production has its own real listing data.
