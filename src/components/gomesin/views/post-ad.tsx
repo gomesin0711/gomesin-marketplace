@@ -81,7 +81,7 @@ async function postListing(payload: any) {
 // Year options: 2025 down to 1990
 const YEAR_OPTIONS = Array.from({ length: 2025 - 1990 + 1 }, (_, i) => String(2025 - i));
 
-const STEP_LABELS = ["Informasi Dasar", "Detail & Deskripsi", "Paket & Foto", "Pembayaran"];
+const STEP_LABELS = ["Informasi Dasar", "Detail & Deskripsi", "Paket Iklan", "Foto Mesin", "Ringkasan Iklan", "Pembayaran"];
 
 export function PostAdView() {
   const { qrisImageUrl } = useSiteAssets();
@@ -185,7 +185,7 @@ export function PostAdView() {
         if (Array.isArray(d.specs) && d.specs.length) setSpecs(d.specs);
         // Migrate stale "gratis" selection → "colek" (Gratis package was removed)
         if (d.selectedPackage && d.selectedPackage !== "gratis") setSelectedPackage(d.selectedPackage);
-        if (typeof d.step === "number" && d.step >= 1 && d.step <= 4) setStep(d.step);
+        if (typeof d.step === "number" && d.step >= 1 && d.step <= 6) setStep(d.step);
       }
     } catch {}
     // Mark as hydrated so the save effect can start persisting.
@@ -362,17 +362,20 @@ export function PostAdView() {
         if (!description.trim()) { toast.error("Deskripsi mesin wajib diisi"); return false; }
         return true;
       }
-      if (s === 3) {
+      // s === 3 (Paket) — package has a default ("colek"), no validation needed
+      if (s === 4) {
         if (images.length < 1) { toast.error("Upload minimal 1 foto mesin"); return false; }
         return true;
       }
+      // s === 5 (Ringkasan) — review only, no validation
+      // s === 6 (Pembayaran) — payment method validated at submit time
       return true;
     },
     [categoryId, title, price, province, city, images.length, description]
   );
 
   const nextStep = () => {
-    if (validateStep(step)) setStep((s) => Math.min(s + 1, 4));
+    if (validateStep(step)) setStep((s) => Math.min(s + 1, 6));
   };
   const prevStep = () => setStep((s) => Math.max(s - 1, 1));
 
@@ -624,10 +627,10 @@ export function PostAdView() {
         <div className="w-10" />
       </div>
 
-      {/* Progress Stepper */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between px-2">
-          {[1, 2, 3, 4].map((s) => (
+      {/* Progress Stepper — horizontally scrollable on mobile (6 steps) */}
+      <div className="mb-6 overflow-x-auto no-scrollbar">
+        <div className="flex items-center justify-between min-w-[640px] px-2">
+          {[1, 2, 3, 4, 5, 6].map((s) => (
             <div key={s} className="flex flex-1 items-center">
               {/* Step circle */}
               <div className="flex flex-col items-center">
@@ -645,7 +648,7 @@ export function PostAdView() {
                 </div>
                 <span
                   className={cn(
-                    "mt-1 text-[10px] font-medium",
+                    "mt-1 whitespace-nowrap text-[10px] font-medium",
                     s <= step ? "text-green-600" : "text-gray-400"
                   )}
                 >
@@ -653,7 +656,7 @@ export function PostAdView() {
                 </span>
               </div>
               {/* Connector line */}
-              {s < 4 && (
+              {s < 6 && (
                 <div
                   className={cn(
                     "mx-1.5 h-0.5 flex-1 rounded-full transition-all",
@@ -801,7 +804,7 @@ export function PostAdView() {
           </div>
         )}
 
-        {/* ========== STEP 3: Pilih Paket & Foto Mesin ========== */}
+        {/* ========== STEP 3: Pilih Paket Iklan ========== */}
         {step === 3 && (
           <div className="space-y-4">
             {/* --- Package Selection — MUST be chosen BEFORE photo upload so the
@@ -907,7 +910,12 @@ export function PostAdView() {
                 })}
               </div>
             </div>
+          </div>
+        )}
 
+        {/* ========== STEP 4: Foto Mesin ========== */}
+        {step === 4 && (
+          <div className="space-y-4">
             {/* --- Photo upload (limit follows the selected package's maxPhotos) --- */}
             <h2 className="text-base font-bold text-foreground">Foto Mesin</h2>
             <p className="text-xs text-muted-foreground">
@@ -1079,10 +1087,13 @@ export function PostAdView() {
           </div>
         )}
 
-        {/* ========== STEP 4: Pembayaran & Ringkasan ========== */}
-        {step === 4 && (
+        {/* ========== STEP 5: Ringkasan Iklan ========== */}
+        {step === 5 && (
           <div className="space-y-4">
-            <h2 className="text-base font-bold text-foreground">Pembayaran &amp; Ringkasan</h2>
+            <h2 className="text-base font-bold text-foreground">Ringkasan Iklan</h2>
+            <p className="text-xs text-muted-foreground">
+              Periksa kembali informasi iklan Anda sebelum melanjutkan ke pembayaran.
+            </p>
 
             {/* Selected package badge (read-only — package was chosen in step 3) */}
             <div className="rounded-xl border border-border bg-card p-3 flex items-center justify-between gap-2">
@@ -1100,68 +1111,6 @@ export function PostAdView() {
                 <p className="text-sm font-extrabold text-primary">{(paketMap[selectedPackage]?.price ?? 0) === 0 ? "GRATIS" : formatRupiahFull(paketMap[selectedPackage]?.price ?? 0)}</p>
               </div>
             </div>
-
-            {/* Payment method for paid packages */}
-            {showPayment && (paketMap[selectedPackage]?.price ?? 0) > 0 && (
-              <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-                <h3 className="text-sm font-bold text-foreground">Pembayaran</h3>
-                <p className="text-xs text-muted-foreground">
-                  Pilih metode pembayaran untuk mengaktifkan iklan Anda.
-                </p>
-
-                {/* Live payment summary — updates immediately when package
-                    changes. Shows: harga paket + kode unik = total. */}
-                <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Harga Paket {paketMap[selectedPackage]?.name || selectedPackage}</span>
-                    <span className="font-semibold text-foreground">{formatRupiahFull(paketMap[selectedPackage]?.price ?? 0)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Kode Unik (3 digit)</span>
-                    <span className="font-bold text-primary">
-                      {uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "..."}
-                    </span>
-                  </div>
-                  <div className="mt-1 flex items-center justify-between border-t border-border pt-1.5">
-                    <span className="font-semibold text-foreground">Total Transfer</span>
-                    <span className="text-base font-extrabold text-primary">{formatRupiahFull(qrisAmount)}</span>
-                  </div>
-                  <p className="pt-0.5 text-[10px] text-muted-foreground">
-                    Kode unik berbeda untuk setiap paket & pembayar — tidak akan sama dengan pembayar lain.
-                  </p>
-                </div>
-
-                <div className="grid gap-2">
-                  {[
-                    { key: "bca", label: "Transfer ke Blu BCA", desc: "Transfer manual ke rekening Blu BCA" },
-                    { key: "qris", label: "QRIS GoPay", desc: "Scan QR dari GoPay / e-wallet" },
-                  ].map((m) => (
-                    <button
-                      type="button"
-                      key={m.key}
-                      onClick={() => setPaymentMethod(m.key)}
-                      className={cn(
-                        "rounded-lg border-2 p-3 text-left transition",
-                        paymentMethod === m.key
-                          ? "border-primary bg-primary/5"
-                          : "border-border hover:bg-accent"
-                      )}
-                    >
-                      <p className="text-sm font-semibold">{m.label}</p>
-                      <p className="text-[10px] text-muted-foreground">{m.desc}</p>
-                    </button>
-                  ))}
-                </div>
-                {paymentMethod && (
-                  <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-orange-700">
-                    <CheckCircle2 className="mr-1 inline size-4" />
-                    Pembayaran via {paymentMethod.toUpperCase()} dipilih.
-                    <br />
-                    <span className="text-[10px] text-orange-600">Simulasi pembayaran — iklan langsung aktif setelah konfirmasi.</span>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Ringkasan Iklan (Summary) */}
             <div className="rounded-xl border border-border bg-card p-4 space-y-3">
@@ -1223,17 +1172,111 @@ export function PostAdView() {
             </div>
           </div>
         )}
+
+        {/* ========== STEP 6: Pembayaran ========== */}
+        {step === 6 && (
+          <div className="space-y-4">
+            <h2 className="text-base font-bold text-foreground">Pembayaran</h2>
+
+            {/* Selected package badge (read-only — package was chosen in step 3) */}
+            <div className="rounded-xl border border-border bg-card p-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="grid size-8 place-items-center rounded-md bg-secondary">
+                  {(() => { const Ic = pkgIconMap[selectedPackage] || Tag; return <Ic className={cn("size-4", pkgIconColorMap[selectedPackage] || "text-muted-foreground")} />; })()}
+                </span>
+                <div>
+                  <p className="text-xs text-muted-foreground">Paket Terpilih</p>
+                  <p className="text-sm font-bold text-foreground">{paketMap[selectedPackage]?.name || selectedPackage}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] text-muted-foreground">Maks. {paketMap[selectedPackage]?.maxPhotos ?? 3} foto · {paketMap[selectedPackage]?.duration ?? 30} hari</p>
+                <p className="text-sm font-extrabold text-primary">{(paketMap[selectedPackage]?.price ?? 0) === 0 ? "GRATIS" : formatRupiahFull(paketMap[selectedPackage]?.price ?? 0)}</p>
+              </div>
+            </div>
+
+            {/* Payment method for paid packages */}
+            {showPayment && (paketMap[selectedPackage]?.price ?? 0) > 0 && (
+              <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+                <h3 className="text-sm font-bold text-foreground">Metode Pembayaran</h3>
+                <p className="text-xs text-muted-foreground">
+                  Pilih metode pembayaran untuk mengaktifkan iklan Anda.
+                </p>
+
+                {/* Live payment summary — updates immediately when package
+                    changes. Shows: harga paket + kode unik = total. */}
+                <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Harga Paket {paketMap[selectedPackage]?.name || selectedPackage}</span>
+                    <span className="font-semibold text-foreground">{formatRupiahFull(paketMap[selectedPackage]?.price ?? 0)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Kode Unik (3 digit)</span>
+                    <span className="font-bold text-primary">
+                      {uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "..."}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between border-t border-border pt-1.5">
+                    <span className="font-semibold text-foreground">Total Transfer</span>
+                    <span className="text-base font-extrabold text-primary">{formatRupiahFull(qrisAmount)}</span>
+                  </div>
+                  <p className="pt-0.5 text-[10px] text-muted-foreground">
+                    Kode unik berbeda untuk setiap paket & pembayar — tidak akan sama dengan pembayar lain.
+                  </p>
+                </div>
+
+                <div className="grid gap-2">
+                  {[
+                    { key: "bca", label: "Transfer ke Blu BCA", desc: "Transfer manual ke rekening Blu BCA" },
+                    { key: "qris", label: "QRIS GoPay", desc: "Scan QR dari GoPay / e-wallet" },
+                  ].map((m) => (
+                    <button
+                      type="button"
+                      key={m.key}
+                      onClick={() => setPaymentMethod(m.key)}
+                      className={cn(
+                        "rounded-lg border-2 p-3 text-left transition",
+                        paymentMethod === m.key
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:bg-accent"
+                      )}
+                    >
+                      <p className="text-sm font-semibold">{m.label}</p>
+                      <p className="text-[10px] text-muted-foreground">{m.desc}</p>
+                    </button>
+                  ))}
+                </div>
+                {paymentMethod && (
+                  <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-orange-700">
+                    <CheckCircle2 className="mr-1 inline size-4" />
+                    Pembayaran via {paymentMethod.toUpperCase()} dipilih.
+                    <br />
+                    <span className="text-[10px] text-orange-600">Simulasi pembayaran — iklan langsung aktif setelah konfirmasi.</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Free package — no payment needed */}
+            {(!showPayment || (paketMap[selectedPackage]?.price ?? 0) === 0) && (
+              <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
+                <CheckCircle2 className="mr-1 inline size-4" />
+                Paket ini <strong>GRATIS</strong> — tidak diperlukan pembayaran. Klik &quot;Publish Iklan&quot; untuk menerbitkan.
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bottom action button */}
       <div className="sticky bottom-0 left-0 right-0 -mx-4 mt-6 border-t border-border bg-background px-4 pb-4 pt-3 dark:border-transparent">
-        {step < 4 ? (
+        {step < 6 ? (
           <Button
             type="button"
             onClick={nextStep}
             className="w-full h-12 rounded-lg bg-green-500 text-white font-semibold hover:bg-green-600 gap-2"
           >
-            {step === 3 ? "Lanjut" : "Lanjut"}
+            Lanjut
             <ChevronRight className="size-4" />
           </Button>
         ) : (

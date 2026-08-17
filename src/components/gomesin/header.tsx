@@ -457,8 +457,8 @@ export function Header() {
           </div>
         </div>
 
-        {/* Row 2: Search (below logo, full width) — hidden on Akun Saya (profile) and detail page */}
-        {currentView !== "profile" && currentView !== "detail" && (
+        {/* Row 2: Search (below logo, full width) — hidden on Akun Saya (profile), detail page, and Pasang Iklan (post/edit) */}
+        {currentView !== "profile" && currentView !== "detail" && currentView !== "post" && currentView !== "edit" && (
         <div className="px-3 pb-2">
           <form onSubmit={submitSearch} className="relative">
             <Input
