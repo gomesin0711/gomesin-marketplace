@@ -8808,3 +8808,48 @@ Stage Summary:
   state updates correctly on every Lanjut click (green check on completed
   steps, green-100 ring on current step, gray on upcoming). No new console
   or runtime errors were introduced.
+
+---
+Task ID: verify-post-ad-header-draft
+Agent: Browser-Verifier
+Task: Verify two mobile UI changes on the Post Ad (Pasang Iklan) page at http://localhost:3000/: (1) Reset button moved to header row aligned with back arrow + "Pasang Iklan" title; (2) "Simpan Dulu" button on Step 4 (Foto Mesin) redirects to Iklan Saya page (was going to home previously).
+
+Work Log:
+- Read previous work record + previous verifier script `/home/z/my-project/verify-post-ad-stepper.py` for reference (used the same localStorage injection approach + iPhone 13 viewport 390x844 + dismiss_overlays helper that bypasses the PWA install modal via JS .click()).
+- Inspected `src/components/gomesin/views/post-ad.tsx`:
+  - Header row at lines 601-620: `<div className="flex items-center gap-3 py-3">` containing back arrow button (left), `<h1 className="flex-1 text-center text-lg font-bold">Pasang Iklan</h1>` (center), Reset button with RotateCcw icon + `border-red-300 ... text-red-600 hover:bg-red-50` (right).
+  - `handleSaveDraft()` at lines 497-527 posts with `saveAsDraft: true`; mutation `onSuccess` at lines 420-429 shows toast "Iklan disimpan dengan status Belum Aktif." then calls `goToProfilePanel("iklan-saya")` — confirming the navigation change from `goHome()` to `goToProfilePanel("iklan-saya")`.
+- Wrote `/home/z/my-project/verify-post-ad-header-draft.py` using Playwright (chromium, headless, mobile UA, viewport 390x844, has_touch). Uses TWO fresh browser contexts (one per phase) to avoid the init_script overwriting localStorage on reload:
+  - Context 1: init_script sets `gomesin-store` (view="post", user=Budi Santoso) + `gomesin-post-ad-draft` (step=1). Navigates to BASE, waits for "Step 1 dari 6", screenshots header, captures full DOM geometry of the header row.
+  - Context 2: init_script sets draft step=4. Navigates to BASE, waits for "Step 4 dari 6", confirms "Foto Mesin" + "Simpan Dulu" button present (blue, not disabled), screenshots step 4, then clicks "Simpan Dulu" via JS `.click()` (bypasses PWA install modal intercepting pointer events). Polls up to 8s for navigation + toast + dashboard refetch. Captures: store.view/profilePanel from localStorage, toast texts via Sonner selectors, listing card detection by scanning all elements for the test listing title + checking for `bg-slate-400` "BELUM AKTIF" badge.
+  - Cleanup phase: after screenshot, GETs `/api/my-listings?userId=<Budi's id>`, finds the new draft listing, DELETEs it via `/api/admin/listings` (JSON body `{id: ...}`) — confirmed status=200 success=true.
+- Test user chosen: Budi Santoso (`cmswngcwr0000q4bs37na30qd`, `budi.santoso@example.com`) from `/api/admin/users` listing — had 0 listings before, so the new draft was unambiguous.
+- First run failed on step-4 reload (init_script was overwriting localStorage back to step=1 on every navigation) — refactored to use a fresh browser context per phase, which solved the race.
+- Second run: improved card detection by scanning all DOM elements for the listing title (instead of just `div.rounded-xl` selectors, which missed the card on the first run because the dashboard's outer container also matched but got filtered out by innerText length).
+- Final run: ALL 9 verdicts PASS.
+
+Stage Summary:
+- **Change 1 (Reset button in header row): PASS** ✓
+  - Header row class: `flex items-center gap-3 py-3` — single flex row, 3 children.
+  - Children (in order): (1) back-arrow BUTTON (x=16, w=40, ends x=56), (2) `<H1>Pasang Iklan</H1>` (x=68, w=214, centered ~x=175), (3) Reset BUTTON (x=294, w=80, ends x=374) — all overlap on y-axis (85-125 / 91-119 / 87-123).
+  - Reset button parent === header row ✓
+  - Reset button classes include `border-red-300 ... text-red-600 hover:bg-red-50` ✓ (red outline)
+  - Reset button contains an `<svg>` (RotateCcw icon) ✓
+  - `separate_reset_rows_above_header: []` — NO separate Reset row above the header ✓
+- **Change 2 (Simpan Dulu → Iklan Saya): PASS** ✓
+  - "Simpan Dulu" button found on Step 4 (Foto Mesin), blue classes (`border-blue-600 bg-blue-600 hover:bg-blue-700`), not disabled.
+  - After JS `.click()`: `store.view` = `"profile"`, `store.profilePanel` = `"iklan-saya"` ✓ (was previously going to home view).
+  - Toast text (Sonner): `"Iklan disimpan dengan status Belum Aktif."` ✓ (exact match).
+  - Listing card found on the Iklan Saya dashboard containing the test title "Mesin Press Hidrolik 100 Ton Verifikasi Header Draft" with a `bg-slate-400` badge reading "BELUM AKTIF" ✓.
+  - Card text dump shows the full dashboard: "Dashboard Iklan Saya" heading, "1 iklan" count, status badge "BELUM AKTIF", "Gold" package badge (colek = Iklan Gold), "Rp 185.000.000", "Nego", title, "Jakarta Pusat", "Th. 2020", "Baru saja".
+  - `localStorage["gomesin-post-ad-draft"]` cleared to `null` after successful save ✓ (post-ad.tsx line 424 `localStorage.removeItem(DRAFT_KEY)`).
+- **Cleanup**: Test draft listing `cmsx2gp6z001rq4g54nr1cq6s` was DELETEd via `/api/admin/listings` (status=200, success=true). Budi's listing count is back to 0.
+- **Console errors**: 5 errors total, ALL are WebSocket connection failures to `ws://localhost:3000/?XTransformPort=3003&EIO=4&transport=websocket` (chat-service not running in this sandbox) — unrelated to the post-ad changes. Zero relevant console errors, zero page errors, zero relevant failed requests (1 external CDN image blocked by ORB — also unrelated).
+- **Artifacts** (saved to `/home/z/my-project/verify-post-ad-header-shots/`):
+  - `step1-header.png` (56KB, full mobile page at step 1)
+  - `step1-header-crop.png` (12KB, close-up of header row)
+  - `step4-foto-mesin.png` (49KB, full mobile page at step 4 before clicking Simpan Dulu)
+  - `iklan-saya-after-draft.png` (153KB, Iklan Saya dashboard showing the new draft listing with "BELUM AKTIF" slate badge)
+  - `report.json` (full machine-readable verification summary with DOM geometry, toast texts, store state, cleanup result, verdicts)
+- **Script**: `/home/z/my-project/verify-post-ad-header-draft.py` (re-runnable; uses test user Budi Santoso + auto-cleanup of test draft listing).
+

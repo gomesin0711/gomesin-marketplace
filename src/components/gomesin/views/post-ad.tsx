@@ -422,12 +422,10 @@ export function PostAdView() {
       setSavingDraft(false);
       // Clear persisted draft form data after successful post/draft-save
       try { localStorage.removeItem(DRAFT_KEY); } catch {}
-      toast.success(wasDraft ? "Iklan disimpan (Belum Aktif)." : tr("adPosted"));
-      if (wasDraft) {
-        goHome();
-      } else {
-        goToProfilePanel("iklan-saya");
-      }
+      toast.success(wasDraft ? "Iklan disimpan dengan status Belum Aktif." : tr("adPosted"));
+      // Both draft-save and full-publish navigate to "Iklan Saya" page.
+      // Draft shows as "Belum Aktif" (status=draft); published shows as "Menunggu Verifikasi" (status=pending).
+      goToProfilePanel("iklan-saya");
     },
     onError: (e: any) => {
       setSavingDraft(false);
@@ -598,20 +596,9 @@ export function PostAdView() {
         onChange={handleFileSelect}
       />
 
-      {/* Reset button (aligned right) */}
-      <div className="flex justify-end">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleReset}
-          className="h-8 gap-1.5 rounded-full border-red-300 px-3 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700"
-        >
-          <RotateCcw className="size-3.5" />
-          Reset
-        </Button>
-      </div>
+      {/* (Reset button moved to header row, aligned right with title) */}
 
-      {/* Header with back arrow + centered title */}
+      {/* Header with back arrow + centered title + Reset button (right) */}
       <div className="flex items-center gap-3 py-3">
         <button
           type="button"
@@ -621,7 +608,15 @@ export function PostAdView() {
           <ArrowLeft className="size-5" />
         </button>
         <h1 className="flex-1 text-center text-lg font-bold">Pasang Iklan</h1>
-        <div className="w-10" />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleReset}
+          className="h-9 shrink-0 gap-1.5 rounded-full border-red-300 px-3 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700"
+        >
+          <RotateCcw className="size-3.5" />
+          Reset
+        </Button>
       </div>
 
       {/* Progress Stepper — compact, fits mobile viewport without horizontal scroll.
