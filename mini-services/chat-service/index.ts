@@ -74,32 +74,56 @@ function verifySessionToken(token: string): SessionPayload | null {
 }
 
 /**
- * Verify the session cookie from a raw Cookie header string (as found in
- * `socket.handshake.headers.cookie`). Returns the verified user
- * `{ id, role }`, or null if the cookie is missing/invalid/expired.
+ * Resolve the session user from a socket.io handshake.
  *
- * The client-supplied userId in `user:join` is NEVER trusted — only the
- * HMAC-signed cookie identifies the user. This prevents account-A from
- * joining account-B's `user:B` room and receiving their private messages.
+ * Resolution order (first match wins):
+ *   1. `Authorization: Bearer <token>` header — per-tab session token
+ *      (enables multi-account-per-tab: each browser tab can be a different
+ *      user). The client sends this via socket.io `extraHeaders`.
+ *   2. `mesinku_session` httpOnly cookie — the shared session (used when no
+ *      per-tab token is present, e.g. the main tab).
+ *
+ * Returns the verified user `{ id, role }`, or null if no valid session is
+ * found. The client-supplied userId in `user:join` is NEVER trusted — only
+ * the HMAC-signed token/cookie identifies the user.
  */
-function verifySessionCookie(
-  cookieHeader: string | null | undefined
+function resolveSessionUser(
+  headers: Record<string, string | string[] | undefined> = {}
 ): { id: string; role: string } | null {
-  if (!cookieHeader) return null
-  let token: string | undefined
-  for (const part of cookieHeader.split(';')) {
-    const idx = part.indexOf('=')
-    if (idx < 0) continue
-    const name = part.slice(0, idx).trim()
-    if (name === SESSION_COOKIE_NAME) {
-      token = decodeURIComponent(part.slice(idx + 1).trim())
-      break
+  // (1) Authorization header (per-tab token) — priority over cookie.
+  const authHeaderRaw = (headers.authorization || headers.Authorization) as
+    | string
+    | string[]
+    | undefined
+  const authHeader = Array.isArray(authHeaderRaw) ? authHeaderRaw[0] : authHeaderRaw
+  if (authHeader) {
+    const m = String(authHeader).match(/^Bearer\s+(.+)$/i)
+    if (m) {
+      const payload = verifySessionToken(m[1].trim())
+      if (payload) return { id: payload.id, role: payload.role }
     }
   }
-  if (!token) return null
-  const payload = verifySessionToken(token)
-  if (!payload) return null
-  return { id: payload.id, role: payload.role }
+
+  // (2) httpOnly cookie (shared across tabs).
+  const cookieHeaderRaw = headers.cookie as string | string[] | undefined
+  const cookieHeader = Array.isArray(cookieHeaderRaw) ? cookieHeaderRaw[0] : cookieHeaderRaw
+  if (cookieHeader) {
+    let token: string | undefined
+    for (const part of String(cookieHeader).split(';')) {
+      const idx = part.indexOf('=')
+      if (idx < 0) continue
+      const name = part.slice(0, idx).trim()
+      if (name === SESSION_COOKIE_NAME) {
+        token = decodeURIComponent(part.slice(idx + 1).trim())
+        break
+      }
+    }
+    if (token) {
+      const payload = verifySessionToken(token)
+      if (payload) return { id: payload.id, role: payload.role }
+    }
+  }
+  return null
 }
 
 const PORT = 3003
@@ -190,7 +214,7 @@ io.on('connection', (socket) => {
   // from the signed cookie is used. This prevents account-A from calling
   // `socket.emit('user:join', { userId: 'B' })` and receiving B's messages.
   socket.on('user:join', (data: { userId?: string }, ack?: (res: any) => void) => {
-    const sessionUser = verifySessionCookie(socket.handshake.headers.cookie)
+    const sessionUser = resolveSessionUser(socket.handshake.headers as any)
     if (!sessionUser) {
       console.log(
         `[chat-service] user:join REJECTED (no/invalid session) socket=${socket.id}`

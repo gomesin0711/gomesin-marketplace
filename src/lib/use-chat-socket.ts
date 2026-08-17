@@ -20,6 +20,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { io, type Socket } from "socket.io-client";
 import { useStore } from "@/lib/store";
+import { getSessionToken } from "@/lib/session-client";
 
 // ---------------------------------------------------------------------------
 // Types — mirror the chat-service protocol
@@ -103,6 +104,7 @@ function getSocket(): Socket | null {
   // XTransformPort query param. This works for both the sandbox preview and
   // production deployments behind the same gateway.
   const socketUrl = "/";
+  const perTabToken = getSessionToken();
   const socketOpts: any = {
     // Match the chat-service's `path: "/"` (NOT the default "/socket.io/").
     // The Caddy gateway forwards based on the XTransformPort query param, so
@@ -120,6 +122,12 @@ function getSocket(): Socket | null {
     // XTransformPort tells the Caddy gateway to forward this request to
     // the chat-service mini-service on port 3003.
     query: { XTransformPort: "3003" },
+    // Pass the per-tab session token so the chat-service resolves THIS tab's
+    // user (multi-account per-tab). Falls back to httpOnly cookie if absent.
+    auth: perTabToken ? { token: perTabToken } : undefined,
+    // Also send as a header for polling-transport requests (socket.io `auth`
+    // is only sent on the initial handshake; extraHeaders covers polling).
+    extraHeaders: perTabToken ? { Authorization: `Bearer ${perTabToken}` } : {},
   };
 
   const socket = io(socketUrl, socketOpts);

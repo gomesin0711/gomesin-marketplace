@@ -413,6 +413,9 @@ export const useStore = create<NavState>()(
         // UI to update immediately.
         try {
           if (typeof window !== "undefined") {
+            // Clear the per-tab session token (sessionStorage) so this tab
+            // is no longer authenticated. Other tabs keep their own tokens.
+            sessionStorage.removeItem("mesinku_session_token");
             fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
           }
         } catch {}

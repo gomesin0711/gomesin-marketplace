@@ -126,9 +126,34 @@ export type SessionUser = { id: string; role: string };
 
 /**
  * Resolve the verified session user from a Next.js Request.
- * Returns null if there is no session or the token is invalid/expired.
+ *
+ * Session resolution order (first match wins):
+ *   1. `Authorization: Bearer <token>` header — per-tab session token stored
+ *      in sessionStorage by the client. This enables multiple tabs in the
+ *      same browser to be logged into DIFFERENT accounts simultaneously
+ *      (since httpOnly cookies are shared across all tabs, but sessionStorage
+ *      is per-tab).
+ *   2. `mesinku_session` httpOnly cookie — the default "main" session for
+ *      the browser. Used when no per-tab header is present (e.g. first tab,
+ *      or tabs that haven't explicitly logged in).
+ *
+ * Returns null if neither source provides a valid session.
  */
 export function getSessionUser(req: NextRequest): SessionUser | null {
+  // (1) Authorization header (per-tab token) — takes priority over cookie.
+  const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
+  if (authHeader) {
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (match) {
+      const token = match[1].trim();
+      const payload = verifySessionToken(token);
+      if (payload) return { id: payload.id, role: payload.role };
+      // Invalid token in header — fall through to cookie (don't fail hard,
+      // because the header might be stale from a logged-out tab).
+    }
+  }
+
+  // (2) httpOnly cookie (shared across tabs).
   const cookieHeader = req.headers.get("cookie");
   const cookies = parseCookies(cookieHeader);
   const token = cookies[COOKIE_NAME];

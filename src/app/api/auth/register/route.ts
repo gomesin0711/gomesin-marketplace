@@ -3,7 +3,7 @@ import { db, isDbAvailable } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
 import { fallbackRegisterUser } from "@/lib/auth-fallback";
 import { phonesMatch, normalizePhone } from "@/lib/otp-store";
-import { setSessionCookie } from "@/lib/session";
+import { setSessionCookie, createSessionToken } from "@/lib/session";
 
 // ---------------------------------------------------------------------------
 // Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
@@ -137,7 +137,10 @@ export async function POST(req: NextRequest) {
 
       // Issue session cookie alongside the new user response so subsequent
       // requests are authenticated (multi-user data isolation).
-      const res = NextResponse.json({ user }, { status: 201 });
+      // Also return sessionToken in the body so the client can store it in
+      // sessionStorage (per-tab) for multi-account support.
+      const token = createSessionToken(user.id, user.role || "user");
+      const res = NextResponse.json({ user, sessionToken: token }, { status: 201 });
       setSessionCookie(res, user.id, user.role || "user", req);
       return res;
     } catch (prismaErr) {
@@ -241,7 +244,8 @@ export async function POST(req: NextRequest) {
       console.error("[auth/register] Supabase insert error:", insertErr);
       // fall through to in-memory fallback as last resort
     } else {
-      const res = NextResponse.json({ user: newRow }, { status: 201 });
+      const token = createSessionToken(newRow.id, newRow.role || "user");
+      const res = NextResponse.json({ user: newRow, sessionToken: token }, { status: 201 });
       setSessionCookie(res, newRow.id, newRow.role || "user", req);
       return res;
     }
@@ -267,7 +271,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
-  const res = NextResponse.json({ user: result.user }, { status: 201 });
+  const token = createSessionToken(result.user.id, result.user.role || "user");
+  const res = NextResponse.json({ user: result.user, sessionToken: token }, { status: 201 });
   setSessionCookie(res, result.user.id, result.user.role || "user", req);
   return res;
 }

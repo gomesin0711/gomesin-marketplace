@@ -45,6 +45,20 @@ export function CategoryNav() {
           {tr("all")}
         </span>
       </button>
+      {/* Virtual "Jasa Teknisi" category — filters listings by condition=jasa.
+          This is not a DB category (jasa is a listing condition, not a category
+          row), so we hardcode it here with the HardHat icon. */}
+      <button
+        onClick={() => goToListings({ condition: "jasa" })}
+        className="card-hover group flex w-14 shrink-0 flex-col items-center text-center sm:w-[72px]"
+      >
+        <span className="grid aspect-square w-full place-items-center rounded-lg bg-secondary transition group-hover:bg-primary/10">
+          <CategoryIcon name="HardHat" className="size-full p-1" />
+        </span>
+        <span className="mt-1.5 line-clamp-2 text-[9px] font-semibold leading-tight text-foreground sm:text-[10px]">
+          {tr("jasaAds")}
+        </span>
+      </button>
       {isLoading
         ? Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="flex w-14 shrink-0 flex-col items-center sm:w-[72px]">

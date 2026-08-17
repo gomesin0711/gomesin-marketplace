@@ -9293,3 +9293,46 @@ Stage Summary:
 - "Failed to fetch" resolved — the POST /api/listings request now reaches the server even with large image payloads
 - The fix is compatible with the previous fix (doSubmit called LAST) — since the page doesn't navigate away during fetch, keepalive is unnecessary
 - Verified: POST /api/listings 201 with 3 images (~600KB payload) succeeds
+
+---
+Task ID: fix-multi-tab-and-jasa-icon
+Agent: Main
+Task: (1) New tab should allow different account, (2) restore missing jasa category icon
+
+Work Log:
+
+=== ISSUE 1: Multi-account per-tab ===
+- Root cause: httpOnly session cookies are SHARED across all browser tabs for the same origin. So if Tab 1 logs in as User A, every new tab is also User A — there was no way to have Tab 2 be User B.
+- Fix: Implemented a per-tab session token mechanism using sessionStorage (which is per-tab, NOT shared) + Authorization header.
+
+Changes:
+1. src/lib/session.ts — getSessionUser() now checks `Authorization: Bearer <token>` header FIRST (per-tab token), then falls back to the httpOnly cookie (shared). This lets a tab with a per-tab token override the shared cookie.
+
+2. src/lib/session-client.ts (NEW) — client-side helpers:
+   - getSessionToken()/setSessionToken()/clearSessionToken() — manage the per-tab token in sessionStorage
+   - apiFetch() — fetch wrapper that auto-attaches Authorization header
+   - GLOBAL FETCH PATCH: patches window.fetch so EVERY relative fetch("/api/...") automatically attaches the per-tab Authorization header (avoids rewriting hundreds of call sites)
+
+3. src/app/api/auth/login/route.ts — authResponse() now returns `sessionToken` in the JSON body (alongside setting the httpOnly cookie). Uses createSessionToken() from session.ts.
+
+4. src/app/api/auth/register/route.ts — same change (3 auth-response sites updated to return sessionToken).
+
+5. src/components/gomesin/views/login.tsx — on successful login/register, calls setSessionToken(data.sessionToken) to store the per-tab token.
+
+6. src/lib/store.ts — logout() now clears the per-tab token from sessionStorage (so only this tab logs out; other tabs keep their own sessions).
+
+7. src/components/gomesin/app-shell.tsx — /api/auth/me call uses apiFetch() (attaches per-tab header). On 401, clears the per-tab token.
+
+8. src/lib/use-chat-socket.ts — socket.io connection now sends per-tab token via `auth` + `extraHeaders` (for polling transport).
+
+9. mini-services/chat-service/index.ts — replaced verifySessionCookie() with resolveSessionUser() that checks Authorization header first, then cookie. Updated user:join handler to use it. Restarted chat-service (bun --hot auto-reloads).
+
+=== ISSUE 2: Missing jasa category icon ===
+- Root cause: "Jasa" is not a DB Category row — it's a virtual category based on listing.condition="jasa". The CategoryNav component only rendered DB categories, so there was no jasa button.
+- Fix: src/components/gomesin/category-nav.tsx — added a virtual "Jasa" button (with HardHat icon, mapped to /cat-icons/jasa-final.png) positioned right after the "Semua" button. Clicking it calls goToListings({ condition: "jasa" }) which filters listings by condition=jasa.
+
+Stage Summary:
+- Multi-account per-tab: Tab 1 can be User A, Tab 2 can be User B (each tab has its own sessionStorage token, sent as Authorization header, takes priority over shared cookie)
+- Logout in one tab does NOT log out other tabs (per-tab token cleared, shared cookie untouched for other tabs)
+- Jasa category icon restored in the category nav bar (HardHat icon, filters condition=jasa)
+- All existing fetch calls work transparently via the global fetch patch

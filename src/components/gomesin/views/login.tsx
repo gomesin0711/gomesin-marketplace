@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useStore } from "@/lib/store";
+import { setSessionToken, clearSessionToken } from "@/lib/session-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -284,6 +285,7 @@ export function LoginView() {
         const goHome = useStore.getState().goHome;
         const goToAdmin = useStore.getState().goToAdmin;
         setUser(data.user);
+        if (data.sessionToken) setSessionToken(data.sessionToken);
         setSuccess(true);
         toast.success(formatT(tr("welcomeBack"), { name: data.user.name }));
         const isAdmin = data.user.role === "admin" || data.user.role === "superadmin";
@@ -317,6 +319,7 @@ export function LoginView() {
       const goHome = useStore.getState().goHome;
       const goToAdmin = useStore.getState().goToAdmin;
       setUser(data.user);
+      if (data.sessionToken) setSessionToken(data.sessionToken);
       setSuccess(true);
       toast.success(formatT(tr("welcomeBack"), { name: data.user.name }));
       const isAdmin = data.user.role === "admin" || data.user.role === "superadmin";
@@ -474,6 +477,7 @@ export function LoginView() {
       const goToPost = useStore.getState().goToPost;
       const goToAdmin = useStore.getState().goToAdmin;
       setUser(data.user);
+      if (data.sessionToken) setSessionToken(data.sessionToken);
       setSuccess(true);
       toast.success(tr("registerSuccess"));
       const isAdmin = data.user.role === "admin" || data.user.role === "superadmin";

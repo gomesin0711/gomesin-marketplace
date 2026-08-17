@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useStore } from "@/lib/store";
+import { apiFetch, clearSessionToken } from "@/lib/session-client";
 import { useLang } from "@/lib/i18n";
 import { translations as i18nTranslations } from "@/lib/i18n";
 import { useMounted } from "@/lib/use-mounted";
@@ -73,14 +74,19 @@ export function AppShell() {
   // localStorage user from being shown as "logged in" when they're actually
   // not. This is the core of multi-user data isolation: the verified session
   // cookie is the single source of truth for "who am I".
+  //
+  // MULTI-TAB: We send the per-tab session token (from sessionStorage) as an
+  // Authorization header. This lets multiple tabs in the same browser be
+  // logged into DIFFERENT accounts — the per-tab token overrides the shared
+  // httpOnly cookie on the server side (see getSessionUser in session.ts).
   useEffect(() => {
     // Rehydrate from localStorage first (so the UI doesn't flash a logged-out
     // state if the user is actually still logged in).
     useStore.persist.rehydrate();
 
-    // Verify the session via the server. /api/auth/me resolves the user from
-    // the httpOnly cookie — NOT from any client-supplied userId.
-    fetch("/api/auth/me", { cache: "no-store" })
+    // Verify the session via the server. apiFetch() attaches the per-tab
+    // Authorization header if one exists in sessionStorage.
+    apiFetch("/api/auth/me", { cache: "no-store" })
       .then((r) => {
         if (!r.ok) return null;
         return r.json();
@@ -92,8 +98,10 @@ export function AppShell() {
           useStore.getState().setUser(data.user);
         } else {
           // Session invalid — clear the local user so the UI reflects reality.
+          // Also clear the per-tab token (it's expired/invalid).
           // (Don't call full logout() because that would also navigate home;
           // just clear the user state.)
+          clearSessionToken();
           useStore.setState({
             user: null,
             favorites: [],

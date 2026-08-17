@@ -3,15 +3,26 @@ import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/auth";
 import { fallbackFindUser, fallbackFindUserByPhone } from "@/lib/auth-fallback";
 import { isPhoneVerified, normalizePhone, phonesMatch } from "@/lib/otp-store";
-import { setSessionCookie } from "@/lib/session";
+import { setSessionCookie, createSessionToken } from "@/lib/session";
 
 // Wrap a successful auth response (login/register) with a session cookie.
 // All successful login paths MUST go through this helper so the cookie is set.
 // `req` is passed so setSessionCookie can read X-Forwarded-Proto and choose
 // SameSite=None+Secure (HTTPS / preview iframe) vs SameSite=Lax (local HTTP).
+//
+// In addition to the httpOnly cookie, we return the raw session token in the
+// JSON body as `sessionToken`. The client stores this in sessionStorage (which
+// is per-tab, unlike httpOnly cookies which are shared across all tabs) and
+// sends it as an `Authorization: Bearer <token>` header on subsequent API
+// requests. This enables multiple tabs in the same browser to be logged into
+// DIFFERENT accounts simultaneously — the per-tab header takes priority over
+// the shared cookie (see getSessionUser in src/lib/session.ts).
 type AuthUser = { id: string; role?: string; [key: string]: unknown };
 function authResponse(user: AuthUser, status: number = 200, req?: NextRequest) {
-  const res = NextResponse.json({ user }, { status });
+  const token = createSessionToken(user.id, user.role || "user");
+  const res = NextResponse.json({ user, sessionToken: token }, { status });
+  // Also set the httpOnly cookie (for backward compat + tabs that don't
+  // have a per-tab token yet).
   setSessionCookie(res, user.id, user.role || "user", req);
   return res;
 }
