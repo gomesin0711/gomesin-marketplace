@@ -457,8 +457,8 @@ export function Header() {
           </div>
         </div>
 
-        {/* Row 2: Search (below logo, full width) — hidden on Akun Saya (profile) */}
-        {currentView !== "profile" && (
+        {/* Row 2: Search (below logo, full width) — hidden on Akun Saya (profile) and detail page */}
+        {currentView !== "profile" && currentView !== "detail" && (
         <div className="px-3 pb-2">
           <form onSubmit={submitSearch} className="relative">
             <Input

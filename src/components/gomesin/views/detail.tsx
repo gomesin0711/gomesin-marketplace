@@ -173,8 +173,8 @@ export function DetailView() {
 
       {/* TOP: gallery + title/price card side by side */}
       <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_360px]">
-        {/* gallery — left */}
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
+        {/* gallery — left — full-bleed on mobile (no margins/rounded/border), card style on desktop */}
+        <div className="-mx-4 overflow-hidden bg-muted md:mx-0 md:rounded-xl md:border md:border-border md:bg-card">
           <div
             className="group relative aspect-[4/3] w-full cursor-zoom-in overflow-hidden bg-muted"
             onClick={() => setLightboxOpen(true)}

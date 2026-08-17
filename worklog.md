@@ -6965,3 +6965,159 @@ Stage Summary:
 - Image lightbox feature live on production — click any listing's gallery image to see it full-screen.
 - Brand text "BeliMesin" live next to all logos on production.
 - Note: Production uses Supabase DB (separate from dev's local SQLite). Sample ads (39 listings) are only in the dev environment; production has its own real listing data.
+
+---
+Task ID: 23-verify
+Agent: general-purpose (sub agent)
+Task: Verify two changes on the mobile listing detail page at http://localhost:3000:
+  1. The search box at the top should be REMOVED on the detail page (mobile only)
+  2. The ad gallery image should be FULL WIDTH with no left/right margins on mobile
+And confirm desktop layout is not broken.
+
+Work Log:
+- Read worklog.md context. Reviewed the two source changes:
+  * `src/components/gomesin/header.tsx` line ~461:
+    `{currentView !== "profile" && currentView !== "detail" && (...)}` — the Row 2
+    search box (full-width search input with placeholder containing "cari"/"search")
+    is now hidden when `currentView === "detail"`.
+  * `src/components/gomesin/views/detail.tsx` line ~177:
+    `<div className="-mx-4 overflow-hidden bg-muted md:mx-0 md:rounded-xl md:border md:border-border md:bg-card">`
+    — the gallery container uses `-mx-4` on mobile (breaks out of parent `px-4`
+    padding to become full-bleed), and `md:mx-0 md:rounded-xl md:border md:border-border md:bg-card`
+    restores card style on desktop only.
+- Wrote Playwright script: `/home/z/my-project/verify-mobile-detail.py`.
+  - Uses `p.devices["iPhone 13"]` (390x844 viewport, iOS Safari UA) for mobile.
+  - Uses 1280x800 Chromium for desktop.
+  - Pre-seeds localStorage/sessionStorage to suppress the PWA install popup
+    (so it doesn't cover the listings).
+  - Captures console messages and page errors.
+  - Mobile: navigates to homepage, clicks first listing card, waits 2s,
+    screenshots the detail page, then inspects:
+    * Whether any visible `<input type=text|search>` with placeholder matching
+      `cari|search` exists in the top 200px of the page (header area).
+    * The inner gallery div (`div.cursor-zoom-in` / `aspect-[4/3]`) bounding box.
+    * Walks up the DOM to find the outer container with `-mx-4`/`md:mx-0` class
+      and reads its computed `borderRadius`, `borderLeftWidth`, `borderRightWidth`,
+      `marginLeft`, `marginRight`, `paddingLeft`, `paddingRight`.
+  - Desktop: same navigation, plus same computed-style inspection to confirm
+    rounded corners (borderRadius>0) and border (borderWidth>0) are restored.
+- Ran the script. Results saved to `/home/z/my-project/verify-mobile-detail-result.json`.
+
+Verification Results:
+
+MOBILE (iPhone 13, 390x664 viewport, 3x DPR → 1170x1992 screenshots):
+- Search box hidden on detail page? YES ✅
+  * `header_search_inputs` = [] (no visible text/search input with "cari"/"search"
+    placeholder in the top 200px of the page).
+  * `mobile_search_box_hidden` = true.
+- Gallery image full-width (touches left AND right edges)? YES ✅
+  * `gallery_left_edge` = 0, `gallery_right_edge` = 390 (exactly viewport width).
+  * `mobile_gallery_full_width` = true.
+- Rounded corners removed on mobile? YES ✅
+  * Outer container computed `borderRadius` = "0px" (max radius = 0).
+  * `mobile_gallery_rounded_corners_removed` = true.
+- No left/right border around image on mobile? YES ✅
+  * Outer container computed `borderLeftWidth` = "0px", `borderRightWidth` = "0px".
+  * `mobile_gallery_no_border` = true.
+- Outer container margin: `marginLeft` = "-16px", `marginRight` = "-16px"
+  (this is the `-mx-4` negative margin that pulls the container past the parent's
+  `px-4` padding, achieving the full-bleed effect).
+- Outer container className confirmed:
+  `-mx-4 overflow-hidden bg-muted md:mx-0 md:rounded-xl md:border md:border-border md:bg-card`.
+
+DESKTOP (1280x800 Chromium):
+- Gallery still has rounded corners? YES ✅
+  * Outer container computed `borderRadius` = "16px".
+- Gallery still has border? YES ✅
+  * `borderLeftWidth` = "1px", `borderRightWidth` = "1px".
+- Gallery NOT full-bleed (has margins)? YES ✅
+  * `desktop_gallery_left_edge` = 17, `desktop_gallery_right_edge` = 887
+    (well within the 1280-wide viewport — image sits in the 2-column grid's
+    left column inside the max-w container).
+  * `marginLeft` = "0px", `marginRight` = "0px" (the `md:mx-0` overrides the
+    mobile `-mx-4` at desktop breakpoint, restoring normal flow).
+- Layout intact (not broken)? YES ✅
+- Outer container className is the same on desktop (Tailwind responsive classes
+  apply the `md:` variants automatically).
+
+CONSOLE ERRORS:
+- Mobile: 5 console errors/warnings, 0 page errors.
+  * 4× WebSocket connection failed: `ws://localhost:3000/?XTransformPort=3003&EIO=4&transport=websocket`
+    (Connection closed before receiving a handshake response) — these are the
+    PRE-EXISTING chat-service (port 3003) transport failures through the Caddy
+    gateway. They have nothing to do with the changes being verified.
+  * 1× warning: font `.woff2` preloaded but not used within a few seconds
+    (a Next.js font-loading warning, also pre-existing/benign).
+- Desktop: 3 console errors, 0 page errors.
+  * All 3 are the same pre-existing WebSocket chat-service transport failures.
+- No page errors (no uncaught exceptions) on either mobile or desktop.
+
+SCREENSHOTS (all saved to /home/z/my-project/):
+- `/home/z/my-project/verify-mobile-detail-1.png` (1170×1992, 3× scale of 390×664)
+  — mobile detail page top viewport (header + full-bleed gallery image at top,
+  no search box visible below the logo row).
+- `/home/z/my-project/verify-mobile-detail-2-top.png` (1170×1800)
+  — close-up of the top portion (header + gallery image) on mobile.
+- `/home/z/my-project/verify-mobile-detail-1-full.png` (1170×10197)
+  — full-page mobile screenshot of the entire detail page (for context).
+- `/home/z/my-project/verify-mobile-detail-3-desktop.png` (1280×800)
+  — desktop detail page showing the gallery in a card with rounded corners,
+  border, and normal margins (left=17, right=887 in a 1280-wide viewport),
+  next to the right sidebar.
+
+Artifacts:
+- Playwright script: `/home/z/my-project/verify-mobile-detail.py`
+- Result JSON:       `/home/z/my-project/verify-mobile-detail-result.json`
+
+Stage Summary:
+- VERIFICATION PASSED on both mobile and desktop.
+- Mobile (iPhone 13):
+  * Search box (Row 2 of header) is HIDDEN on the detail page. ✅
+  * Gallery image is FULL-WIDTH (left=0, right=390, exactly viewport width). ✅
+  * Rounded corners are REMOVED on mobile (borderRadius=0px). ✅
+  * Border is REMOVED on mobile (borderLeftWidth=0px, borderRightWidth=0px). ✅
+  * Achieved via `-mx-4` (negative margin breaks out of parent `px-4` padding)
+    and the absence of any `rounded-*` / `border` classes at the mobile
+    (base) breakpoint.
+- Desktop (1280x800):
+  * Gallery still has rounded corners (borderRadius=16px). ✅
+  * Gallery still has border (borderLeftWidth=1px, borderRightWidth=1px). ✅
+  * Gallery has normal margins (NOT full-bleed: left=17, right=887). ✅
+  * Layout is intact (not broken). ✅
+  * Achieved via the `md:mx-0 md:rounded-xl md:border md:border-border md:bg-card`
+    responsive variants that restore the card style at the `md:` breakpoint.
+- 0 page errors on either viewport. Only pre-existing WebSocket chat-service
+  transport failures (port 3003 through Caddy) appear in the console — these
+  are unrelated to the verified changes.
+- All required screenshots saved to `/home/z/my-project/`.
+
+---
+Task ID: 23
+Agent: main (Z.ai Code)
+Task: On mobile detail page — hide search box at top and make gallery image full-width (no left/right margins)
+
+Work Log:
+- User requested: on mobile, when clicking an ad → go to detail page; remove the search box at the top; make the ad image full-width without left/right margins.
+- Change 1 — Hide mobile search box on detail page (`src/components/gomesin/header.tsx`):
+  * The mobile header has "Row 2: Search" which was previously hidden only on the profile view.
+  * Changed the condition from `{currentView !== "profile" && (...)}` to `{currentView !== "profile" && currentView !== "detail" && (...)}`.
+  * Now the search box is hidden on both the profile page AND the detail page on mobile. Desktop search remains unaffected (always shown in the desktop header).
+- Change 2 — Make gallery image full-bleed on mobile (`src/components/gomesin/views/detail.tsx`):
+  * The detail page outer container has `px-4` padding (creating left/right margins).
+  * Changed the gallery container from `overflow-hidden rounded-xl border border-border bg-card` to `-mx-4 overflow-hidden bg-muted md:mx-0 md:rounded-xl md:border md:border-border md:bg-card`.
+  * On mobile: `-mx-4` negative margin cancels the parent's `px-4` padding, making the image touch the left and right screen edges. No border, no rounded corners on mobile.
+  * On desktop (`md:` prefix): `md:mx-0` resets the margin, `md:rounded-xl md:border md:border-border md:bg-card` restores the card style (rounded corners + border + bg).
+  * The back button row and title/price card below the gallery still have their normal padding (they're inside the `px-4` container, not affected by the gallery's negative margin).
+- Verified via Playwright subagent `23-verify`:
+  * Mobile (iPhone 13, 390x844): Search box hidden on detail page ✅, gallery image full-width (left=0, right=390) ✅, rounded corners removed (borderRadius=0px) ✅, no border ✅.
+  * Desktop (1280x800): Gallery still has rounded corners (borderRadius=16px) ✅, border (1px) ✅, NOT full-bleed (left=17, right=887) ✅, layout intact ✅.
+  * 0 page errors on either viewport.
+  * Screenshots: verify-mobile-detail-1.png, verify-mobile-detail-2-top.png, verify-mobile-detail-1-full.png, verify-mobile-detail-3-desktop.png.
+- Deployed to Vercel production: build 32s, ready in 1m, aliased to https://gomesin.vercel.app.
+
+Stage Summary:
+- Mobile detail page now has no search box at the top — only the logo header row.
+- Mobile gallery image is now full-width (edge-to-edge, no left/right margins, no rounded corners, no border).
+- Desktop layout unchanged — gallery still has rounded corners, border, and normal margins.
+- Production deployed and verified.
+- Files modified: `src/components/gomesin/header.tsx` (hide search on detail view), `src/components/gomesin/views/detail.tsx` (full-bleed gallery on mobile).
