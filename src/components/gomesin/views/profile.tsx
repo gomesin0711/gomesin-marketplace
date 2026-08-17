@@ -108,7 +108,7 @@ import { NewListingsNotificationList } from "../notification-bell";
 import EmojiPicker, { EmojiStyle, Theme } from "emoji-picker-react";
 import { useTheme } from "next-themes";
 import { useChatBg } from "@/lib/use-chat-bg";
-import { openExternalUrl } from "@/lib/external-url";
+import { openExternalUrl, openUrlViaAnchor } from "@/lib/external-url";
 
 // Helper: open WhatsApp, show fallback toast with clickable link if popup blocked
 // (common in sandboxed iframes like the Preview Panel — prevents "wa.me refused to connect").
@@ -120,8 +120,9 @@ const openWaWithFallback = (url: string) => {
       action: {
         label: "Buka WhatsApp",
         onClick: () => {
-          const w = window.open(url, "_blank", "noopener,noreferrer");
-          if (!w) {
+          // Anchor-click is more reliable than window.open() here.
+          const ok2 = openUrlViaAnchor(url);
+          if (!ok2) {
             try {
               navigator.clipboard?.writeText(url);
               toast.success("Link WhatsApp disalin ke clipboard.");

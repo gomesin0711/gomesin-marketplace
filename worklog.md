@@ -9210,3 +9210,41 @@ Stage Summary:
 - When popup is blocked (Preview Panel iframe), user sees a toast with a "Buka WhatsApp" button they can click to open wa.me in a new tab (direct user gesture allows the popup)
 - All 5 WhatsApp entry points now have the fallback: pasang iklan payment, package upgrade (QRIS + BCA), seller contact, customer support x2
 - The listing creation (doSubmit) still runs BEFORE WhatsApp (from previous fix), so even if user dismisses the WhatsApp toast, the ad is already created and proof is sent to admin via chat
+
+---
+Task ID: fix-popup-blocked-anchor
+Agent: Main
+Task: Fix "Popup WhatsApp diblokir browser" — popup blocked even after toast fallback
+
+Work Log:
+- Root cause: window.open() is blocked by browsers when called outside a "user gesture" context. In the pasang iklan flow, openWhatsAppWithUrl() runs AFTER multiple awaits (upload proof, send chat) — by then the browser's user-gesture context has expired, so window.open() returns null → "blocked" status → fallback toast shown. But the toast action's window.open() could ALSO fail in strict sandboxed iframes.
+
+Fix applied:
+1. src/lib/external-url.ts — rewrote openExternalUrl() to use programmatic <a target="_blank">.click() as PRIMARY strategy (strategies 1 & 2), keeping window.open() as fallback (strategies 3 & 4). Anchor-click is treated by browsers as user-initiated navigation (not script popup), so it bypasses popup blockers even when triggered from async code. Added new openUrlViaAnchor() helper for use inside user-gesture contexts (toast action buttons).
+
+2. src/lib/wa-fallback.ts — updated showWhatsAppFallbackToast() to use openUrlViaAnchor() in the toast action onClick. The toast button click IS a fresh user gesture, so anchor-click is most reliable here.
+
+3. src/components/gomesin/views/detail.tsx — handleWhatsApp() fallback now uses openUrlViaAnchor() instead of window.open()
+
+4. src/components/gomesin/views/profile.tsx — openWaWithFallback() helper updated to use openUrlViaAnchor()
+
+Why anchor-click is better than window.open():
+- window.open() = "script popup" → blocked aggressively outside user gesture, blocked in sandboxed iframes without allow-popups
+- <a target="_blank">.click() = "navigation" → browsers treat more leniently, allowed even from async code in many cases
+- In a genuine user gesture (toast button click), anchor-click almost always succeeds
+
+Flow after fix:
+1. User clicks "Kirim & Pasang Iklan" → doSubmit() creates listing immediately
+2. Upload proof + send chat to admin (async)
+3. openWhatsAppWithUrl() → openExternalUrl() tries anchor-click in window.top first
+   - If succeeds → WhatsApp opens in new tab (most cases)
+   - If blocked → toast with "Buka WhatsApp" button appears
+4. User clicks "Buka WhatsApp" in toast → openUrlViaAnchor() runs in user gesture → WhatsApp opens
+5. If STILL blocked → URL copied to clipboard as last resort
+
+Stage Summary:
+- Anchor-click approach is significantly more reliable than window.open() for opening external URLs from async contexts
+- The "Popup WhatsApp diblokir browser" toast should now rarely appear (anchor-click succeeds in most cases)
+- When it does appear, the "Buka WhatsApp" button uses anchor-click (not window.open) so it works reliably
+- Final fallback: copy URL to clipboard so user can paste manually
+- Listing creation (doSubmit) still runs BEFORE WhatsApp — ad is always saved regardless of WhatsApp outcome

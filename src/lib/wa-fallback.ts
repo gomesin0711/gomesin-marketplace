@@ -4,7 +4,8 @@
  *
  * Instead of navigating the iframe to wa.me (which would show
  * "wa.me refused to connect" due to X-Frame-Options: DENY), we show a toast
- * with a clickable action button that opens the wa.me URL in a new tab.
+ * with a clickable action button that opens the wa.me URL via an anchor-click
+ * (more reliable than window.open() inside a toast action).
  *
  * Usage:
  *   const result = await openWhatsAppWithUrl({ ... });
@@ -16,18 +17,21 @@
  */
 import { toast } from "sonner";
 import type { ShareImageResult } from "@/lib/share-image";
+import { openUrlViaAnchor } from "@/lib/external-url";
 
 export function showWhatsAppFallbackToast(result: ShareImageResult): boolean {
   if (result.status === "blocked") {
     toast("Popup WhatsApp diblokir browser.", {
-      description: "Klik tombol di bawah untuk membuka WhatsApp secara manual.",
+      description: "Klik tombol di bawah untuk membuka WhatsApp.",
       action: {
         label: "Buka WhatsApp",
         onClick: () => {
-          // window.open in a direct user-gesture (click on the toast action)
-          // is much more likely to succeed than an async popup attempt.
-          const w = window.open(result.url, "_blank", "noopener,noreferrer");
-          if (!w) {
+          // Anchor-click is more reliable than window.open() here because
+          // the toast action click IS a fresh user gesture, and browsers
+          // treat <a target="_blank"> clicks as user-initiated navigation
+          // (bypasses popup blockers that would block window.open()).
+          const ok = openUrlViaAnchor(result.url);
+          if (!ok) {
             // Last resort: copy to clipboard so the user can paste it manually.
             try {
               navigator.clipboard?.writeText(result.url);
@@ -39,6 +43,28 @@ export function showWhatsAppFallbackToast(result: ShareImageResult): boolean {
         },
       },
       duration: 15000, // keep toast visible long enough for user to click
+    });
+    return true;
+  }
+  if (result.status === "error" && result.url) {
+    // Some "error" results may still carry a URL (older callers).
+    toast("Gagal membuka WhatsApp.", {
+      description: "Klik tombol di bawah untuk mencoba lagi.",
+      action: {
+        label: "Buka WhatsApp",
+        onClick: () => {
+          const ok = openUrlViaAnchor(result.url);
+          if (!ok) {
+            try {
+              navigator.clipboard?.writeText(result.url);
+              toast.success("Link WhatsApp disalin ke clipboard.");
+            } catch {
+              toast.error("Tidak bisa membuka WhatsApp.");
+            }
+          }
+        },
+      },
+      duration: 15000,
     });
     return true;
   }

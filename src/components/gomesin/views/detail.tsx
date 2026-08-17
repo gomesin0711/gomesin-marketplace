@@ -37,7 +37,7 @@ import { cn } from "@/lib/utils";
 import { useLang, translations as i18nTranslations, formatT, listingTitle, listingDesc, listingSpecs } from "@/lib/i18n";
 import { useMounted } from "@/lib/use-mounted";
 import { proxyUrl } from "@/lib/image";
-import { openExternalUrl } from "@/lib/external-url";
+import { openExternalUrl, openUrlViaAnchor } from "@/lib/external-url";
 
 async function fetchDetail(slug: string) {
   const res = await fetch("/api/listings/" + slug);
@@ -153,8 +153,9 @@ export function DetailView() {
         action: {
           label: "Buka WhatsApp",
           onClick: () => {
-            const w = window.open(waUrl, "_blank", "noopener,noreferrer");
-            if (!w) {
+            // Anchor-click is more reliable than window.open() here.
+            const ok2 = openUrlViaAnchor(waUrl);
+            if (!ok2) {
               try {
                 navigator.clipboard?.writeText(waUrl);
                 toast.success("Link WhatsApp disalin ke clipboard.");
