@@ -74,11 +74,16 @@ async function postListing(payload: any) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-    // keepalive: true ensures the request completes even if the page
-    // navigates away (e.g. when WhatsApp opens via window.location.href).
-    // Without this, the browser cancels the in-flight fetch on navigation
-    // and the listing is never created.
-    keepalive: true,
+    // NOTE: do NOT use keepalive:true here. The Fetch API spec limits
+    // keepalive request bodies to 64KB. Listing payloads contain base64-
+    // compressed images (~200KB each), so the payload easily exceeds 64KB.
+    // With keepalive:true, the browser throws "Failed to fetch" before the
+    // request even reaches the server.
+    //
+    // keepalive is no longer needed because doSubmit() is called LAST in the
+    // "Kirim & Pasang Iklan" flow (after upload-proof, chat, and WhatsApp).
+    // mutation.onSuccess (which navigates to "Iklan Saya") only fires AFTER
+    // the POST response returns, so the page does not navigate away mid-fetch.
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || tr("postFailed"));

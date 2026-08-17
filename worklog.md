@@ -9274,3 +9274,22 @@ Stage Summary:
 - Proof is delivered to BOTH admin chat (via socket.io) AND WhatsApp before the listing is created
 - Listing creation is the LAST step — its onSuccess navigates to "Iklan Saya" only after everything else is done
 - If listing creation fails, modal stays open so user can retry without re-uploading proof
+
+---
+Task ID: fix-failed-to-fetch
+Agent: Main
+Task: Fix "Failed to fetch" error when clicking "Kirim & Pasang Iklan"
+
+Work Log:
+- Root cause: In the first fix (fix-pasang-iklan), I added `keepalive: true` to the fetch in postListing() to ensure the request completes even if the page navigates away. However, the Fetch API spec limits keepalive request bodies to 64KB (65536 bytes). Listing payloads contain base64-compressed images (~200KB each as base64), so with 1+ photos the payload easily exceeds 64KB. When the body exceeds 64KB with keepalive:true, the browser throws a TypeError ("Failed to fetch") BEFORE the request reaches the server — so no error appeared in dev.log (all API calls returned 200, but the POST /api/listings never arrived).
+
+- The keepalive option was originally needed because doSubmit() was called BEFORE WhatsApp (which could navigate the page away). But in the latest fix (fix-proof-not-sent), doSubmit() was moved to LAST (after WhatsApp). mutation.onSuccess (which navigates to "Iklan Saya") only fires AFTER the POST response returns, so the page does NOT navigate away during the fetch. Therefore keepalive is no longer needed.
+
+Fix applied in src/components/gomesin/views/post-ad.tsx:
+- Removed `keepalive: true` from the fetch in postListing() (line 72-91)
+- Added detailed comment explaining WHY keepalive must not be used (64KB body limit vs ~200KB base64 images)
+
+Stage Summary:
+- "Failed to fetch" resolved — the POST /api/listings request now reaches the server even with large image payloads
+- The fix is compatible with the previous fix (doSubmit called LAST) — since the page doesn't navigate away during fetch, keepalive is unnecessary
+- Verified: POST /api/listings 201 with 3 images (~600KB payload) succeeds
