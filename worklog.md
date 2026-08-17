@@ -6550,3 +6550,40 @@ Stage Summary:
 - New UI: Play Store-like bottom sheet with gradient header, app icon, 5-star rating, "GRATIS" badge, Install button.
 - Production verified: https://gomesin.vercel.app — popup appears on mobile, manifest valid, SW served, 0 errors.
 - Files modified: `src/components/pwa-install-prompt.tsx` (full rewrite), `src/app/layout.tsx` (head script), `src/components/gomesin/pwa-install-button.tsx` (stale flag clearing).
+
+---
+Task ID: 17
+Agent: main (Z.ai Code)
+Task: Extract workspace (16) tar archive (7 parts) and replace all project content
+
+Work Log:
+- User uploaded 7-part tar archive: workspace-8d0e012a-96b5-4d6a-8034-5a0341c3f506 (16).tar.001 through .007 (total ~344MB combined)
+- Combined all 7 parts with `cat` into /tmp/workspace16.tar (360,586,840 bytes)
+- Verified tar integrity: 2329 entries, valid tar archive
+- Extracted to /tmp/extract16/ (2052 files) — includes .git, .vercel, src, prisma, public, mini-services, _backup_* dirs, etc. No node_modules in archive.
+- Compared .vercel/project.json: archive and current both have identical projectId (prj_mJFlErTv5qJcEloX0EnCa2Scxxkt) — Vercel link preserved.
+- Stopped dev server and chat-service before replacement.
+- Used `rsync -a --delete --exclude='node_modules' --exclude='upload' --exclude='dev.log' --exclude='.next'` to replace all project content with extracted files while preserving:
+  * node_modules (avoid 5-min reinstall)
+  * upload/ folder (contains the tar parts)
+  * dev.log (server logs)
+  * .next/ (build cache)
+- Verified extracted content includes latest PWA install prompt fix (clearStaleInstalled: 3 occurrences, sessionStorage: 5 occurrences) — archive was created AFTER my previous PWA fix.
+- Checked dependencies: only `playwright` (dev-only test tool) missing from node_modules — not needed for app runtime.
+- Restarted dev server via `setsid --fork` on port 3000 — Ready in 1051ms.
+- Chat-service (PID 1503) was still running on port 3003/3004 from before — left it running. Cleaned up a failed duplicate attempt.
+- Final verification (all 200):
+  * Homepage (/): 200
+  * Manifest (/manifest.json): 200
+  * Service Worker (/sw.js): 200
+  * API /api/categories: 200
+- File counts after replacement: 160 src files, 125 public files, 4 prisma files.
+- Cleaned up temp files (/tmp/extract16, /tmp/workspace16.tar).
+
+Stage Summary:
+- All project content successfully replaced with the extracted workspace (16) archive.
+- Archive included the latest PWA install prompt fix from the previous task — no regression.
+- Dev server running on port 3000, chat-service on port 3003/3004.
+- All endpoints respond 200.
+- node_modules preserved (no reinstall needed), Vercel project link preserved.
+- The project is ready for any further development or deployment.
