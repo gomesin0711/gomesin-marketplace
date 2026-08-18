@@ -1,4 +1,10 @@
-const CACHE_NAME = 'mesinKU-v12';
+// BUMP THIS VERSION ON EVERY DEPLOY that changes app code.
+// The activate handler deletes ALL caches whose name !== CACHE_NAME,
+// forcing every browser to re-fetch JS/CSS/HTML on the next visit.
+// Previous deploy was v12 — bumped to v13 to invalidate stale JS chunks
+// that were causing "Application error" on mobile after the
+// pwa-install-prompt fix deploy.
+const CACHE_NAME = 'mesinKU-v13';
 
 // Critical URLs to pre-cache for PWA installability
 const PRECACHE_URLS = [
@@ -71,7 +77,10 @@ self.addEventListener('fetch', (event) => {
 
   // Same-origin requests
   if (url.hostname === self.location.hostname) {
-    // Network-first for HTML pages and manifest — always get fresh content
+    // Network-first for HTML pages and manifest — always get fresh content.
+    // CRITICAL: never serve stale HTML from cache because it may reference
+    // JS chunks that no longer exist on the server (after a new deploy),
+    // which causes "Application error" on mobile.
     if (
       url.pathname === '/' ||
       url.pathname === '/manifest.json' ||
@@ -86,6 +95,23 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         }).catch(() => caches.match(event.request))
+      );
+      return;
+    }
+
+    // Network-first for _next/static chunks too — if the network is
+    // available, always get the fresh chunk. Only fall back to cache
+    // when truly offline. This prevents serving stale JS chunks that
+    // might reference old API contracts or have bugs from previous deploys.
+    if (url.pathname.startsWith('/_next/static/')) {
+      event.respondWith(
+        fetch(event.request).then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        }).catch(() => caches.match(event.request).then((c) => c || Response.error()))
       );
       return;
     }

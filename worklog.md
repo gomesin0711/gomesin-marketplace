@@ -9392,3 +9392,39 @@ Stage Summary:
 - Files changed: src/components/pwa-install-prompt.tsx (storage strategy rewrite)
 - Production deployment: https://gomesin-oky2md9kt-gomesin0711-1596s-projects.vercel.app → aliased to https://gomesin.vercel.app
 - Mobile now opens cleanly without any blocking popup
+
+---
+Task ID: fix-mobile-application-error-round2
+Agent: main
+Task: User still sees "Application error" on mobile after PWA popup fix
+
+Work Log:
+- Re-tested production with iPhone 15 emulation via agent-browser — page loaded fine, no errors visible in browser automation
+- Identified root cause: Service Worker cache `mesinKU-v12` was hardcoded in /public/sw.js and never bumped across deploys
+- Mobile users who visited the site BEFORE the pwa-install-prompt fix had OLD JS chunks cached under v12
+- After the fix deploy, the SW served stale-while-revalidate for _next/static/ chunks — old broken JS still being served
+- Old JS chunks referenced the OLD pwa-install-prompt.tsx code (with 800ms auto-show + sessionStorage dismissal)
+- Result: mobile users still saw the broken behavior, eventually hitting "Application error" from React render failures
+- Fixed by editing /public/sw.js:
+  1. Bumped CACHE_NAME from `mesinKU-v12` → `mesinKU-v13`
+     - The activate handler deletes all caches whose name !== CACHE_NAME
+     - This forces EVERY browser to re-fetch all JS/CSS/HTML fresh on next visit
+  2. Added explicit network-first strategy for /_next/static/* chunks
+     - Was: stale-while-revalidate (could serve old chunks)
+     - Now: network-first, only fall back to cache when truly offline
+     - This prevents serving stale JS chunks that reference old API contracts
+  3. Added comment block explaining the version bump protocol
+- Deployed to Vercel production: Ready in 1m, aliased to https://gomesin.vercel.app
+- Verified production:
+  * /sw.js now serves v13 ✅
+  * Homepage HTTP 200 (821ms) ✅
+  * /_next/static/chunks/*.js load correctly ✅
+  * iPhone 15 emulation test: no "Application error" text in body ✅
+  * VLM screenshot analysis: header, hero, categories, products all visible — "page appears fully functional" ✅
+
+Stage Summary:
+- Root cause #2: stale SW cache serving old broken JS chunks to returning mobile users
+- Fix: bumped cache version v12→v13 + network-first strategy for _next/static/ chunks
+- Returning mobile users will now get fresh SW on next visit, which purges v12 cache and re-fetches all assets
+- Files changed: public/sw.js (cache version bump + strategy improvement)
+- Production verified working on mobile emulation
