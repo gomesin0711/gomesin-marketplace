@@ -9360,3 +9360,35 @@ Stage Summary:
 - Categories API returns real data from Supabase (e.g. "Mesin Cetak" with listingCount: 4)
 - Supabase backend is live and serving production data correctly
 - No code changes were required — the existing dual-path DB architecture (Prisma local / Supabase Vercel) handled the deployment cleanly
+
+---
+Task ID: fix-mobile-pwa-popup-block
+Agent: main
+Task: Fix "buka di online mobile tidak bisa" — site unusable on mobile
+
+Work Log:
+- Investigated mobile access to https://gomesin.vercel.app with iPhone 14 emulation via agent-browser
+- HTTP 200, page loads fine, no JS errors — but VLM analysis of mobile screenshot revealed root cause:
+  * PWA install popup (pwa-install-prompt.tsx) auto-appeared after 800ms with `fixed inset-0 z-[200]` + `bg-black/60 backdrop-blur-sm` backdrop
+  * The full-screen modal blocked the entire homepage on mobile viewport
+  * User couldn't see content without first dismissing the popup
+- Fixed by editing `src/components/pwa-install-prompt.tsx`:
+  1. Changed SHOW_DELAY_MS from 800ms → 12000ms (12s — gives user time to see content first)
+  2. Replaced sessionStorage dismissal with localStorage 7-day soft dismissal (SOFT_DISMISSED_KEY) — user who clicks "Nanti saja" won't see popup again for 7 days instead of just the current browser session
+  3. Added FIRST_VISIT_KEY check — popup is NEVER auto-shown on the very first visit, only on subsequent (returning) visits
+  4. Removed the `beforeinstallprompt` listener's side-effect of force-opening the popup — now it just clears the soft-dismissal flag, letting the floating FAB (PwaInstallButton) handle the install trigger on the user's terms
+  5. Kept HARD_DISMISSED_KEY (6h) for users who reject the native Chrome install dialog
+- Verified locally with agent-browser iPhone 14 emulation + cleared localStorage → no popup appears on first visit, homepage fully visible
+- Deployed to Vercel production: `vercel deploy --prod --yes --token vcp_...` — Ready in 1m
+- Verified on production https://gomesin.vercel.app with fresh storage (simulating new mobile visitor):
+  * Page title: mesinKU — Jual baru/bekas... ✅
+  * Page errors: none ✅
+  * Popup check: "NO POPUP — fix works!" ✅
+  * VLM analysis: header + hero section fully visible, no modal blocking
+
+Stage Summary:
+- Root cause: PWA install popup auto-shown at 800ms with full-screen backdrop blocked entire mobile homepage
+- Fix strategy: respect user intent — never show on first visit, delay 12s on return visits, 7-day soft dismiss after "Nanti saja", floating FAB still available for self-initiated install
+- Files changed: src/components/pwa-install-prompt.tsx (storage strategy rewrite)
+- Production deployment: https://gomesin-oky2md9kt-gomesin0711-1596s-projects.vercel.app → aliased to https://gomesin.vercel.app
+- Mobile now opens cleanly without any blocking popup

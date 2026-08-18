@@ -27,29 +27,33 @@ declare global {
 /* ------------------------------------------------------------------ */
 
 /*
- * STORAGE STRATEGY (Play Store-like):
+ * STORAGE STRATEGY (User-friendly):
  *   - INSTALLED_KEY (localStorage): Set when the native install dialog is
  *     ACCEPTED. Cleared on every mount if the app is NOT actually running
- *     in standalone mode — so uninstalling the PWA resets the state and
- *     the popup can show again.
- *   - SESSION_DISMISSED_KEY (sessionStorage): Set when the user clicks
- *     "Nanti Saja" or "Mengerti". Uses sessionStorage so it resets when
- *     the user closes the browser — every fresh visit shows the prompt,
- *     just like Play Store shows install prompts every time you open an
- *     app page.
+ *     in standalone mode — so uninstalling the PWA resets the state.
+ *   - SOFT_DISMISSED_KEY (localStorage, 7 days): Set when the user clicks
+ *     "Nanti Saja" or "Mengerti". Persists for 7 days so the user is NOT
+ *     bombarded with the popup on every visit. The floating Install FAB
+ *     (PwaInstallButton) still appears when beforeinstallprompt fires,
+ *     so users can install on their own terms.
  *   - HARD_DISMISSED_KEY (localStorage, 6h): Only set when the user
  *     rejects the NATIVE install dialog (Chrome's own popup). This
- *     respects Chrome's 30-day re-prompt rule and avoids annoying users
- *     who explicitly said "no" to the real install.
+ *     respects Chrome's 30-day re-prompt rule.
+ *   - FIRST_VISIT_KEY (localStorage): Set on first ever visit. The auto
+ *     popup is NOT shown on the very first visit — only on subsequent
+ *     visits. This prevents the "page won't load" complaint from new
+ *     mobile users.
  */
 const INSTALLED_KEY = "gomesin-pwa-installed";
-const SESSION_DISMISSED_KEY = "gomesin-pwa-session-dismissed";
+const SOFT_DISMISSED_KEY = "gomesin-pwa-soft-dismissed";
 const HARD_DISMISSED_KEY = "gomesin-pwa-hard-dismissed";
+const FIRST_VISIT_KEY = "gomesin-pwa-first-visit-seen";
 const HARD_DISMISS_MS = 6 * 60 * 60 * 1000; // 6 hours — native dialog rejected
+const SOFT_DISMISS_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — "Nanti saja"
 
-// Auto-show delay. Short so the popup appears almost immediately on mobile,
-// like a Play Store install card.
-const SHOW_DELAY_MS = 800;
+// Auto-show delay. Long enough for the user to see the page content and
+// start interacting. Short enough to catch them while still on the site.
+const SHOW_DELAY_MS = 12000;
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -89,17 +93,40 @@ function isInstalled(): boolean {
   }
 }
 
-function isSessionDismissed(): boolean {
+/*
+ * Mark first visit so we NEVER auto-show on the very first visit. The
+ * floating Install FAB still appears if beforeinstallprompt fires, so
+ * interested users can install immediately. The auto-popup only shows
+ * on subsequent visits (returning users) — this prevents the "mobile
+ * page won't load" complaint from new visitors.
+ */
+function isFirstVisit(): boolean {
   try {
-    return sessionStorage.getItem(SESSION_DISMISSED_KEY) === "1";
+    if (!localStorage.getItem(FIRST_VISIT_KEY)) {
+      localStorage.setItem(FIRST_VISIT_KEY, "1");
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
 }
 
-function markSessionDismissed(): void {
+function isSoftDismissed(): boolean {
   try {
-    sessionStorage.setItem(SESSION_DISMISSED_KEY, "1");
+    const raw = localStorage.getItem(SOFT_DISMISSED_KEY);
+    if (!raw) return false;
+    const ts = Number(raw);
+    if (isNaN(ts)) return false;
+    return Date.now() - ts < SOFT_DISMISS_MS;
+  } catch {
+    return false;
+  }
+}
+
+function markSoftDismissed(): void {
+  try {
+    localStorage.setItem(SOFT_DISMISSED_KEY, String(Date.now()));
   } catch {
     /* ignore */
   }
@@ -130,8 +157,11 @@ function canShow(): boolean {
   // standalone, any previous "installed" mark is stale.
   clearStaleInstalled();
   if (isInstalled()) return false;
-  if (isSessionDismissed()) return false;
+  if (isSoftDismissed()) return false;
   if (isHardDismissed()) return false;
+  // Never auto-show on the very first visit — let the user see the content
+  // first. Returning visits (next day, etc.) are fair game.
+  if (isFirstVisit()) return false;
   return true;
 }
 
@@ -209,12 +239,10 @@ export function PwaInstallPrompt() {
     // Step 3: Real-time listener for beforeinstallprompt
     const handleBIP = () => {
       setHasNativePrompt(true);
-      // Clear session dismissal — we now have a real native prompt to offer
-      try { sessionStorage.removeItem(SESSION_DISMISSED_KEY); } catch {}
-      // Re-show the popup (unless hard-dismissed recently)
-      if (!isHardDismissed() && !isStandalone() && !isInstalled()) {
-        setShowPopup(true);
-      }
+      // Clear soft dismissal — we now have a real native prompt to offer.
+      // The floating FAB (PwaInstallButton) will handle the install trigger,
+      // so we don't force the popup open here.
+      try { localStorage.removeItem(SOFT_DISMISSED_KEY); } catch {}
     };
     window.addEventListener("beforeinstallprompt", handleBIP);
 
@@ -281,20 +309,20 @@ export function PwaInstallPrompt() {
         // User cancelled share sheet
       }
       setShowPopup(false);
-      markSessionDismissed();
+      markSoftDismissed();
       return;
     }
 
     // No native prompt available (desktop without beforeinstallprompt, or
-    // iOS without share API): just close the popup with session dismissal.
+    // iOS without share API): just close the popup with soft dismissal.
     setShowPopup(false);
-    markSessionDismissed();
+    markSoftDismissed();
   }, [platform]);
 
-  // Explicit dismiss ("Nanti saja") — session dismissal
+  // Explicit dismiss ("Nanti saja") — soft dismissal (7 days)
   const handleDismiss = useCallback(() => {
     setShowPopup(false);
-    markSessionDismissed();
+    markSoftDismissed();
   }, []);
 
   // Don't render if standalone, installed, or hidden
