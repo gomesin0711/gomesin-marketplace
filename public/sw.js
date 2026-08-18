@@ -1,10 +1,9 @@
 // BUMP THIS VERSION ON EVERY DEPLOY that changes app code.
 // The activate handler deletes ALL caches whose name !== CACHE_NAME,
 // forcing every browser to re-fetch JS/CSS/HTML on the next visit.
-// Previous deploy was v12 — bumped to v13 to invalidate stale JS chunks
-// that were causing "Application error" on mobile after the
-// pwa-install-prompt fix deploy.
-const CACHE_NAME = 'mesinKU-v13';
+// v13 → v14: enable offline cache for GET /api/ responses so categories
+// and machine ads appear even when the device is offline.
+const CACHE_NAME = 'mesinKU-v14';
 
 // Critical URLs to pre-cache for PWA installability
 const PRECACHE_URLS = [
@@ -44,8 +43,37 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
 
-  // Never cache API calls — always network
-  if (url.pathname.startsWith('/api/')) return;
+  // GET /api/ requests: network-first, fall back to cache when offline.
+  // This makes categories & listings available offline (PWA requirement).
+  // POST/PUT/DELETE are never cached (method check above already returned).
+  // CRITICAL: only cache successful (ok) responses with JSON content-type
+  // to avoid caching error responses or auth-protected payloads.
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const ct = response.headers.get('content-type') || '';
+            if (ct.includes('application/json')) {
+              const clone = response.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+            }
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match(event.request).then(
+            (cached) =>
+              cached ||
+              new Response(JSON.stringify({ error: 'offline', message: 'Anda sedang offline. Data tidak tersedia.' }), {
+                status: 503,
+                headers: { 'Content-Type': 'application/json' },
+              })
+          )
+        )
+    );
+    return;
+  }
 
   // Never cache the workspace archive — it's large and changes when rebuilt.
   if (url.pathname === '/mesinKU-workspace.tar.gz') return;

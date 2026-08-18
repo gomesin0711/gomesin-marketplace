@@ -95,6 +95,20 @@ const YEAR_OPTIONS = Array.from({ length: 2025 - 1990 + 1 }, (_, i) => String(20
 
 const STEP_LABELS = ["Informasi Dasar", "Detail & Deskripsi", "Paket Iklan", "Foto Mesin", "Preview Iklan", "Pembayaran"];
 
+// Hard hat icon for the "Jasa" ad-type tab. Uses the existing jasa.png
+// image so it matches the category nav icon visually.
+function HardHatIcon() {
+  return (
+    <img
+      src="/cat-icons/jasa.png"
+      alt=""
+      width={16}
+      height={16}
+      className="size-4 object-contain"
+    />
+  );
+}
+
 export function PostAdView() {
   const { qrisImageUrl } = useSiteAssets();
   const { data: cats } = useQuery({
@@ -695,6 +709,58 @@ export function PostAdView() {
           <div className="space-y-4">
             <h2 className="text-base font-bold text-foreground">Informasi Dasar</h2>
 
+            {/* Jenis Iklan — Mesin / Jasa tab selector */}
+            {/* CRITICAL: This is the ONLY way to switch to "jasa" ad type.
+                Without this tab, users could never post a service ad
+                (jasa is a listing condition, not a DB category). */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Jenis Iklan</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdType("mesin");
+                    // Reset condition to a machine-appropriate default
+                    setCondition((prev) => (prev === "jasa" ? "bekas" : prev));
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-2 rounded-xl border-2 px-3 py-3 text-sm font-semibold transition",
+                    adType === "mesin"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-card text-muted-foreground hover:border-primary/40"
+                  )}
+                >
+                  <Tag className="size-4" />
+                  Mesin
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdType("jasa");
+                    // Jasa listings always have condition="jasa" — forced.
+                    // Brand/Model/Tahun are not relevant for services.
+                    setCondition("jasa");
+                    setBrand("");
+                    setYearProduced("");
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-2 rounded-xl border-2 px-3 py-3 text-sm font-semibold transition",
+                    adType === "jasa"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-card text-muted-foreground hover:border-primary/40"
+                  )}
+                >
+                  <HardHatIcon />
+                  Jasa
+                </button>
+              </div>
+              {adType === "jasa" && (
+                <p className="text-[11px] text-muted-foreground">
+                  Iklan jasa (cetak, servis, sewa, installasi) — pilih kategori yang paling relevan.
+                </p>
+              )}
+            </div>
+
             {/* Kategori */}
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">
@@ -760,34 +826,38 @@ export function PostAdView() {
               </div>
             </div>
 
-            {/* Kondisi */}
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Kondisi</Label>
-              <Select value={condition} onValueChange={setCondition}>
-                <SelectTrigger className="w-full h-12 rounded-lg">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="baru">Baru</SelectItem>
-                  <SelectItem value="bekas">Bekas</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Kondisi — hidden when adType === "jasa" (condition is forced to "jasa") */}
+            {adType !== "jasa" && (
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Kondisi</Label>
+                <Select value={condition} onValueChange={setCondition}>
+                  <SelectTrigger className="w-full h-12 rounded-lg">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="baru">Baru</SelectItem>
+                    <SelectItem value="bekas">Bekas</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
-            {/* Tahun */}
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Tahun</Label>
-              <Select value={yearProduced} onValueChange={setYearProduced}>
-                <SelectTrigger className="w-full h-12 rounded-lg">
-                  <SelectValue placeholder="Pilih tahun" />
-                </SelectTrigger>
-                <SelectContent>
-                  {YEAR_OPTIONS.map((y) => (
-                    <SelectItem key={y} value={y}>{y}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Tahun — hidden when adType === "jasa" (services don't have a production year) */}
+            {adType !== "jasa" && (
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Tahun</Label>
+                <Select value={yearProduced} onValueChange={setYearProduced}>
+                  <SelectTrigger className="w-full h-12 rounded-lg">
+                    <SelectValue placeholder="Pilih tahun" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {YEAR_OPTIONS.map((y) => (
+                      <SelectItem key={y} value={y}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Provinsi */}
             <div className="space-y-1.5">
@@ -1103,63 +1173,68 @@ export function PostAdView() {
             <div className="rounded-xl border border-border bg-card p-4 space-y-3">
               <h3 className="text-sm font-bold text-foreground">Spesifikasi (Opsional)</h3>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-muted-foreground">Merk/Brand</Label>
-                <Input
-                  value={brand}
-                  onChange={(e) => setBrand(e.target.value)}
-                  placeholder="contoh: Heidelberg, Komori, Roland"
-                  className="h-12 rounded-lg"
-                />
-              </div>
-
-              {/* Tipe/Model — multi-entry with + (add) button above Kapasitas */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-medium text-muted-foreground">Tipe/Model</Label>
-                  <button
-                    type="button"
-                    onClick={addModelType}
-                    className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary transition hover:bg-primary/20"
-                  >
-                    <Plus className="size-3" />
-                    Tambah
-                  </button>
+              {/* Merk/Brand — hidden for jasa ads (services don't have a brand) */}
+              {adType !== "jasa" && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">Merk/Brand</Label>
+                  <Input
+                    value={brand}
+                    onChange={(e) => setBrand(e.target.value)}
+                    placeholder="contoh: Heidelberg, Komori, Roland"
+                    className="h-12 rounded-lg"
+                  />
                 </div>
-                <Input
-                  value={modelType}
-                  onChange={(e) => setModelType(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addModelType();
-                    }
-                  }}
-                  placeholder="contoh: SM 52, Lithrone, Aquarius (Enter untuk tambah)"
-                  className="h-12 rounded-lg"
-                />
-                {/* Added Tipe/Model chips */}
-                {modelTypes.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {modelTypes.map((m, i) => (
-                      <span
-                        key={i}
-                        className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary"
-                      >
-                        {m}
-                        <button
-                          type="button"
-                          onClick={() => setModelTypes((prev) => prev.filter((_, j) => j !== i))}
-                          className="grid size-4 place-items-center rounded-full bg-primary/20 hover:bg-primary/30"
-                          aria-label={`Hapus ${m}`}
-                        >
-                          <X className="size-2.5" />
-                        </button>
-                      </span>
-                    ))}
+              )}
+
+              {/* Tipe/Model — hidden for jasa ads — multi-entry with + (add) button above Kapasitas */}
+              {adType !== "jasa" && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-muted-foreground">Tipe/Model</Label>
+                    <button
+                      type="button"
+                      onClick={addModelType}
+                      className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary transition hover:bg-primary/20"
+                    >
+                      <Plus className="size-3" />
+                      Tambah
+                    </button>
                   </div>
-                )}
-              </div>
+                  <Input
+                    value={modelType}
+                    onChange={(e) => setModelType(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addModelType();
+                      }
+                    }}
+                    placeholder="contoh: SM 52, Lithrone, Aquarius (Enter untuk tambah)"
+                    className="h-12 rounded-lg"
+                  />
+                  {/* Added Tipe/Model chips */}
+                  {modelTypes.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {modelTypes.map((m, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary"
+                        >
+                          {m}
+                          <button
+                            type="button"
+                            onClick={() => setModelTypes((prev) => prev.filter((_, j) => j !== i))}
+                            className="grid size-4 place-items-center rounded-full bg-primary/20 hover:bg-primary/30"
+                            aria-label={`Hapus ${m}`}
+                          >
+                            <X className="size-2.5" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium text-muted-foreground">Kapasitas</Label>
