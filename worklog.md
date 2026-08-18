@@ -9555,3 +9555,47 @@ Stage Summary:
 - Fix: SW v15 now PRECACHES all 12 critical API endpoints during the install event itself
 - Offline categories + ads now work even on the first offline visit after SW update (no need to browse online first)
 - Production verified end-to-end at https://gomesin.vercel.app
+
+---
+Task ID: seed-local-db-from-reference-tar
+Agent: Main
+Task: Extract reference tar + seed local SQLite DB so categories & ads appear
+
+Work Log:
+- User uploaded workspace tar (4).tar (28MB) as reference for categories/ads
+- Extracted to /tmp/extract-ref/ — found full project backup with .git history
+- Compared key reference files vs current project:
+  - src/lib/seed-data.json (54KB) — IDENTICAL
+  - src/lib/fallback-data.ts — IDENTICAL
+  - src/app/api/categories/route.ts — IDENTICAL
+  - src/lib/db.ts — IDENTICAL
+  - prisma/seed.ts — IDENTICAL
+  - prisma/schema.prisma — IDENTICAL
+- Diagnosed root cause: local SQLite DB (`/home/z/my-project/db/custom.db`) was EMPTY
+  - `curl http://localhost:3000/api/categories` returned `{"categories":[]}`
+  - DB file existed (131KB) but had no data rows
+- Production (Vercel) was NOT affected — Supabase DB has data (verified via curl)
+- Ran `bunx prisma db push --skip-generate` — schema already in sync
+- Ran `bunx tsx prisma/seed.ts` — created 12 categories + 39 machine listings + 4 pakets + 8 sellers
+- Copied `scripts/seed-jasa.mjs` from tar (was missing from current project)
+- Ran `bun scripts/seed-jasa.mjs` — created Jasa category + 6 jasa listings
+- Diagnosed: jasa listings had `paymentStatus: "unpaid"` (not visible in API which filters by `paid`)
+- Fixed: ran update to set all jasa listings to `status=active, paymentStatus=paid, violationFlag=false, paymentExpiry=+30d`
+- Verified local API:
+  - 13 categories (12 machine + 1 Jasa), all with listingCount > 0
+  - 45 total listings (39 machine + 6 jasa)
+  - /api/listings?condition=jasa returns all 6 jasa listings
+  - 4 pakets (Gold, Boost, Platinum, Titanium)
+- Verified with agent-browser (localhost:3000):
+  - Home page shows category scroll: Semua, Jasa, Mesin Cetak, Mesin Digital, Mesin Kemasan...
+  - Listings cards visible: Excavator Komatsu (Rp 850jt), Mesin Table Saw (Rp 65jt), Mesin Bubut (Rp 45jt)
+  - "Mesin yang paling populer" section header visible
+  - No errors, no empty states
+
+Stage Summary:
+- Root cause: local SQLite DB was empty (no seed had been run after DB file was created/reset)
+- Fix: ran prisma/seed.ts (39 machine listings) + scripts/seed-jasa.mjs (6 jasa listings)
+- Fixed jasa listings paymentStatus from "unpaid" to "paid" so they appear in API
+- Local dev server now returns 13 categories + 45 listings (39 machine + 6 jasa)
+- Production (Vercel) was already working — Supabase DB has data
+- The tar was a reference backup; all source code was already identical to current project
