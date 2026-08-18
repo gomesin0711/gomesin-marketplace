@@ -9472,3 +9472,40 @@ Stage Summary:
 - New popup is compact (~340px card), non-blocking (pointer-events-none container), appears on refresh (1.5s delay), hides when installed
 - Jasa category icon 404 fixed (jasa-final.png → jasa.png)
 - Production deploy verified end-to-end on iPhone 14 mobile profile
+
+---
+Task ID: offline-jasa-tab-fix
+Agent: Main
+Task: Fix offline categories/ads not appearing + missing jasa category on post-ad page
+
+Work Log:
+- Read dev.log — confirmed local dev returns 200 for all /api/categories + /api/listings
+- Diagnosed "offline" = device offline mode (Service Worker active, no network)
+- Read `public/sw.js` — found root cause #1: line `if (url.pathname.startsWith('/api/')) return;` meant API calls were NEVER cached, so when offline → fetch fails → categories/ads don't appear
+- Rewrote SW fetch handler for /api/ GET requests:
+  - Network-first strategy with offline cache fallback
+  - Only caches successful (ok) responses with JSON content-type
+  - Returns 503 JSON fallback only if both network AND cache miss
+  - Bumped CACHE_NAME v13 → v14 to invalidate old caches
+- Read `src/components/gomesin/views/post-ad.tsx` — found root cause #2: state `adType` exists ("mesin" | "jasa") and is used in submit payload, but there was NO UI element to switch to "jasa" — users could never post a service ad
+- Added "Jenis Iklan" tab selector (Mesin / Jasa) at top of post-ad step 1:
+  - Two pill buttons with active state (orange border + bg)
+  - Mesin tab: Tag icon, keeps condition baru/bekas
+  - Jasa tab: HardHat icon (uses /cat-icons/jasa.png), forces condition="jasa", clears brand/year
+  - Helper text shown when jasa: "Iklan jasa (cetak, servis, sewa, installasi)"
+- Added conditional rendering: Kondisi + Tahun dropdowns hidden when adType === "jasa"
+- Added conditional rendering: Merk/Brand + Tipe/Model fields hidden in step 2 when jasa
+- Kept Kapasitas field visible (useful for services like "1000 unit/jam")
+- Committed (fec3f14) + pushed to GitHub + deployed to Vercel production
+- Verified with agent-browser (iPhone 14 profile):
+  - Online: page loads, SW v14 registered + active
+  - Cache contains 56 entries total, 13 are /api/ responses (categories, listings, banners)
+  - Offline mode (set offline on + reload): page still renders categories + product cards from cache — NO "Application error"
+  - Post-ad page: "Jenis Iklan" tab visible with Mesin + Jasa
+  - Clicking Jasa tab: highlights Jasa, shows helper text, hides Kondisi + Tahun dropdowns, Kategori still visible
+- VLM verification confirmed all points
+
+Stage Summary:
+- Root cause #1 (offline): SW `return` on /api/ meant no offline cache → fixed with network-first + cache fallback for GET API
+- Root cause #2 (jasa tab): adType state existed but no UI to switch it → added Mesin/Jasa tab selector
+- Both fixes deployed to https://gomesin.vercel.app and verified end-to-end
