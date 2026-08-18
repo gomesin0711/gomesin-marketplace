@@ -1598,23 +1598,22 @@ export function PostAdView() {
                       // === ORDER IS CRITICAL ===
                       // 1. Upload proof + ad images → get public URLs
                       // 2. Send proof to admin chat (via socket.io, realtime)
-                      // 3. Open WhatsApp with proof URL (new tab via anchor-click)
-                      // 4. Create the listing LAST (doSubmit → POST /api/listings)
+                      // 3. Create the listing FIRST (doSubmit → POST /api/listings)
+                      // 4. Open WhatsApp with proof URL (new tab via anchor-click)
                       //
-                      // WHY doSubmit() is LAST:
-                      // doSubmit() fires mutation.mutate() which calls POST /api/listings.
-                      // When the POST completes (~100ms), mutation.onSuccess calls
-                      // goToProfilePanel("iklan-saya") which NAVIGATES AWAY from this
-                      // page. If doSubmit() were called FIRST, the page would navigate
-                      // away before the proof upload / chat / WhatsApp steps complete
-                      // — those async operations would be aborted (component unmounted).
-                      // That was the bug: proof was never sent to chat/WhatsApp.
+                      // WHY doSubmit() is FIRST (was LAST before):
+                      // On mobile, opening WhatsApp may background the browser tab.
+                      // If doSubmit() runs AFTER WhatsApp, the POST /api/listings
+                      // fetch can be aborted by the browser, and the listing is
+                      // never created (the "iklan tidak masuk" bug).
                       //
-                      // By putting doSubmit() LAST, we ensure all proof delivery
-                      // (chat + WhatsApp) completes BEFORE the listing is created and
-                      // the page navigates away. WhatsApp opens via anchor-click (new
-                      // tab), so it does NOT navigate the current page away — the
-                      // current page stays and doSubmit() still executes after.
+                      // By calling doSubmit() FIRST, the fetch starts BEFORE
+                      // WhatsApp opens. The mutation is async (returns immediately),
+                      // so the WhatsApp anchor-click runs right after. Browsers keep
+                      // in-flight fetches alive when a new tab/app opens, so the POST
+                      // completes in the background. mutation.onSuccess navigates to
+                      // "Iklan Saya" only AFTER the POST completes (~500ms) — by then
+                      // WhatsApp has already opened.
                       try {
                         // === Ad image (gambar iklan) ===
                         const adImage = images[0] || PLACEHOLDER_IMAGES[0];
@@ -1660,10 +1659,11 @@ export function PostAdView() {
                           }
                         } catch { /* keep data URL fallback */ }
 
-                        // === STEP 2: Chat admin via socket (REALTIME) — MUST run BEFORE WhatsApp ===
-                        // CRITICAL: openWhatsAppWithUrl() navigates the page away (window.location.href)
-                        // on mobile and as a desktop fallback. Any code AFTER it is aborted.
-                        // So we MUST send the chat messages FIRST, then open WhatsApp.
+                        // === STEP 2: Chat admin via socket (REALTIME) ===
+                        // Send the proof + ad images to the admin chat via socket.io
+                        // (with REST API fallback). This runs BEFORE doSubmit() and
+                        // WhatsApp so the chat messages are delivered regardless of
+                        // what happens with the listing creation or WhatsApp opening.
                         if (user?.id) {
                           try {
                             const adminRes = await fetch("/api/admin/info");
@@ -1737,10 +1737,26 @@ export function PostAdView() {
                           }
                         }
 
-                        // === STEP 3: WhatsApp — open wa.me with caption + proof URL ===
-                        // This is LAST because it may navigate the page away (mobile / popup blocked).
-                        // The chat messages are already sent above, so even if navigation aborts
-                        // the remaining JS, the proof is delivered to admin chat.
+                        // === STEP 3: Create the listing FIRST (doSubmit) ===
+                        // WHY FIRST: On mobile, opening WhatsApp may background the page.
+                        // If doSubmit() runs AFTER WhatsApp, the POST /api/listings fetch
+                        // might be aborted, and the listing is never created (the
+                        // "iklan tidak masuk" bug).
+                        //
+                        // By calling doSubmit() FIRST, the fetch starts BEFORE WhatsApp
+                        // opens. The mutation is async (returns immediately), so the
+                        // WhatsApp anchor-click runs right after. The fetch continues in
+                        // the background even after WhatsApp opens (browsers keep in-flight
+                        // fetches alive when a new tab/app opens).
+                        //
+                        // mutation.onSuccess navigates to "Iklan Saya" only AFTER the
+                        // fetch completes (~500ms). By then, WhatsApp has already opened.
+                        doSubmit();
+
+                        // === STEP 4: WhatsApp — open wa.me with caption + proof URL ===
+                        // Opens via anchor-click with target="_blank" — does NOT navigate
+                        // the current page (opens a new tab / WhatsApp app). The current
+                        // page stays alive so the mutation fetch can complete.
                         const caption =
                           `*Bukti Pembayaran Iklan mesinKU*\n\n` +
                           `Paket: ${pkgName}\n` +
@@ -1760,15 +1776,6 @@ export function PostAdView() {
                         } else if (result.status === "error") {
                           toast.error("Gagal membuka WhatsApp");
                         }
-
-                        // === STEP 4: Create the listing LAST ===
-                        // doSubmit() fires mutation.mutate() → POST /api/listings.
-                        // On success, mutation.onSuccess navigates to "Iklan Saya".
-                        // This is intentionally LAST so that proof delivery (chat +
-                        // WhatsApp) has already completed before the page navigates.
-                        // WhatsApp opens via anchor-click (new tab), so the current
-                        // page is NOT navigated away — doSubmit() still executes.
-                        doSubmit();
                       } catch {
                         toast.error("Gagal mengirim bukti");
                       } finally {
