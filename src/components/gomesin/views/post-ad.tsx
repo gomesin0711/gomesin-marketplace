@@ -86,7 +86,11 @@ async function postListing(payload: any) {
     // the POST response returns, so the page does not navigate away mid-fetch.
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || tr("postFailed"));
+  // CRITICAL: do NOT reference `tr` (i18n fn) here — it's in component scope,
+  // but `postListing` is at MODULE scope, so `tr` would be undefined at
+  // runtime → ReferenceError masks the actual API error. Use a static
+  // fallback message instead. The UI layer (mutation.onError) handles i18n.
+  if (!res.ok) throw new Error(data.error || "Gagal memasang iklan. Silakan coba lagi.");
   return data.listing;
 }
 
@@ -459,7 +463,25 @@ export function PostAdView() {
     },
     onError: (e: any) => {
       setSavingDraft(false);
-      toast.error(e.message || tr("postFailed"));
+      const msg = e?.message || "";
+      // Detect auth errors and show a more helpful message guiding the user
+      // to re-login. The API returns 401 with "Anda harus masuk untuk pasang
+      // iklan." when the session cookie/token is missing or expired.
+      const isAuthError =
+        /harus masuk|silakan masuk|sesi berakhir|unauthorized|401/i.test(msg);
+      if (isAuthError) {
+        toast.error("Sesi Anda telah berakhir. Silakan masuk kembali, lalu coba pasang iklan lagi.", {
+          duration: 6000,
+        });
+        // Clear stale session token so the login page shows fresh.
+        try { sessionStorage.removeItem("mesinku_session_token"); } catch {}
+        // Navigate to login page after a short delay so the toast is visible.
+        setTimeout(() => {
+          useStore.getState().goToLogin();
+        }, 1500);
+      } else {
+        toast.error(msg || tr("postFailed"));
+      }
     },
   });
 

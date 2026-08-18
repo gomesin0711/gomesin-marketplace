@@ -2,11 +2,11 @@
 // The activate handler deletes ALL caches whose name !== CACHE_NAME,
 // forcing every browser to re-fetch JS/CSS/HTML on the next visit.
 //
-// v14 → v15: PRECACHE critical /api/ endpoints during SW install so the
-// offline cache is populated the moment the new SW activates — no need
-// for the user to browse around first. This fixes "kategori & iklan tidak
-// muncul saat offline" even on the first offline visit after SW update.
-const CACHE_NAME = 'mesinKU-v15';
+// v15 → v16: /api/auth/me no longer falls back to SW cache when offline.
+//   Returning 503 (instead of stale cached user data) prevents cross-account
+//   data leakage when multiple users share the same browser. The app-shell
+//   now treats 503 as "offline, keep local user" rather than "session invalid".
+const CACHE_NAME = 'mesinKU-v16';
 
 // Static assets to pre-cache for PWA installability
 const PRECACHE_STATIC = [
@@ -94,6 +94,26 @@ self.addEventListener('fetch', (event) => {
   // POST/PUT/DELETE are never cached (method check above already returned).
   // CRITICAL: only cache successful (ok) responses with JSON content-type
   // to avoid caching error responses or auth-protected payloads.
+  //
+  // EXCEPTION: /api/auth/me is NEVER cached and NEVER falls back to cache.
+  // Reason: it returns user-specific data tied to the session token. Caching
+  // user A's /me response and serving it to user B (e.g. after logout+login
+  // as a different account, or in a different tab) would leak account data
+  // across sessions. When offline, /me returns 503 and the app-shell keeps
+  // the locally-cached user from localStorage (optimistic) — no SW cache
+  // fallback for this endpoint.
+  if (url.pathname === '/api/auth/me') {
+    event.respondWith(
+      fetch(event.request).catch(() =>
+        new Response(JSON.stringify({ user: null, offline: true }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    );
+    return;
+  }
+
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(event.request)

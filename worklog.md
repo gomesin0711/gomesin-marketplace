@@ -9599,3 +9599,49 @@ Stage Summary:
 - Local dev server now returns 13 categories + 45 listings (39 machine + 6 jasa)
 - Production (Vercel) was already working — Supabase DB has data
 - The tar was a reference backup; all source code was already identical to current project
+
+---
+Task ID: login-refresh-postad-fix
+Agent: Main
+Task: Fix "login logout on refresh (offline/online mobile) + pasang iklan tidak masuk"
+
+Work Log:
+- Diagnosed via dev.log: `GET /api/auth/me 401` repeatedly → no valid session
+- Root cause #1: Local SQLite DB had ZERO users (only categories, listings, sellers, pakets were seeded previously). Login couldn't find any user, so login API returned 401, no session cookie set.
+- Ran `bunx tsx prisma/seed-users.ts` — created 12 users (1 admin + 11 sample users incl. "aming") + linked 20 listings to users + created 14 messages.
+  - Admin: mesinku711@gmail.com / admin123 (id: cms1trinv0000pzao4vy44or8)
+  - Sample users: budi.santoso@example.com / user123, etc.
+- Root cause #2 (logout on refresh, esp. offline): `app-shell.tsx` cleared the local user (useStore.setState({user:null})) whenever `/api/auth/me` returned ANY non-200 status. When offline, the SW fallback returns 503 → app-shell treated it as "session invalid" → cleared user → appeared logged out.
+  - Fix: only clear local user on explicit HTTP 401. For 5xx/503/network errors, KEEP the optimistic local user (rehydrated from localStorage via Zustand persist). The session token in sessionStorage + httpOnly cookie are still valid — only the network is unavailable.
+- Root cause #3 (post-ad tidak masuk): `postListing()` in `src/components/gomesin/views/post-ad.tsx` is declared at MODULE scope (line 72), but its error branch `throw new Error(data.error || tr("postFailed"))` referenced `tr` which is defined INSIDE the PostAdView component (line 142). When the API returned an error (e.g. 401 from cleared session), `tr` was undefined at runtime → `ReferenceError: tr is not defined` masked the actual API error → mutation failed silently with confusing message.
+  - Fix: replaced `tr("postFailed")` with static fallback `"Gagal memasang iklan. Silakan coba lagi."`. The mutation's `onError` already uses `tr()` for the UI toast.
+- Enhanced mutation `onError` to detect 401/auth errors specifically:
+  - Matches `/harus masuk|silakan masuk|sesi berakhir|unauthorized|401/i`
+  - Shows a longer (6s) toast: "Sesi Anda telah berakhir. Silakan masuk kembali..."
+  - Clears stale sessionStorage token
+  - Navigates to login page after 1.5s delay
+- Root cause #4 (multi-account security): SW was caching `/api/auth/me` responses. If user A's /me was cached and user B logged in (different tab/account), offline mode could serve user A's cached /me to user B.
+  - Fix: added explicit `/api/auth/me` branch in `public/sw.js` that NEVER caches and NEVER falls back to cache. When offline, returns 503 `{user: null, offline: true}`. The app-shell now treats 503 as "offline, keep local user" rather than "session invalid".
+  - Bumped SW cache version v15 → v16 to invalidate old caches.
+- Verified end-to-end with agent-browser (iPhone 14 emulation):
+  - Login as budi.santoso@example.com → "Selamat datang, Budi Santoso!" toast ✓
+  - Online refresh → `/api/auth/me` returns 200, "Akun Saya" button visible (logged in) ✓
+  - Set browser offline + refresh → user STILL logged in (localStorage + sessionStorage preserved, app-shell doesn't clear on 503) ✓
+  - Back online ✓
+- Verified post-ad API end-to-end via curl with valid session:
+  - POST /api/listings with Bearer token → 201, listing created in DB
+  - DB row confirmed: id=cmsy8axvn0007ozs3gw3wu88s, status=pending, paymentStatus=paid, userId linked ✓
+- Verified post-ad API without session returns proper 401 "Anda harus masuk untuk pasang iklan." which the new onError handler detects and redirects to login.
+
+Stage Summary:
+- 3 root causes fixed:
+  1. Empty users table (seeded 12 users)
+  2. app-shell cleared user on 503/offline (now only clears on 401)
+  3. postListing referenced out-of-scope `tr` → ReferenceError (now uses static fallback)
+- 1 security hardening: SW no longer caches /api/auth/me (prevents cross-account data leak)
+- Files changed:
+  - `prisma/seed-users.ts` — ran against local DB
+  - `src/components/gomesin/app-shell.tsx` — session verification logic
+  - `src/components/gomesin/views/post-ad.tsx` — postListing error + onError auth detection
+  - `public/sw.js` — v15→v16, /api/auth/me no longer cached
+- Login now persists across refresh (online + offline), and post-ad creates the listing in DB when authenticated.

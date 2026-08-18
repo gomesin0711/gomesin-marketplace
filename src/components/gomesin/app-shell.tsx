@@ -86,21 +86,32 @@ export function AppShell() {
 
     // Verify the session via the server. apiFetch() attaches the per-tab
     // Authorization header if one exists in sessionStorage.
+    //
+    // CRITICAL: Only clear the local user when the server EXPLICITLY says the
+    // session is invalid (HTTP 401). For 5xx errors, 503 (offline SW fallback),
+    // or network failures, we KEEP the local user optimistic state so the user
+    // stays logged in while offline or during server outages. The session token
+    // in sessionStorage + the httpOnly cookie are still valid — only the network
+    // is unavailable. Clearing the user here was causing the "login logout on
+    // refresh (offline/online mobile)" bug.
     apiFetch("/api/auth/me", { cache: "no-store" })
       .then((r) => {
-        if (!r.ok) return null;
+        // 401 = server explicitly says "no valid session" → log out.
+        // Any other non-ok (403/5xx/503 offline) → keep local user as-is.
+        if (r.status === 401) return null;
+        if (!r.ok) return undefined; // sentinel: don't touch local user
         return r.json();
       })
       .then((data) => {
+        if (data === undefined) return; // server error/offline — keep local user
         if (data?.user) {
           // Session is valid — refresh the local user object with the freshest
           // data from the server (bannerImage, logoImage, etc.).
           useStore.getState().setUser(data.user);
         } else {
-          // Session invalid — clear the local user so the UI reflects reality.
-          // Also clear the per-tab token (it's expired/invalid).
-          // (Don't call full logout() because that would also navigate home;
-          // just clear the user state.)
+          // 401 — session explicitly invalid. Clear the local user + per-tab
+          // token so the UI reflects reality. (Don't call full logout() because
+          // that would also navigate home; just clear the user state.)
           clearSessionToken();
           useStore.setState({
             user: null,
@@ -112,6 +123,7 @@ export function AppShell() {
       })
       .catch(() => {
         // Network error — leave the local user as-is (optimistic).
+        // This keeps the user logged in when fully offline (no SW fallback).
       });
   }, []);
 

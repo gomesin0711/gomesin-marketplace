@@ -1,0 +1,1815 @@
+     1→"use client";
+     2→
+     3→import { useState, useRef, useEffect, useCallback } from "react";
+     4→import { useQuery, useMutation } from "@tanstack/react-query";
+     5→import { useStore } from "@/lib/store";
+     6→import { Button } from "@/components/ui/button";
+     7→import { Input } from "@/components/ui/input";
+     8→import { Label } from "@/components/ui/label";
+     9→import { Textarea } from "@/components/ui/textarea";
+    10→import {
+    11→  Select,
+    12→  SelectContent,
+    13→  SelectItem,
+    14→  SelectTrigger,
+    15→  SelectValue,
+    16→} from "@/components/ui/select";
+    17→import { PROVINCES, PROVINCE_CITIES, formatRupiahFull } from "@/lib/types";
+    18→import { cn } from "@/lib/utils";
+    19→import { CategoryIcon } from "../category-icon";
+    20→import { useLang, translations as i18nTranslations, categoryName } from "@/lib/i18n";
+    21→import { useMounted } from "@/lib/use-mounted";
+    22→import {
+    23→  Plus,
+    24→  X,
+    25→  ImagePlus,
+    26→  Loader2,
+    27→  CheckCircle2,
+    28→  ChevronRight,
+    29→  ArrowLeft,
+    30→  Tag,
+    31→  Upload,
+    32→  Camera,
+    33→  FileImage,
+    34→  Save,
+    35→  Crown,
+    36→  Zap,
+    37→  TrendingUp,
+    38→  Check,
+    39→  RotateCcw,
+    40→  Gift,
+    41→  Lightbulb,
+    42→} from "lucide-react";
+    43→import { toast } from "sonner";
+    44→import { compressImage } from "@/lib/image";
+    45→import { openWhatsAppWithUrl } from "@/lib/share-image";
+    46→import { showWhatsAppFallbackToast } from "@/lib/wa-fallback";
+    47→import { useChatSocket } from "@/lib/use-chat-socket";
+    48→import { useSiteAssets } from "@/lib/use-site-assets";
+    49→import {
+    50→  Popover,
+    51→  PopoverContent,
+    52→  PopoverTrigger,
+    53→} from "@/components/ui/popover";
+    54→
+    55→const PLACEHOLDER_IMAGES = [
+    56→  "https://sfile.chatglm.cn/images-ppt/dae3b28e3c96.jpg",
+    57→  "https://sfile.chatglm.cn/images-ppt/c66b63ef4400.jpg",
+    58→  "https://sfile.chatglm.cn/images-ppt/9ef9dd58c181.jpg",
+    59→];
+    60→
+    61→async function fetchCategories() {
+    62→  const res = await fetch("/api/categories");
+    63→  if (!res.ok) throw new Error("fail");
+    64→  return (await res.json()).categories as Array<{
+    65→    id: string;
+    66→    name: string;
+    67→    slug: string;
+    68→    icon: string;
+    69→  }>;
+    70→}
+    71→
+    72→async function postListing(payload: any) {
+    73→  const res = await fetch("/api/listings", {
+    74→    method: "POST",
+    75→    headers: { "Content-Type": "application/json" },
+    76→    body: JSON.stringify(payload),
+    77→    // NOTE: do NOT use keepalive:true here. The Fetch API spec limits
+    78→    // keepalive request bodies to 64KB. Listing payloads contain base64-
+    79→    // compressed images (~200KB each), so the payload easily exceeds 64KB.
+    80→    // With keepalive:true, the browser throws "Failed to fetch" before the
+    81→    // request even reaches the server.
+    82→    //
+    83→    // keepalive is no longer needed because doSubmit() is called LAST in the
+    84→    // "Kirim & Pasang Iklan" flow (after upload-proof, chat, and WhatsApp).
+    85→    // mutation.onSuccess (which navigates to "Iklan Saya") only fires AFTER
+    86→    // the POST response returns, so the page does not navigate away mid-fetch.
+    87→  });
+    88→  const data = await res.json();
+    89→  if (!res.ok) throw new Error(data.error || tr("postFailed"));
+    90→  return data.listing;
+    91→}
+    92→
+    93→// Year options: 2025 down to 1990
+    94→const YEAR_OPTIONS = Array.from({ length: 2025 - 1990 + 1 }, (_, i) => String(2025 - i));
+    95→
+    96→const STEP_LABELS = ["Informasi Dasar", "Detail & Deskripsi", "Paket Iklan", "Foto Mesin", "Preview Iklan", "Pembayaran"];
+    97→
+    98→// Hard hat icon for the "Jasa" ad-type tab. Uses the existing jasa.png
+    99→// image so it matches the category nav icon visually.
+   100→function HardHatIcon() {
+   101→  return (
+   102→    <img
+   103→      src="/cat-icons/jasa.png"
+   104→      alt=""
+   105→      width={16}
+   106→      height={16}
+   107→      className="size-4 object-contain"
+   108→    />
+   109→  );
+   110→}
+   111→
+   112→export function PostAdView() {
+   113→  const { qrisImageUrl } = useSiteAssets();
+   114→  const { data: cats } = useQuery({
+   115→    queryKey: ["categories"],
+   116→    queryFn: fetchCategories,
+   117→    staleTime: 0,
+   118→  });
+   119→  const { data: paketData } = useQuery({
+   120→    queryKey: ["admin-paket"],
+   121→    queryFn: async () => {
+   122→      const res = await fetch("/api/admin/paket");
+   123→      if (!res.ok) return null;
+   124→      return res.json() as Promise<{ pakets: any[] }>;
+   125→    },
+   126→    staleTime: 0,
+   127→  });
+   128→  const paketMap: Record<string, { price: number; originalPrice: number; duration: number; maxPhotos: number; name: string; features: string[] }> = {};
+   129→  (paketData?.pakets || []).forEach((p: any) => {
+   130→    paketMap[p.key] = { price: p.price, originalPrice: p.originalPrice ?? 0, duration: p.duration, maxPhotos: Number(p.maxPhotos) || 3, name: p.name, features: p.features };
+   131→  });
+   132→
+   133→  const goToDetail = useStore((s) => s.goToDetail);
+   134→  const goHome = useStore((s) => s.goHome);
+   135→  const goToDashboard = useStore((s) => s.goToDashboard);
+   136→  const goToProfilePanel = useStore((s) => s.goToProfilePanel);
+   137→  const user = useStore((s) => s.user);
+   138→  const { sendMessage } = useChatSocket();
+   139→
+   140→  const { t, lang } = useLang();
+   141→  const mounted = useMounted();
+   142→  const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
+   143→
+   144→  // Wizard step
+   145→  const [step, setStep] = useState(1);
+   146→
+   147→  // Hydration flag — prevents the save effect from overwriting localStorage
+   148→  // with empty initial values before the load effect's setState applies.
+   149→  const [hydrated, setHydrated] = useState(false);
+   150→
+   151→  // Draft form persistence key — data survives navigation/refresh.
+   152→  // Cleared only via Reset button or after successful post.
+   153→  const DRAFT_KEY = "gomesin-post-ad-draft";
+   154→
+   155→  // Form state
+   156→  const [title, setTitle] = useState("");
+   157→  const [categoryId, setCategoryId] = useState("");
+   158→  const [description, setDescription] = useState("");
+   159→  const [price, setPrice] = useState("");
+   160→  const [priceType, setPriceType] = useState("negotiable");
+   161→  const [condition, setCondition] = useState("bekas");
+   162→  const [availability, setAvailability] = useState("tersedia");
+   163→  const [adType, setAdType] = useState<"mesin" | "jasa">("mesin");
+   164→  const [brand, setBrand] = useState("");
+   165→  const [modelType, setModelType] = useState("");
+   166→  const [modelTypes, setModelTypes] = useState<string[]>([]);
+   167→  const [capacity, setCapacity] = useState("");
+   168→  const [yearProduced, setYearProduced] = useState("");
+   169→  const [city, setCity] = useState("");
+   170→  const [province, setProvince] = useState("");
+   171→  const [images, setImages] = useState<string[]>([]);
+   172→  const [specs, setSpecs] = useState<{ k: string; v: string }[]>([
+   173→    { k: "", v: "" },
+   174→  ]);
+   175→  const [success, setSuccess] = useState(false);
+   176→  const [compressing, setCompressing] = useState(false);
+   177→  const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
+   178→  const [selectedPackage, setSelectedPackage] = useState("colek");
+   179→  const [paymentMethod, setPaymentMethod] = useState("");
+   180→  const [showPayment, setShowPayment] = useState(true);
+   181→  const [qrisModal, setQrisModal] = useState(false);
+   182→  const [qrisAmount, setQrisAmount] = useState(0);
+   183→  const [uniqueCode, setUniqueCode] = useState<number>(0);
+   184→  const [proofImage, setProofImage] = useState<string>("");
+   185→  const [uploadingProof, setUploadingProof] = useState(false);
+   186→  const [savingDraft, setSavingDraft] = useState(false);
+   187→  const fileInputRef = useRef<HTMLInputElement>(null);
+   188→  const cameraInputRef = useRef<HTMLInputElement>(null);
+   189→
+   190→  // --- Persist form draft to localStorage (survives navigation/refresh) ---
+   191→  // Load on mount, save on change. Cleared on Reset or successful post.
+   192→  useEffect(() => {
+   193→    try {
+   194→      const raw = localStorage.getItem(DRAFT_KEY);
+   195→      if (raw) {
+   196→        const d = JSON.parse(raw);
+   197→        if (d.title) setTitle(d.title);
+   198→        if (d.categoryId) setCategoryId(d.categoryId);
+   199→        if (d.description) setDescription(d.description);
+   200→        if (d.price) setPrice(d.price);
+   201→        if (d.priceType) setPriceType(d.priceType);
+   202→        if (d.condition) setCondition(d.condition);
+   203→        if (d.availability) setAvailability(d.availability);
+   204→        if (d.adType) setAdType(d.adType);
+   205→        if (d.brand) setBrand(d.brand);
+   206→        if (d.modelType) setModelType(d.modelType);
+   207→        if (Array.isArray(d.modelTypes)) setModelTypes(d.modelTypes);
+   208→        if (d.capacity) setCapacity(d.capacity);
+   209→        if (d.yearProduced) setYearProduced(d.yearProduced);
+   210→        if (d.city) setCity(d.city);
+   211→        if (d.province) setProvince(d.province);
+   212→        if (Array.isArray(d.images)) setImages(d.images);
+   213→        if (Array.isArray(d.specs) && d.specs.length) setSpecs(d.specs);
+   214→        // Migrate stale "gratis" selection → "colek" (Gratis package was removed)
+   215→        if (d.selectedPackage && d.selectedPackage !== "gratis") setSelectedPackage(d.selectedPackage);
+   216→        if (typeof d.step === "number" && d.step >= 1 && d.step <= 6) setStep(d.step);
+   217→      }
+   218→    } catch {}
+   219→    // Mark as hydrated so the save effect can start persisting.
+   220→    // This prevents the save effect from overwriting localStorage with
+   221→    // empty initial values before the loaded setState calls take effect.
+   222→    setHydrated(true);
+   223→  }, []);
+   224→
+   225→  useEffect(() => {
+   226→    // Don't save until after the initial load is complete — otherwise the
+   227→    // initial empty state would overwrite the saved draft on every mount.
+   228→    if (!hydrated) return;
+   229→    try {
+   230→      localStorage.setItem(
+   231→        DRAFT_KEY,
+   232→        JSON.stringify({
+   233→          step,
+   234→          title,
+   235→          categoryId,
+   236→          description,
+   237→          price,
+   238→          priceType,
+   239→          condition,
+   240→          availability,
+   241→          adType,
+   242→          brand,
+   243→          modelType,
+   244→          modelTypes,
+   245→          capacity,
+   246→          yearProduced,
+   247→          city,
+   248→          province,
+   249→          images,
+   250→          specs,
+   251→          selectedPackage,
+   252→        })
+   253→      );
+   254→    } catch {}
+   255→  }, [hydrated, step, title, categoryId, description, price, priceType, condition, availability, adType, brand, modelType, modelTypes, capacity, yearProduced, city, province, images, specs, selectedPackage]);
+   256→
+   257→  // --- Validate hydrated categoryId against fetched categories ---
+   258→  // If the DB was re-seeded, a stale categoryId from localStorage may no
+   259→  // longer exist. Clear it so the user re-selects a valid category instead
+   260→  // of getting an FK constraint error on submit.
+   261→  useEffect(() => {
+   262→    if (!cats || cats.length === 0) return;
+   263→    if (categoryId && !cats.some((c: any) => c.id === categoryId)) {
+   264→      setCategoryId("");
+   265→    }
+   266→  }, [cats, categoryId]);
+   267→
+   268→  // --- Reset all form data ---
+   269→  const handleReset = () => {
+   270→    setStep(1);
+   271→    setTitle("");
+   272→    setCategoryId("");
+   273→    setDescription("");
+   274→    setPrice("");
+   275→    setPriceType("negotiable");
+   276→    setCondition("bekas");
+   277→    setAvailability("tersedia");
+   278→    setAdType("mesin");
+   279→    setBrand("");
+   280→    setModelType("");
+   281→    setModelTypes([]);
+   282→    setCapacity("");
+   283→    setYearProduced("");
+   284→    setCity("");
+   285→    setProvince("");
+   286→    setImages([]);
+   287→    setSpecs([{ k: "", v: "" }]);
+   288→    setSelectedPackage("colek");
+   289→    setPaymentMethod("");
+   290→    setProofImage("");
+   291→    setQrisAmount(0);
+   292→    setUniqueCode(0);
+   293→    setQrisModal(false);
+   294→    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+   295→    toast.success("Form telah direset.");
+   296→  };
+   297→
+   298→  // Scroll to top on step change
+   299→  useEffect(() => {
+   300→    window.scrollTo({ top: 0, behavior: "smooth" });
+   301→  }, [step]);
+   302→
+   303→  // QRIS modal: lock body scroll
+   304→  useEffect(() => {
+   305→    if (qrisModal) {
+   306→      window.scrollTo({ top: 0, behavior: "instant" });
+   307→      document.body.style.overflow = "hidden";
+   308→      document.documentElement.style.overflow = "hidden";
+   309→    } else {
+   310→      document.body.style.overflow = "";
+   311→      document.documentElement.style.overflow = "";
+   312→    }
+   313→    return () => {
+   314→      document.body.style.overflow = "";
+   315→      document.documentElement.style.overflow = "";
+   316→    };
+   317→  }, [qrisModal]);
+   318→
+   319→  // --- Trim photos when switching to a package with a lower maxPhotos limit ---
+   320→  // If user uploaded 10 photos on Platinum (max 10) then switches to Gold
+   321→  // (max 5), automatically trim to the new limit so the upload counter stays
+   322→  // valid and submission won't be blocked.
+   323→  useEffect(() => {
+   324→    const max = paketMap[selectedPackage]?.maxPhotos;
+   325→    if (typeof max === "number" && max > 0 && images.length > max) {
+   326→      setImages((prev) => prev.slice(0, max));
+   327→      toast.info(`Foto dipangkas ke ${max} sesuai paket ${paketMap[selectedPackage]?.name || selectedPackage}.`);
+   328→    }
+   329→  }, [selectedPackage, paketData]);
+   330→
+   331→  // --- Fetch unique 3-digit code whenever selectedPackage changes ---
+   332→  // This ensures switching Gold → Platinum fetches a DIFFERENT unique code
+   333→  // (the API is idempotent per package, so switching back to Gold returns
+   334→  // the same Gold code again). The total = packagePrice + uniqueCode
+   335→  // updates reactively when the user picks a different package.
+   336→  useEffect(() => {
+   337→    if (!hydrated || !user?.id) return;
+   338→    const pk = paketMap[selectedPackage];
+   339→    const pkgPrice = pk?.price ?? 0;
+   340→    // Free / draft package — no unique code needed.
+   341→    if (pkgPrice <= 0 || selectedPackage === "simpan") {
+   342→      setUniqueCode(0);
+   343→      setQrisAmount(0);
+   344→      return;
+   345→    }
+   346→    let cancelled = false;
+   347→    (async () => {
+   348→      try {
+   349→        const codeRes = await fetch("/api/listings/unique-code", {
+   350→          method: "POST",
+   351→          headers: { "Content-Type": "application/json" },
+   352→          // Never cache — every refresh / navigation must get a NEW random code.
+   353→          cache: "no-store",
+   354→          body: JSON.stringify({
+   355→            userId: user.id,
+   356→            packageType: selectedPackage,
+   357→            amount: pkgPrice,
+   358→          }),
+   359→        });
+   360→        if (codeRes.ok && !cancelled) {
+   361→          const codeData = await codeRes.json();
+   362→          const uc = codeData.uniqueCode || 0;
+   363→          setUniqueCode(uc);
+   364→          setQrisAmount(pkgPrice + uc);
+   365→        } else if (!cancelled) {
+   366→          // API failed (e.g. ephemeral DB on Vercel) — fall back to package price.
+   367→          setUniqueCode(0);
+   368→          setQrisAmount(pkgPrice);
+   369→        }
+   370→      } catch {
+   371→        if (!cancelled) {
+   372→          setUniqueCode(0);
+   373→          setQrisAmount(pkgPrice);
+   374→        }
+   375→      }
+   376→    })();
+   377→    return () => { cancelled = true; };
+   378→  }, [selectedPackage, hydrated, user?.id, paketData]);
+   379→
+   380→  // --- Validation per step ---
+   381→  const validateStep = useCallback(
+   382→    (s: number): boolean => {
+   383→      if (s === 1) {
+   384→        if (!categoryId) { toast.error("Pilih Kategori terlebih dahulu"); return false; }
+   385→        if (!title.trim()) { toast.error("Judul Iklan wajib diisi"); return false; }
+   386→        if (!price || price === "0") { toast.error("Harga wajib diisi"); return false; }
+   387→        if (!province) { toast.error("Pilih Provinsi terlebih dahulu"); return false; }
+   388→        if (!city) { toast.error("Pilih Kota terlebih dahulu"); return false; }
+   389→        return true;
+   390→      }
+   391→      if (s === 2) {
+   392→        if (!description.trim()) { toast.error("Deskripsi mesin wajib diisi"); return false; }
+   393→        return true;
+   394→      }
+   395→      // s === 3 (Paket) — package has a default ("colek"), no validation needed
+   396→      if (s === 4) {
+   397→        if (images.length < 1) { toast.error("Upload minimal 1 foto mesin"); return false; }
+   398→        return true;
+   399→      }
+   400→      // s === 5 (Preview) — review only, no validation
+   401→      // s === 6 (Pembayaran) — payment method validated at submit time
+   402→      return true;
+   403→    },
+   404→    [categoryId, title, price, province, city, images.length, description]
+   405→  );
+   406→
+   407→  const nextStep = () => {
+   408→    if (validateStep(step)) setStep((s) => Math.min(s + 1, 6));
+   409→  };
+   410→  const prevStep = () => setStep((s) => Math.max(s - 1, 1));
+   411→
+   412→  // --- Image handling ---
+   413→  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+   414→    const files = e.target.files;
+   415→    if (!files || files.length === 0) return;
+   416→
+   417→    // Enforce paket maxPhotos limit
+   418→    const maxPhotos = paketMap[selectedPackage]?.maxPhotos ?? 3;
+   419→    const remaining = Math.max(0, maxPhotos - images.length);
+   420→    if (remaining === 0) {
+   421→      toast.error(`Maksimal ${maxPhotos} foto untuk paket ${paketMap[selectedPackage]?.name || selectedPackage}. Hapus foto terlebih dahulu.`);
+   422→      e.target.value = "";
+   423→      return;
+   424→    }
+   425→    const fileList = Array.from(files);
+   426→    const willAdd = fileList.slice(0, remaining);
+   427→    if (fileList.length > remaining) {
+   428→      toast.warning(`Hanya ${remaining} foto ditambahkan (maksimal ${maxPhotos} foto untuk paket ini).`);
+   429→    }
+   430→
+   431→    setCompressing(true);
+   432→    try {
+   433→      for (const file of willAdd) {
+   434→        // Ad photos: compress to max 150KB (per user requirement).
+   435→        const compressed = await compressImage(file, 150_000);
+   436→        setImages((p) => [...p, compressed]);
+   437→      }
+   438→      toast.success(tr("photoAdded"));
+   439→    } catch (err: any) {
+   440→      toast.error(err?.message || tr("photoError"));
+   441→    } finally {
+   442→      setCompressing(false);
+   443→      e.target.value = "";
+   444→    }
+   445→  };
+   446→
+   447→  // --- Mutation ---
+   448→  const mutation = useMutation({
+   449→    mutationFn: postListing,
+   450→    onSuccess: (listing: any) => {
+   451→      const wasDraft = savingDraft;
+   452→      setSavingDraft(false);
+   453→      // Clear persisted draft form data after successful post/draft-save
+   454→      try { localStorage.removeItem(DRAFT_KEY); } catch {}
+   455→      toast.success(wasDraft ? "Iklan disimpan dengan status Belum Aktif." : tr("adPosted"));
+   456→      // Both draft-save and full-publish navigate to "Iklan Saya" page.
+   457→      // Draft shows as "Belum Aktif" (status=draft); published shows as "Menunggu Verifikasi" (status=pending).
+   458→      goToProfilePanel("iklan-saya");
+   459→    },
+   460→    onError: (e: any) => {
+   461→      setSavingDraft(false);
+   462→      toast.error(e.message || tr("postFailed"));
+   463→    },
+   464→  });
+   465→
+   466→  // --- Submit ---
+   467→  const submit = async () => {
+   468→    if (!title || !categoryId || !description || !price || !city || !province) {
+   469→      toast.error(tr("completeFields"));
+   470→      return;
+   471→    }
+   472→    const selPkgPrice = paketMap[selectedPackage]?.price ?? 0;
+   473→    if (selPkgPrice > 0 && selectedPackage !== "simpan" && !paymentMethod) {
+   474→      toast.error(tr("choosePayment"));
+   475→      return;
+   476→    }
+   477→    // Paid package → open payment modal. The unique code is already fetched
+   478→    // reactively by the useEffect on selectedPackage change, so qrisAmount
+   479→    // and uniqueCode are always up-to-date for the currently-selected package.
+   480→    if (selPkgPrice > 0 && selectedPackage !== "simpan") {
+   481→      // Defensive: if the unique code hasn't loaded yet (rare race), the
+   482→      // modal still opens and shows the package price; user can wait for
+   483→      // the code to appear before transferring.
+   484→      setQrisModal(true);
+   485→      return;
+   486→    }
+   487→    doSubmit();
+   488→  };
+   489→
+   490→  const doSubmit = () => {
+   491→    const finalImages = images.length ? images : PLACEHOLDER_IMAGES.slice(0, 1);
+   492→    const specObj: Record<string, string> = {};
+   493→    for (const s of specs) {
+   494→      if (s.k.trim() && s.v.trim()) specObj[s.k.trim()] = s.v.trim();
+   495→    }
+   496→    // Add optional fields from step 2 (Detail & Deskripsi)
+   497→    if (brand.trim()) specObj["Merk/Brand"] = brand.trim();
+   498→    // Combine the single modelType input + any added modelTypes entries
+   499→    const allModels = [
+   500→      ...(modelType.trim() ? [modelType.trim()] : []),
+   501→      ...modelTypes.map((m) => m.trim()).filter(Boolean),
+   502→    ];
+   503→    if (allModels.length) specObj["Tipe/Model"] = allModels.join(", ");
+   504→    if (capacity.trim()) specObj["Kapasitas"] = capacity.trim();
+   505→
+   506→    mutation.mutate({
+   507→      title,
+   508→      categoryId,
+   509→      description,
+   510→      price,
+   511→      priceType,
+   512→      condition: adType === "jasa" ? "jasa" : condition,
+   513→      availability,
+   514→      adType,
+   515→      brand: adType === "jasa" ? undefined : (brand || undefined),
+   516→      yearProduced: yearProduced || undefined,
+   517→      city,
+   518→      province,
+   519→      images: finalImages,
+   520→      specs: specObj,
+   521→      featured: selectedPackage === "spotlight" || selectedPackage === "highlight",
+   522→      package: selectedPackage,
+   523→      paymentMethod: paymentMethod || undefined,
+   524→      uniqueCode: uniqueCode > 0 ? uniqueCode : undefined,
+   525→      userId: user?.id,
+   526→      userName: user?.name,
+   527→      userPhone: user?.phone,
+   528→    });
+   529→  };
+   530→
+   531→  // --- Draft saving ---
+   532→  const handleSaveDraft = () => {
+   533→    if (!title.trim()) { toast.error("Judul wajib diisi untuk menyimpan dulu."); return; }
+   534→    setSavingDraft(true);
+   535→    const finalImages = images.length ? images : PLACEHOLDER_IMAGES.slice(0, 1);
+   536→    const specObj: Record<string, string> = {};
+   537→    for (const s of specs) {
+   538→      if (s.k.trim() && s.v.trim()) specObj[s.k.trim()] = s.v.trim();
+   539→    }
+   540→    mutation.mutate({
+   541→      title,
+   542→      categoryId: categoryId || undefined,
+   543→      description: description || "(Draft)",
+   544→      price: price || "0",
+   545→      priceType,
+   546→      condition: adType === "jasa" ? "jasa" : condition,
+   547→      availability,
+   548→      adType,
+   549→      brand: adType === "jasa" ? undefined : (brand || undefined),
+   550→      yearProduced: yearProduced || undefined,
+   551→      city: city || "Draft",
+   552→      province: province || "Draft",
+   553→      images: finalImages,
+   554→      specs: specObj,
+   555→      featured: false,
+   556→      package: "colek",
+   557→      userId: user?.id,
+   558→      userName: user?.name,
+   559→      userPhone: user?.phone,
+   560→      saveAsDraft: true,
+   561→    } as any);
+   562→  };
+   563→
+   564→  // --- Add a Tipe/Model entry to the list ---
+   565→  const addModelType = () => {
+   566→    const v = modelType.trim();
+   567→    if (!v) { toast.error("Isi tipe/model terlebih dahulu sebelum menambah."); return; }
+   568→    if (modelTypes.includes(v)) { toast.error("Tipe/model sudah ditambahkan."); return; }
+   569→    setModelTypes((prev) => [...prev, v]);
+   570→    setModelType("");
+   571→  };
+   572→
+   573→  // --- Helper: get category name ---
+   574→  const getCategoryName = () => {
+   575→    const cat = (cats ?? []).find((c) => c.id === categoryId);
+   576→    return cat ? categoryName(cat.name, mounted ? lang : "id") : "-";
+   577→  };
+   578→
+   579→  // --- Success screen ---
+   580→  if (success) {
+   581→    return (
+   582→      <div className="mx-auto flex max-w-md flex-col items-center px-4 py-20 text-center animate-fade-up">
+   583→        <div className="grid size-20 place-items-center rounded-full bg-primary/10">
+   584→          <CheckCircle2 className="size-12 text-primary" />
+   585→        </div>
+   586→        <h2 className="mt-4 text-2xl font-bold">{tr("postSuccess")}</h2>
+   587→        <p className="mt-2 text-sm text-muted-foreground">
+   588→          {tr("postSuccessDesc")}
+   589→        </p>
+   590→        <Loader2 className="mt-4 size-5 animate-spin text-primary" />
+   591→      </div>
+   592→    );
+   593→  }
+   594→
+   595→  // --- Package icon/color maps ---
+   596→  const pkgIconMap: Record<string, any> = { gratis: Gift, colek: Tag, sundul: TrendingUp, highlight: Zap, spotlight: Crown };
+   597→  const pkgColorMap: Record<string, string> = {
+   598→    gratis: "border-emerald-400 ring-1 ring-emerald-200",
+   599→    colek: "border-blue-400 ring-1 ring-blue-200",
+   600→    sundul: "border-purple-400 ring-1 ring-purple-200",
+   601→    highlight: "border-orange-400 ring-1 ring-orange-200",
+   602→    spotlight: "border-amber-400 ring-1 ring-amber-200",
+   603→  };
+   604→  const pkgIconColorMap: Record<string, string> = {
+   605→    gratis: "text-emerald-500",
+   606→    colek: "text-blue-500",
+   607→    sundul: "text-purple-500",
+   608→    highlight: "text-orange-500",
+   609→    spotlight: "text-amber-500",
+   610→  };
+   611→  const pkgSelectedColorMap: Record<string, string> = {
+   612→    gratis: "border-green-500 ring-2 ring-green-400 bg-green-50/50",
+   613→    colek: "border-green-500 ring-2 ring-green-400 bg-green-50/50",
+   614→    sundul: "border-green-500 ring-2 ring-green-400 bg-green-50/50",
+   615→    highlight: "border-green-500 ring-2 ring-green-400 bg-green-50/50",
+   616→    spotlight: "border-green-500 ring-2 ring-green-400 bg-green-50/50",
+   617→  };
+   618→  const pkgKeys = ["colek", "sundul", "highlight", "spotlight"];
+   619→
+   620→  // --- Price display helper ---
+   621→  const priceDisplay = price ? Number(price.replace(/[^0-9]/g, "")).toLocaleString("de-DE") : "";
+   622→
+   623→  return (
+   624→    <div className="mx-auto max-w-3xl px-4 py-4 animate-fade-up">
+   625→      {/* Hidden file inputs */}
+   626→      <input
+   627→        ref={fileInputRef}
+   628→        type="file"
+   629→        accept="image/*"
+   630→        multiple
+   631→        className="hidden"
+   632→        onChange={handleFileSelect}
+   633→      />
+   634→      <input
+   635→        ref={cameraInputRef}
+   636→        type="file"
+   637→        accept="image/*"
+   638→        capture="environment"
+   639→        className="hidden"
+   640→        onChange={handleFileSelect}
+   641→      />
+   642→
+   643→      {/* (Reset button moved to header row, aligned right with title) */}
+   644→
+   645→      {/* Header with back arrow + centered title + Reset button (right) */}
+   646→      <div className="flex items-center gap-3 py-3">
+   647→        <button
+   648→          type="button"
+   649→          onClick={step === 1 ? goHome : prevStep}
+   650→          className="grid size-10 shrink-0 place-items-center rounded-full border border-border bg-card hover:bg-accent"
+   651→        >
+   652→          <ArrowLeft className="size-5" />
+   653→        </button>
+   654→        <h1 className="flex-1 text-center text-lg font-bold">Pasang Iklan</h1>
+   655→        <Button
+   656→          type="button"
+   657→          variant="outline"
+   658→          onClick={handleReset}
+   659→          className="h-9 shrink-0 gap-1.5 rounded-full border-red-300 px-3 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700"
+   660→        >
+   661→          <RotateCcw className="size-3.5" />
+   662→          Reset
+   663→        </Button>
+   664→      </div>
+   665→
+   666→      {/* Progress Stepper — compact, fits mobile viewport without horizontal scroll.
+   667→          All 6 step circles visible at once; current step label shown below. */}
+   668→      <div className="mb-5">
+   669→        <div className="flex items-center px-1">
+   670→          {[1, 2, 3, 4, 5, 6].map((s) => (
+   671→            <div key={s} className="flex flex-1 items-center last:flex-none">
+   672→              {/* Step circle */}
+   673→              <div
+   674→                className={cn(
+   675→                  "grid size-7 shrink-0 place-items-center rounded-full text-xs font-bold transition-all",
+   676→                  s < step
+   677→                    ? "bg-green-500 text-white"
+   678→                    : s === step
+   679→                      ? "bg-green-500 text-white ring-4 ring-green-100"
+   680→                      : "bg-gray-200 text-gray-400"
+   681→                )}
+   682→              >
+   683→                {s < step ? <Check className="size-3.5" /> : s}
+   684→              </div>
+   685→              {/* Connector line */}
+   686→              {s < 6 && (
+   687→                <div
+   688→                  className={cn(
+   689→                    "mx-1 h-0.5 flex-1 rounded-full transition-all",
+   690→                    s < step ? "bg-green-500" : "bg-gray-200"
+   691→                  )}
+   692→                />
+   693→              )}
+   694→            </div>
+   695→          ))}
+   696→        </div>
+   697→        {/* Current step label — single line, never cut off */}
+   698→        <div className="mt-2 text-center">
+   699→          <p className="text-xs font-semibold text-green-600">
+   700→            Step {step} dari 6 — {STEP_LABELS[step - 1]}
+   701→          </p>
+   702→        </div>
+   703→      </div>
+   704→
+   705→      {/* Step content */}
+   706→      <div className="space-y-4">
+   707→        {/* ========== STEP 1: Informasi Dasar ========== */}
+   708→        {step === 1 && (
+   709→          <div className="space-y-4">
+   710→            <h2 className="text-base font-bold text-foreground">Informasi Dasar</h2>
+   711→
+   712→            {/* Jenis Iklan — Mesin / Jasa tab selector */}
+   713→            {/* CRITICAL: This is the ONLY way to switch to "jasa" ad type.
+   714→                Without this tab, users could never post a service ad
+   715→                (jasa is a listing condition, not a DB category). */}
+   716→            <div className="space-y-1.5">
+   717→              <Label className="text-sm font-medium">Jenis Iklan</Label>
+   718→              <div className="grid grid-cols-2 gap-2">
+   719→                <button
+   720→                  type="button"
+   721→                  onClick={() => {
+   722→                    setAdType("mesin");
+   723→                    // Reset condition to a machine-appropriate default
+   724→                    setCondition((prev) => (prev === "jasa" ? "bekas" : prev));
+   725→                  }}
+   726→                  className={cn(
+   727→                    "flex items-center justify-center gap-2 rounded-xl border-2 px-3 py-3 text-sm font-semibold transition",
+   728→                    adType === "mesin"
+   729→                      ? "border-primary bg-primary/10 text-primary"
+   730→                      : "border-border bg-card text-muted-foreground hover:border-primary/40"
+   731→                  )}
+   732→                >
+   733→                  <Tag className="size-4" />
+   734→                  Mesin
+   735→                </button>
+   736→                <button
+   737→                  type="button"
+   738→                  onClick={() => {
+   739→                    setAdType("jasa");
+   740→                    // Jasa listings always have condition="jasa" — forced.
+   741→                    // Brand/Model/Tahun are not relevant for services.
+   742→                    setCondition("jasa");
+   743→                    setBrand("");
+   744→                    setYearProduced("");
+   745→                  }}
+   746→                  className={cn(
+   747→                    "flex items-center justify-center gap-2 rounded-xl border-2 px-3 py-3 text-sm font-semibold transition",
+   748→                    adType === "jasa"
+   749→                      ? "border-primary bg-primary/10 text-primary"
+   750→                      : "border-border bg-card text-muted-foreground hover:border-primary/40"
+   751→                  )}
+   752→                >
+   753→                  <HardHatIcon />
+   754→                  Jasa
+   755→                </button>
+   756→              </div>
+   757→              {adType === "jasa" && (
+   758→                <p className="text-[11px] text-muted-foreground">
+   759→                  Iklan jasa (cetak, servis, sewa, installasi) — pilih kategori yang paling relevan.
+   760→                </p>
+   761→              )}
+   762→            </div>
+   763→
+   764→            {/* Kategori */}
+   765→            <div className="space-y-1.5">
+   766→              <Label className="text-sm font-medium">
+   767→                Kategori <span className="text-destructive">*</span>
+   768→              </Label>
+   769→              <Select value={categoryId} onValueChange={setCategoryId}>
+   770→                <SelectTrigger className="w-full h-12 rounded-lg">
+   771→                  <SelectValue placeholder={tr("selectCategory")} />
+   772→                </SelectTrigger>
+   773→                <SelectContent>
+   774→                  {(cats ?? []).map((c) => (
+   775→                    <SelectItem key={c.id} value={c.id}>
+   776→                      <span className="flex items-center gap-2">
+   777→                        <CategoryIcon name={c.icon} className="size-4 shrink-0 text-primary" />
+   778→                        {categoryName(c.name, mounted ? lang : "id")}
+   779→                      </span>
+   780→                    </SelectItem>
+   781→                  ))}
+   782→                </SelectContent>
+   783→              </Select>
+   784→              {!cats && (
+   785→                <div className="h-12 w-full animate-pulse rounded-lg bg-muted" />
+   786→              )}
+   787→            </div>
+   788→
+   789→            {/* Judul Iklan */}
+   790→            <div className="space-y-1.5">
+   791→              <Label className="text-sm font-medium">
+   792→                Judul Iklan <span className="text-destructive">*</span>
+   793→              </Label>
+   794→              <Textarea
+   795→                value={title}
+   796→                onChange={(e) => setTitle(e.target.value)}
+   797→                placeholder="Contoh: Mesin Press Hidrolik 100 Ton"
+   798→                maxLength={120}
+   799→                rows={2}
+   800→                className="rounded-lg resize-none text-base"
+   801→              />
+   802→              <p className="text-right text-[11px] text-muted-foreground">{title.length}/120</p>
+   803→            </div>
+   804→
+   805→            {/* Harga */}
+   806→            <div className="space-y-1.5">
+   807→              <Label className="text-sm font-medium">
+   808→                Harga <span className="text-destructive">*</span>
+   809→              </Label>
+   810→              <div className="relative">
+   811→                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
+   812→                  Rp
+   813→                </span>
+   814→                <Input
+   815→                  type="text"
+   816→                  inputMode="numeric"
+   817→                  value={priceDisplay}
+   818→                  onChange={(e) => {
+   819→                    const digits = e.target.value.replace(/[^0-9]/g, "");
+   820→                    setPrice(digits);
+   821→                  }}
+   822→                  placeholder="contoh: 185.000.000"
+   823→                  maxLength={15}
+   824→                  className="h-12 rounded-lg pl-10"
+   825→                />
+   826→              </div>
+   827→            </div>
+   828→
+   829→            {/* Kondisi — hidden when adType === "jasa" (condition is forced to "jasa") */}
+   830→            {adType !== "jasa" && (
+   831→              <div className="space-y-1.5">
+   832→                <Label className="text-sm font-medium">Kondisi</Label>
+   833→                <Select value={condition} onValueChange={setCondition}>
+   834→                  <SelectTrigger className="w-full h-12 rounded-lg">
+   835→                    <SelectValue />
+   836→                  </SelectTrigger>
+   837→                  <SelectContent>
+   838→                    <SelectItem value="baru">Baru</SelectItem>
+   839→                    <SelectItem value="bekas">Bekas</SelectItem>
+   840→                  </SelectContent>
+   841→                </Select>
+   842→              </div>
+   843→            )}
+   844→
+   845→            {/* Tahun — hidden when adType === "jasa" (services don't have a production year) */}
+   846→            {adType !== "jasa" && (
+   847→              <div className="space-y-1.5">
+   848→                <Label className="text-sm font-medium">Tahun</Label>
+   849→                <Select value={yearProduced} onValueChange={setYearProduced}>
+   850→                  <SelectTrigger className="w-full h-12 rounded-lg">
+   851→                    <SelectValue placeholder="Pilih tahun" />
+   852→                  </SelectTrigger>
+   853→                  <SelectContent>
+   854→                    {YEAR_OPTIONS.map((y) => (
+   855→                      <SelectItem key={y} value={y}>{y}</SelectItem>
+   856→                    ))}
+   857→                  </SelectContent>
+   858→                </Select>
+   859→              </div>
+   860→            )}
+   861→
+   862→            {/* Provinsi */}
+   863→            <div className="space-y-1.5">
+   864→              <Label className="text-sm font-medium">
+   865→                Provinsi <span className="text-destructive">*</span>
+   866→              </Label>
+   867→              <Select value={province} onValueChange={(v) => { setProvince(v); setCity(""); }}>
+   868→                <SelectTrigger className="w-full h-12 rounded-lg">
+   869→                  <SelectValue placeholder={tr("selectProvince")} />
+   870→                </SelectTrigger>
+   871→                <SelectContent>
+   872→                  {PROVINCES.map((p) => (
+   873→                    <SelectItem key={p} value={p}>{p}</SelectItem>
+   874→                  ))}
+   875→                </SelectContent>
+   876→              </Select>
+   877→            </div>
+   878→
+   879→            {/* Kota */}
+   880→            <div className="space-y-1.5">
+   881→              <Label className="text-sm font-medium">
+   882→                Kota <span className="text-destructive">*</span>
+   883→              </Label>
+   884→              <Select value={city} onValueChange={setCity} disabled={!province}>
+   885→                <SelectTrigger className="w-full h-12 rounded-lg">
+   886→                  <SelectValue placeholder={province ? tr("selectCity") : tr("selectProvinceFirst")} />
+   887→                </SelectTrigger>
+   888→                <SelectContent>
+   889→                  {(PROVINCE_CITIES[province] || []).map((c) => (
+   890→                    <SelectItem key={c} value={c}>{c}</SelectItem>
+   891→                  ))}
+   892→                </SelectContent>
+   893→              </Select>
+   894→            </div>
+   895→          </div>
+   896→        )}
+   897→
+   898→        {/* ========== STEP 3: Pilih Paket Iklan ========== */}
+   899→        {step === 3 && (
+   900→          <div className="space-y-4">
+   901→            {/* --- Package Selection — MUST be chosen BEFORE photo upload so the
+   902→                 package's maxPhotos limit is enforced correctly (e.g. Gold = 5,
+   903→                 Platinum = 10, Titanium = 15). Switching to a smaller package
+   904→                 automatically trims excess photos (see trim useEffect above). --- */}
+   905→            <div className="space-y-2">
+   906→              <h2 className="text-base font-bold text-foreground">Pilih Paket Iklan</h2>
+   907→              <p className="text-xs text-muted-foreground">
+   908→                Pilih paket promosi terlebih dahulu — batas jumlah foto mengikuti paket yang dipilih (mis. Gold maksimal 5 foto, Platinum 10 foto, Titanium 15 foto).
+   909→              </p>
+   910→              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+   911→                {pkgKeys.map((key) => {
+   912→                  const pk = paketMap[key];
+   913→                  const isUpgradeOnly = key === "sundul";
+   914→                  const Icon = pkgIconMap[key] || Tag;
+   915→                  const name = pk?.name || key;
+   916→                  const price = pk?.price ?? 0;
+   917→                  const origPrice = pk?.originalPrice ?? 0;
+   918→                  const dur = pk?.duration || 30;
+   919→                  const feats = (pk?.features && pk.features.length > 0) ? pk.features : [];
+   920→                  const disc = origPrice > 0 && origPrice > price ? Math.round((1 - price / origPrice) * 100) : 0;
+   921→                  const savings = origPrice > price ? origPrice - price : 0;
+   922→                  return (
+   923→                    <button
+   924→                      type="button"
+   925→                      key={key}
+   926→                      disabled={isUpgradeOnly}
+   927→                      onClick={() => {
+   928→                        setSelectedPackage(key);
+   929→                        setShowPayment(price > 0);
+   930→                        setPaymentMethod("");
+   931→                        // Reset unique-code state so the total briefly shows
+   932→                        // just the new package price while the useEffect
+   933→                        // fetches a fresh, DIFFERENT code for the new package.
+   934→                        setUniqueCode(0);
+   935→                        setQrisAmount(price);
+   936→                      }}
+   937→                      className={cn(
+   938→                        "relative rounded-xl border-2 bg-card p-3 text-left transition",
+   939→                        isUpgradeOnly
+   940→                          ? "cursor-not-allowed border-border bg-muted/40 opacity-60"
+   941→                          : selectedPackage === key
+   942→                            ? pkgSelectedColorMap[key] || "border-primary ring-2 ring-primary"
+   943→                            : (pkgColorMap[key] || "border-border") + " hover:shadow-md"
+   944→                      )}
+   945→                      title={isUpgradeOnly ? "Paket Boost hanya untuk iklan yang sudah terbit (upgrade)" : undefined}
+   946→                    >
+   947→                      {key === "gratis" && !isUpgradeOnly && (
+   948→                        <span className="absolute -top-2 left-2 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8px] font-bold uppercase text-white">Gratis</span>
+   949→                      )}
+   950→                      {key === "highlight" && !isUpgradeOnly && (
+   951→                        <span className="absolute -top-2 left-2 rounded-full bg-primary px-1.5 py-0.5 text-[8px] font-bold uppercase text-primary-foreground">Populer</span>
+   952→                      )}
+   953→                      {isUpgradeOnly && (
+   954→                        <span className="absolute -top-2 right-1 rounded-full bg-slate-500 px-1.5 py-0.5 text-[7px] font-bold uppercase text-white">Upgrade saja</span>
+   955→                      )}
+   956→                      {disc > 0 && (
+   957→                        <span className={cn(
+   958→                          "absolute -top-2 right-1 rounded-full bg-red-500 px-1.5 py-0.5 text-[8px] font-bold text-white",
+   959→                          key === "highlight" && "-top-7"
+   960→                        )}>-{disc}%</span>
+   961→                      )}
+   962→                      <div className="flex items-center justify-between">
+   963→                        <span className="grid size-7 place-items-center rounded-md bg-secondary">
+   964→                          <Icon className={cn("size-4", pkgIconColorMap[key] || "text-muted-foreground")} />
+   965→                        </span>
+   966→                        {selectedPackage === key && !isUpgradeOnly && (
+   967→                          <span className="rounded-full bg-green-500 p-0.5">
+   968→                            <CheckCircle2 className="size-3 text-white" />
+   969→                          </span>
+   970→                        )}
+   971→                      </div>
+   972→                      <p className="mt-2 text-xs font-bold">{name}</p>
+   973→                      <p className="mt-0.5 text-sm font-extrabold text-primary">
+   974→                        {price === 0 ? (
+   975→                          <span>GRATIS</span>
+   976→                        ) : (
+   977→                          <span>{formatRupiahFull(price)}</span>
+   978→                        )}
+   979→                        {origPrice > 0 && origPrice > price && (
+   980→                          <span className="ml-1 text-[10px] font-medium text-muted-foreground line-through">
+   981→                            {formatRupiahFull(origPrice)}
+   982→                          </span>
+   983→                        )}
+   984→                        <span className="text-[10px] font-normal text-muted-foreground">/{dur}hari</span>
+   985→                      </p>
+   986→                      {savings > 0 && (
+   987→                        <p className="mt-0.5 text-[10px] font-semibold text-red-500">Hemat {formatRupiahFull(savings)}</p>
+   988→                      )}
+   989→                      {feats.length > 0 && (
+   990→                        <ul className="mt-2 space-y-1">
+   991→                          {feats.map((f: string, i: number) => (
+   992→                            <li key={i} className="flex items-start gap-1.5 text-[10px] leading-tight text-foreground">
+   993→                              <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-green-500" />
+   994→                              {f}
+   995→                            </li>
+   996→                          ))}
+   997→                        </ul>
+   998→                      )}
+   999→                    </button>
+  1000→                  );
+  1001→                })}
+  1002→              </div>
+  1003→            </div>
+  1004→          </div>
+  1005→        )}
+  1006→
+  1007→        {/* ========== STEP 4: Foto Mesin ========== */}
+  1008→        {step === 4 && (
+  1009→          <div className="space-y-4">
+  1010→            {/* --- Photo upload (limit follows the selected package's maxPhotos) --- */}
+  1011→            <h2 className="text-base font-bold text-foreground">Foto Mesin</h2>
+  1012→            <p className="text-xs text-muted-foreground">
+  1013→              Upload foto mesin (min. 1 foto) — maksimal {paketMap[selectedPackage]?.maxPhotos ?? 3} foto sesuai paket {paketMap[selectedPackage]?.name || selectedPackage}.
+  1014→            </p>
+  1015→
+  1016→            {/* Photo grid: 2 columns */}
+  1017→            <div className="grid grid-cols-2 gap-3">
+  1018→              {/* Add photo button — always first */}
+  1019→              <Popover open={photoMenuOpen} onOpenChange={setPhotoMenuOpen}>
+  1020→                <PopoverTrigger asChild>
+  1021→                  <button
+  1022→                    type="button"
+  1023→                    disabled={compressing}
+  1024→                    className="flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-white transition hover:border-green-400 hover:bg-green-50/50"
+  1025→                  >
+  1026→                    {compressing ? (
+  1027→                      <Loader2 className="size-8 animate-spin text-green-500" />
+  1028→                    ) : (
+  1029→                      <Camera className="size-8 text-green-500" />
+  1030→                    )}
+  1031→                    <span className="text-xs font-medium text-gray-500">
+  1032→                      {compressing ? "Mengompresi..." : "Tambah Foto"}
+  1033→                    </span>
+  1034→                  </button>
+  1035→                </PopoverTrigger>
+  1036→                <PopoverContent className="w-48 p-1" align="start">
+  1037→                  <button
+  1038→                    type="button"
+  1039→                    onClick={() => {
+  1040→                      setPhotoMenuOpen(false);
+  1041→                      fileInputRef.current?.click();
+  1042→                    }}
+  1043→                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent"
+  1044→                  >
+  1045→                    <FileImage className="size-4 text-primary" />
+  1046→                    {tr("selectFile")}
+  1047→                  </button>
+  1048→                  <button
+  1049→                    type="button"
+  1050→                    onClick={() => {
+  1051→                      setPhotoMenuOpen(false);
+  1052→                      cameraInputRef.current?.click();
+  1053→                    }}
+  1054→                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent"
+  1055→                  >
+  1056→                    <Camera className="size-4 text-primary" />
+  1057→                    {tr("camera")}
+  1058→                  </button>
+  1059→                </PopoverContent>
+  1060→              </Popover>
+  1061→
+  1062→              {/* Uploaded photos */}
+  1063→              {images.map((img, i) => (
+  1064→                <div key={i} className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border">
+  1065→                  <img src={img} alt={""} className="size-full object-cover" />
+  1066→                  <button
+  1067→                    type="button"
+  1068→                    onClick={() => setImages((p) => p.filter((_, j) => j !== i))}
+  1069→                    className="absolute right-1.5 top-1.5 grid size-7 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
+  1070→                  >
+  1071→                    <X className="size-4" />
+  1072→                  </button>
+  1073→                  {i === 0 && (
+  1074→                    <span className="absolute bottom-1.5 left-1.5 rounded-md bg-primary px-1.5 py-0.5 text-[9px] font-bold text-primary-foreground">
+  1075→                      {tr("mainPhoto")}
+  1076→                    </span>
+  1077→                  )}
+  1078→                </div>
+  1079→              ))}
+  1080→            </div>
+  1081→
+  1082→            {/* No photos yet fallback */}
+  1083→            {images.length === 0 && (
+  1084→              <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+  1085→                <Upload className="mx-auto mb-1 size-5" />
+  1086→                {tr("noPhotosYet")}
+  1087→                <button
+  1088→                  type="button"
+  1089→                  onClick={() => setImages(PLACEHOLDER_IMAGES.slice(0, 3))}
+  1090→                  className="ml-1 font-semibold text-primary hover:underline"
+  1091→                >
+  1092→                  {tr("useExample")}
+  1093→                </button>
+  1094→              </div>
+  1095→            )}
+  1096→
+  1097→            <p className="text-center text-xs text-muted-foreground">
+  1098→              {images.length} / {paketMap[selectedPackage]?.maxPhotos ?? 3} foto diunggah {images.length < 1 && "(min. 1)"}
+  1099→            </p>
+  1100→
+  1101→            {/* Tips Foto yang Baik */}
+  1102→            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-2">
+  1103→              <div className="flex items-center gap-2">
+  1104→                <span className="grid size-7 place-items-center rounded-full bg-amber-100">
+  1105→                  <Lightbulb className="size-4 text-amber-600" />
+  1106→                </span>
+  1107→                <h3 className="text-sm font-bold text-amber-900">Tips Foto yang Baik</h3>
+  1108→              </div>
+  1109→              <ul className="space-y-1.5 text-[12px] leading-snug text-amber-900/90">
+  1110→                <li className="flex items-start gap-2">
+  1111→                  <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-amber-200/70 text-[10px] font-bold text-amber-800">1</span>
+  1112→                  <span>Pakai pencahayaan terang (foto di luar ruangan atau dekat jendela) agar detail mesin terlihat jelas.</span>
+  1113→                </li>
+  1114→                <li className="flex items-start gap-2">
+  1115→                  <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-amber-200/70 text-[10px] font-bold text-amber-800">2</span>
+  1116→                  <span>Ambil foto dari beberapa sudut: depan, samping, dan close-up bagian penting (mesin, panel, label).</span>
+  1117→                </li>
+  1118→                <li className="flex items-start gap-2">
+  1119→                  <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-amber-200/70 text-[10px] font-bold text-amber-800">3</span>
+  1120→                  <span>Bersihkan mesin dari debu &amp; kotoran sebelum difoto agar terlihat terawat.</span>
+  1121→                </li>
+  1122→                <li className="flex items-start gap-2">
+  1123→                  <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-amber-200/70 text-[10px] font-bold text-amber-800">4</span>
+  1124→                  <span>Foto plat nama / merk + tipe, dan nomor seri mesin untuk menambah kepercayaan pembeli.</span>
+  1125→                </li>
+  1126→                <li className="flex items-start gap-2">
+  1127→                  <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-amber-200/70 text-[10px] font-bold text-amber-800">5</span>
+  1128→                  <span>Gunakan latar belakang rapi tanpa barang berantakan di belakang mesin.</span>
+  1129→                </li>
+  1130→              </ul>
+  1131→            </div>
+  1132→
+  1133→            {/* Simpan Dulu button */}
+  1134→            <div className="flex flex-col items-center gap-1.5">
+  1135→              <Button
+  1136→                type="button"
+  1137→                className="w-fit gap-2 border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white"
+  1138→                disabled={mutation.isPending || savingDraft}
+  1139→                onClick={handleSaveDraft}
+  1140→              >
+  1141→                {savingDraft ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+  1142→                {savingDraft ? "Menyimpan..." : "Simpan Dulu"}
+  1143→              </Button>
+  1144→              <p className="text-center text-[11px] text-muted-foreground">
+  1145→                Simpan dulu untuk menunda pasang iklan. Iklan tersimpan dengan status &quot;Belum Aktif&quot; dan bisa Anda terbitkan nanti.
+  1146→              </p>
+  1147→            </div>
+  1148→          </div>
+  1149→        )}
+  1150→
+  1151→        {/* ========== STEP 2: Detail & Deskripsi ========== */}
+  1152→        {step === 2 && (
+  1153→          <div className="space-y-4">
+  1154→            <h2 className="text-base font-bold text-foreground">Detail &amp; Deskripsi</h2>
+  1155→
+  1156→            {/* Deskripsi Mesin */}
+  1157→            <div className="space-y-1.5">
+  1158→              <Label className="text-sm font-medium">
+  1159→                Deskripsi Mesin <span className="text-destructive">*</span>
+  1160→              </Label>
+  1161→              <Textarea
+  1162→                value={description}
+  1163→                onChange={(e) => setDescription(e.target.value)}
+  1164→                placeholder="Tuliskan detail spesifikasi, fitur, kondisi, dan informasi lainnya tentang mesin ini..."
+  1165→                rows={3}
+  1166→                maxLength={2000}
+  1167→                className="rounded-lg resize-none"
+  1168→              />
+  1169→              <p className="text-right text-[11px] text-muted-foreground">{description.length}/2000</p>
+  1170→            </div>
+  1171→
+  1172→            {/* Spesifikasi (Opsional) */}
+  1173→            <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+  1174→              <h3 className="text-sm font-bold text-foreground">Spesifikasi (Opsional)</h3>
+  1175→
+  1176→              {/* Merk/Brand — hidden for jasa ads (services don't have a brand) */}
+  1177→              {adType !== "jasa" && (
+  1178→                <div className="space-y-1.5">
+  1179→                  <Label className="text-xs font-medium text-muted-foreground">Merk/Brand</Label>
+  1180→                  <Input
+  1181→                    value={brand}
+  1182→                    onChange={(e) => setBrand(e.target.value)}
+  1183→                    placeholder="contoh: Heidelberg, Komori, Roland"
+  1184→                    className="h-12 rounded-lg"
+  1185→                  />
+  1186→                </div>
+  1187→              )}
+  1188→
+  1189→              {/* Tipe/Model — hidden for jasa ads — multi-entry with + (add) button above Kapasitas */}
+  1190→              {adType !== "jasa" && (
+  1191→                <div className="space-y-1.5">
+  1192→                  <div className="flex items-center justify-between">
+  1193→                    <Label className="text-xs font-medium text-muted-foreground">Tipe/Model</Label>
+  1194→                    <button
+  1195→                      type="button"
+  1196→                      onClick={addModelType}
+  1197→                      className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary transition hover:bg-primary/20"
+  1198→                    >
+  1199→                      <Plus className="size-3" />
+  1200→                      Tambah
+  1201→                    </button>
+  1202→                  </div>
+  1203→                  <Input
+  1204→                    value={modelType}
+  1205→                    onChange={(e) => setModelType(e.target.value)}
+  1206→                    onKeyDown={(e) => {
+  1207→                      if (e.key === "Enter") {
+  1208→                        e.preventDefault();
+  1209→                        addModelType();
+  1210→                      }
+  1211→                    }}
+  1212→                    placeholder="contoh: SM 52, Lithrone, Aquarius (Enter untuk tambah)"
+  1213→                    className="h-12 rounded-lg"
+  1214→                  />
+  1215→                  {/* Added Tipe/Model chips */}
+  1216→                  {modelTypes.length > 0 && (
+  1217→                    <div className="flex flex-wrap gap-1.5">
+  1218→                      {modelTypes.map((m, i) => (
+  1219→                        <span
+  1220→                          key={i}
+  1221→                          className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary"
+  1222→                        >
+  1223→                          {m}
+  1224→                          <button
+  1225→                            type="button"
+  1226→                            onClick={() => setModelTypes((prev) => prev.filter((_, j) => j !== i))}
+  1227→                            className="grid size-4 place-items-center rounded-full bg-primary/20 hover:bg-primary/30"
+  1228→                            aria-label={`Hapus ${m}`}
+  1229→                          >
+  1230→                            <X className="size-2.5" />
+  1231→                          </button>
+  1232→                        </span>
+  1233→                      ))}
+  1234→                    </div>
+  1235→                  )}
+  1236→                </div>
+  1237→              )}
+  1238→
+  1239→              <div className="space-y-1.5">
+  1240→                <Label className="text-xs font-medium text-muted-foreground">Kapasitas</Label>
+  1241→                <Input
+  1242→                  value={capacity}
+  1243→                  onChange={(e) => setCapacity(e.target.value)}
+  1244→                  placeholder="contoh: 100 Ton, 5000 sheets/jam, 3 phase 380V"
+  1245→                  maxLength={200}
+  1246→                  className="h-12 rounded-lg"
+  1247→                />
+  1248→              </div>
+  1249→            </div>
+  1250→
+  1251→          </div>
+  1252→        )}
+  1253→
+  1254→        {/* ========== STEP 5: Preview Iklan ========== */}
+  1255→        {step === 5 && (
+  1256→          <div className="space-y-4">
+  1257→            <h2 className="text-base font-bold text-foreground">Preview Iklan</h2>
+  1258→            <p className="text-xs text-muted-foreground">
+  1259→              Periksa kembali informasi iklan Anda sebelum melanjutkan ke pembayaran.
+  1260→            </p>
+  1261→
+  1262→            {/* Selected package badge (read-only — package was chosen in step 3) */}
+  1263→            <div className="rounded-xl border border-border bg-card p-3 flex items-center justify-between gap-2">
+  1264→              <div className="flex items-center gap-2">
+  1265→                <span className="grid size-8 place-items-center rounded-md bg-secondary">
+  1266→                  {(() => { const Ic = pkgIconMap[selectedPackage] || Tag; return <Ic className={cn("size-4", pkgIconColorMap[selectedPackage] || "text-muted-foreground")} />; })()}
+  1267→                </span>
+  1268→                <div>
+  1269→                  <p className="text-xs text-muted-foreground">Paket Terpilih</p>
+  1270→                  <p className="text-sm font-bold text-foreground">{paketMap[selectedPackage]?.name || selectedPackage}</p>
+  1271→                </div>
+  1272→              </div>
+  1273→              <div className="text-right">
+  1274→                <p className="text-[10px] text-muted-foreground">Maks. {paketMap[selectedPackage]?.maxPhotos ?? 3} foto · {paketMap[selectedPackage]?.duration ?? 30} hari</p>
+  1275→                <p className="text-sm font-extrabold text-primary">{(paketMap[selectedPackage]?.price ?? 0) === 0 ? "GRATIS" : formatRupiahFull(paketMap[selectedPackage]?.price ?? 0)}</p>
+  1276→              </div>
+  1277→            </div>
+  1278→
+  1279→            {/* Preview Iklan (Summary) */}
+  1280→            <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+  1281→              <h3 className="text-sm font-bold text-foreground">Preview Iklan</h3>
+  1282→
+  1283→              {/* Thumbnail + Title + Price */}
+  1284→              <div className="flex gap-3">
+  1285→                <div className="size-20 shrink-0 overflow-hidden rounded-lg border border-border">
+  1286→                  <img
+  1287→                    src={images[0] || "/logo.svg"}
+  1288→                    alt=""
+  1289→                    className="size-full object-cover"
+  1290→                  />
+  1291→                </div>
+  1292→                <div className="flex-1 min-w-0">
+  1293→                  <p className="text-sm font-bold text-foreground truncate">{title || "-"}</p>
+  1294→                  <p className="mt-1 text-base font-extrabold text-green-600">
+  1295→                    {price ? `Rp ${priceDisplay}` : "-"}
+  1296→                  </p>
+  1297→                  {city && province && (
+  1298→                    <p className="mt-1 text-xs text-muted-foreground">
+  1299→                      {city}, {province}
+  1300→                    </p>
+  1301→                  )}
+  1302→                </div>
+  1303→              </div>
+  1304→
+  1305→              {/* Summary details */}
+  1306→              <div className="space-y-2 text-xs">
+  1307→                <div className="flex justify-between">
+  1308→                  <span className="text-muted-foreground">Kategori</span>
+  1309→                  <span className="font-medium text-foreground">{getCategoryName()}</span>
+  1310→                </div>
+  1311→                <div className="flex justify-between">
+  1312→                  <span className="text-muted-foreground">Kondisi</span>
+  1313→                  <span className="font-medium text-foreground">
+  1314→                    {condition === "baru" ? "Baru" : condition === "bekas" ? "Bekas" : "-"}
+  1315→                  </span>
+  1316→                </div>
+  1317→                <div className="flex justify-between">
+  1318→                  <span className="text-muted-foreground">Tahun</span>
+  1319→                  <span className="font-medium text-foreground">{yearProduced || "-"}</span>
+  1320→                </div>
+  1321→                <div className="flex justify-between">
+  1322→                  <span className="text-muted-foreground">Deskripsi</span>
+  1323→                  <span className="font-medium text-foreground max-w-[60%] text-right truncate">
+  1324→                    {description ? (description.length > 60 ? description.slice(0, 60) + "..." : description) : "-"}
+  1325→                  </span>
+  1326→                </div>
+  1327→                <div className="flex justify-between">
+  1328→                  <span className="text-muted-foreground">Paket Iklan</span>
+  1329→                  <span className="font-medium text-foreground">{paketMap[selectedPackage]?.name || selectedPackage}</span>
+  1330→                </div>
+  1331→                <div className="flex justify-between">
+  1332→                  <span className="text-muted-foreground">Foto</span>
+  1333→                  <span className="font-medium text-foreground">{images.length} / {paketMap[selectedPackage]?.maxPhotos ?? 3} foto</span>
+  1334→                </div>
+  1335→              </div>
+  1336→            </div>
+  1337→          </div>
+  1338→        )}
+  1339→
+  1340→        {/* ========== STEP 6: Pembayaran ========== */}
+  1341→        {step === 6 && (
+  1342→          <div className="space-y-4">
+  1343→            <h2 className="text-base font-bold text-foreground">Pembayaran</h2>
+  1344→
+  1345→            {/* Selected package badge (read-only — package was chosen in step 3) */}
+  1346→            <div className="rounded-xl border border-border bg-card p-3 flex items-center justify-between gap-2">
+  1347→              <div className="flex items-center gap-2">
+  1348→                <span className="grid size-8 place-items-center rounded-md bg-secondary">
+  1349→                  {(() => { const Ic = pkgIconMap[selectedPackage] || Tag; return <Ic className={cn("size-4", pkgIconColorMap[selectedPackage] || "text-muted-foreground")} />; })()}
+  1350→                </span>
+  1351→                <div>
+  1352→                  <p className="text-xs text-muted-foreground">Paket Terpilih</p>
+  1353→                  <p className="text-sm font-bold text-foreground">{paketMap[selectedPackage]?.name || selectedPackage}</p>
+  1354→                </div>
+  1355→              </div>
+  1356→              <div className="text-right">
+  1357→                <p className="text-[10px] text-muted-foreground">Maks. {paketMap[selectedPackage]?.maxPhotos ?? 3} foto · {paketMap[selectedPackage]?.duration ?? 30} hari</p>
+  1358→                <p className="text-sm font-extrabold text-primary">{(paketMap[selectedPackage]?.price ?? 0) === 0 ? "GRATIS" : formatRupiahFull(paketMap[selectedPackage]?.price ?? 0)}</p>
+  1359→              </div>
+  1360→            </div>
+  1361→
+  1362→            {/* Payment method for paid packages */}
+  1363→            {showPayment && (paketMap[selectedPackage]?.price ?? 0) > 0 && (
+  1364→              <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+  1365→                <h3 className="text-sm font-bold text-foreground">Metode Pembayaran</h3>
+  1366→                <p className="text-xs text-muted-foreground">
+  1367→                  Pilih metode pembayaran untuk mengaktifkan iklan Anda.
+  1368→                </p>
+  1369→
+  1370→                {/* Live payment summary — updates immediately when package
+  1371→                    changes. Shows: harga paket + kode unik = total. */}
+  1372→                <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1.5 text-xs">
+  1373→                  <div className="flex items-center justify-between">
+  1374→                    <span className="text-muted-foreground">Harga Paket {paketMap[selectedPackage]?.name || selectedPackage}</span>
+  1375→                    <span className="font-semibold text-foreground">{formatRupiahFull(paketMap[selectedPackage]?.price ?? 0)}</span>
+  1376→                  </div>
+  1377→                  <div className="flex items-center justify-between">
+  1378→                    <span className="text-muted-foreground">Kode Unik (3 digit)</span>
+  1379→                    <span className="font-bold text-primary">
+  1380→                      {uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "..."}
+  1381→                    </span>
+  1382→                  </div>
+  1383→                  <div className="mt-1 flex items-center justify-between border-t border-border pt-1.5">
+  1384→                    <span className="font-semibold text-foreground">Total Transfer</span>
+  1385→                    <span className="text-base font-extrabold text-primary">{formatRupiahFull(qrisAmount)}</span>
+  1386→                  </div>
+  1387→                  <p className="pt-0.5 text-[10px] text-muted-foreground">
+  1388→                    Kode unik berbeda untuk setiap paket & pembayar — tidak akan sama dengan pembayar lain.
+  1389→                  </p>
+  1390→                </div>
+  1391→
+  1392→                <div className="grid gap-2">
+  1393→                  {[
+  1394→                    { key: "bca", label: "Transfer ke Blu BCA", desc: "Transfer manual ke rekening Blu BCA" },
+  1395→                    { key: "qris", label: "QRIS GoPay", desc: "Scan QR dari GoPay / e-wallet" },
+  1396→                  ].map((m) => (
+  1397→                    <button
+  1398→                      type="button"
+  1399→                      key={m.key}
+  1400→                      onClick={() => setPaymentMethod(m.key)}
+  1401→                      className={cn(
+  1402→                        "rounded-lg border-2 p-3 text-left transition",
+  1403→                        paymentMethod === m.key
+  1404→                          ? "border-primary bg-primary/5"
+  1405→                          : "border-border hover:bg-accent"
+  1406→                      )}
+  1407→                    >
+  1408→                      <p className="text-sm font-semibold">{m.label}</p>
+  1409→                      <p className="text-[10px] text-muted-foreground">{m.desc}</p>
+  1410→                    </button>
+  1411→                  ))}
+  1412→                </div>
+  1413→                {paymentMethod && (
+  1414→                  <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-orange-700">
+  1415→                    <CheckCircle2 className="mr-1 inline size-4" />
+  1416→                    Pembayaran via {paymentMethod.toUpperCase()} dipilih.
+  1417→                    <br />
+  1418→                    <span className="text-[10px] text-orange-600">Simulasi pembayaran — iklan langsung aktif setelah konfirmasi.</span>
+  1419→                  </div>
+  1420→                )}
+  1421→              </div>
+  1422→            )}
+  1423→
+  1424→            {/* Free package — no payment needed */}
+  1425→            {(!showPayment || (paketMap[selectedPackage]?.price ?? 0) === 0) && (
+  1426→              <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
+  1427→                <CheckCircle2 className="mr-1 inline size-4" />
+  1428→                Paket ini <strong>GRATIS</strong> — tidak diperlukan pembayaran. Klik &quot;Publish Iklan&quot; untuk menerbitkan.
+  1429→              </div>
+  1430→            )}
+  1431→          </div>
+  1432→        )}
+  1433→      </div>
+  1434→
+  1435→      {/* Bottom action button */}
+  1436→      <div className="sticky bottom-0 left-0 right-0 -mx-4 mt-6 border-t border-border bg-background px-4 pb-4 pt-3 dark:border-transparent">
+  1437→        {step < 6 ? (
+  1438→          <Button
+  1439→            type="button"
+  1440→            onClick={nextStep}
+  1441→            className="w-full h-12 rounded-lg bg-green-500 text-white font-semibold hover:bg-green-600 gap-2"
+  1442→          >
+  1443→            Lanjut
+  1444→            <ChevronRight className="size-4" />
+  1445→          </Button>
+  1446→        ) : (
+  1447→          <Button
+  1448→            type="button"
+  1449→            disabled={mutation.isPending}
+  1450→            onClick={submit}
+  1451→            className="w-full h-12 rounded-lg bg-green-500 text-white font-semibold hover:bg-green-600 gap-2"
+  1452→          >
+  1453→            {mutation.isPending ? (
+  1454→              <Loader2 className="size-4 animate-spin" />
+  1455→            ) : (
+  1456→              <Tag className="size-4" />
+  1457→            )}
+  1458→            {mutation.isPending
+  1459→              ? "Memproses..."
+  1460→              : (paketMap[selectedPackage]?.price ?? 0) > 0 && paymentMethod
+  1461→                ? "Bayar & Pasang"
+  1462→                : "Publikasikan"}
+  1463→          </Button>
+  1464→        )}
+  1465→      </div>
+  1466→
+  1467→      {/* QRIS PAYMENT MODAL — full screen overlay */}
+  1468→      {qrisModal && (
+  1469→        <div className="no-scrollbar fixed inset-0 z-[70] overflow-y-auto bg-background md:overflow-hidden">
+  1470→          <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 py-4 sm:py-6 md:h-screen">
+  1471→            {/* Header */}
+  1472→            <div className="mb-4 flex shrink-0 items-center justify-between">
+  1473→              <h2 className="text-xl font-bold sm:text-2xl">
+  1474→                {paymentMethod === "bca" ? "Transfer ke Blu BCA" : "Pembayaran QRIS"}
+  1475→              </h2>
+  1476→              <button
+  1477→                type="button"
+  1478→                onClick={() => {
+  1479→                  setQrisModal(false);
+  1480→                  setProofImage("");
+  1481→                }}
+  1482→                className="grid size-10 place-items-center rounded-full border border-border bg-card hover:bg-accent"
+  1483→              >
+  1484→                <X className="size-5" />
+  1485→              </button>
+  1486→            </div>
+  1487→
+  1488→            {/* Content */}
+  1489→            <div className="grid flex-1 gap-6 md:grid-cols-2 md:overflow-hidden">
+  1490→              {/* LEFT — instructions + upload proof */}
+  1491→              <div className="order-2 space-y-3 md:order-1 md:overflow-hidden">
+  1492→                {/* Instructions */}
+  1493→                <div className="rounded-xl border border-border bg-card p-4">
+  1494→                  <p className="text-sm font-bold">Cara Pembayaran:</p>
+  1495→                  {paymentMethod === "bca" ? (
+  1496→                    <ol className="mt-2 list-inside list-decimal space-y-1 text-xs text-muted-foreground">
+  1497→                      <li>Buka aplikasi m-banking / ATM Blu BCA</li>
+  1498→                      <li>Transfer ke rekening <strong className="text-foreground">0011 2208 8800</strong> a.n. Lina Listiawati</li>
+  1499→                      <li>Transfer jumlah <strong className="text-foreground">{formatRupiahFull(qrisAmount)}</strong> (termasuk kode unik <strong className="text-primary">{uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "-"}</strong>)</li>
+  1500→                      <li>Konfirmasi & selesaikan transfer</li>
+  1501→                      <li>Upload foto / screenshot bukti transfer di bawah</li>
+  1502→                    </ol>
+  1503→                  ) : (
+  1504→                    <ol className="mt-2 list-inside list-decimal space-y-1 text-xs text-muted-foreground">
+  1505→                      <li>Buka aplikasi e-wallet / m-banking</li>
+  1506→                      <li>Pilih menu Scan / Bayar QRIS</li>
+  1507→                      <li>Arahkan kamera ke QR code di sebelah kanan</li>
+  1508→                      <li>Bayar jumlah <strong className="text-foreground">{formatRupiahFull(qrisAmount)}</strong> (termasuk kode unik <strong className="text-primary">{uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "-"}</strong>)</li>
+  1509→                      <li>Konfirmasi & selesaikan pembayaran</li>
+  1510→                      <li>Upload foto / screenshot bukti pembayaran di bawah</li>
+  1511→                    </ol>
+  1512→                  )}
+  1513→                </div>
+  1514→
+  1515→                {/* Upload proof of payment */}
+  1516→                <div className="rounded-xl border border-border bg-card p-4">
+  1517→                  <p className="mb-2 text-sm font-bold">Kirim Bukti Pembayaran</p>
+  1518→                  {proofImage ? (
+  1519→                    <div className="relative">
+  1520→                      <img src={proofImage} alt="Bukti Pembayaran" className="max-h-40 w-full rounded-lg border border-border object-contain" />
+  1521→                      <button
+  1522→                        type="button"
+  1523→                        onClick={() => setProofImage("")}
+  1524→                        className="absolute right-1 top-1 grid size-7 place-items-center rounded-full bg-red-500 text-white shadow"
+  1525→                      >
+  1526→                        <X className="size-4" />
+  1527→                      </button>
+  1528→                    </div>
+  1529→                  ) : (
+  1530→                    <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border p-6 text-center transition hover:border-primary hover:bg-accent">
+  1531→                      <Upload className="size-8 text-muted-foreground" />
+  1532→                      <span className="text-xs text-muted-foreground">Klik untuk upload bukti pembayaran</span>
+  1533→                      <span className="text-[10px] text-muted-foreground/70">JPG, PNG (maks 100KB)</span>
+  1534→                      <input
+  1535→                        type="file"
+  1536→                        accept="image/*"
+  1537→                        className="hidden"
+  1538→                        onChange={async (e) => {
+  1539→                          const file = e.target.files?.[0];
+  1540→                          if (!file) return;
+  1541→                          try {
+  1542→                            const compressed = await compressImage(file);
+  1543→                            setProofImage(compressed);
+  1544→                            toast.success("Bukti pembayaran diunggah");
+  1545→                          } catch (err: any) {
+  1546→                            toast.error("Gagal upload: " + (err?.message || ""));
+  1547→                          }
+  1548→                          e.target.value = "";
+  1549→                        }}
+  1550→                      />
+  1551→                    </label>
+  1552→                  )}
+  1553→                </div>
+  1554→
+  1555→                {/* Action buttons */}
+  1556→                <div className="flex gap-2">
+  1557→                  <Button
+  1558→                    variant="outline"
+  1559→                    className="flex-1"
+  1560→                    onClick={() => {
+  1561→                      setQrisModal(false);
+  1562→                      setProofImage("");
+  1563→                      toast.info("Pembayaran dibatalkan");
+  1564→                    }}
+  1565→                  >
+  1566→                    Batal
+  1567→                  </Button>
+  1568→                  <Button
+  1569→                    className="flex-1 gap-1.5"
+  1570→                    disabled={mutation.isPending || uploadingProof || !proofImage}
+  1571→                    onClick={async () => {
+  1572→                      const pkgName = paketMap[selectedPackage]?.name || selectedPackage;
+  1573→
+  1574→                      setUploadingProof(true);
+  1575→
+  1576→                      // === ORDER IS CRITICAL ===
+  1577→                      // 1. Upload proof + ad images → get public URLs
+  1578→                      // 2. Send proof to admin chat (via socket.io, realtime)
+  1579→                      // 3. Open WhatsApp with proof URL (new tab via anchor-click)
+  1580→                      // 4. Create the listing LAST (doSubmit → POST /api/listings)
+  1581→                      //
+  1582→                      // WHY doSubmit() is LAST:
+  1583→                      // doSubmit() fires mutation.mutate() which calls POST /api/listings.
+  1584→                      // When the POST completes (~100ms), mutation.onSuccess calls
+  1585→                      // goToProfilePanel("iklan-saya") which NAVIGATES AWAY from this
+  1586→                      // page. If doSubmit() were called FIRST, the page would navigate
+  1587→                      // away before the proof upload / chat / WhatsApp steps complete
+  1588→                      // — those async operations would be aborted (component unmounted).
+  1589→                      // That was the bug: proof was never sent to chat/WhatsApp.
+  1590→                      //
+  1591→                      // By putting doSubmit() LAST, we ensure all proof delivery
+  1592→                      // (chat + WhatsApp) completes BEFORE the listing is created and
+  1593→                      // the page navigates away. WhatsApp opens via anchor-click (new
+  1594→                      // tab), so it does NOT navigate the current page away — the
+  1595→                      // current page stays and doSubmit() still executes after.
+  1596→                      try {
+  1597→                        // === Ad image (gambar iklan) ===
+  1598→                        const adImage = images[0] || PLACEHOLDER_IMAGES[0];
+  1599→
+  1600→                        // === Proof image (gambar bukti transfer) ===
+  1601→                        const matches = proofImage.match(/^data:(image\/\w+);base64,(.+)$/);
+  1602→                        if (!matches) { toast.error("Format gambar tidak valid"); return; }
+  1603→
+  1604→                        // === STEP 1: Upload BOTH images to server first ===
+  1605→                        // This gives us public URLs that are:
+  1606→                        //  - Smaller to send via socket (URL vs base64 data URL)
+  1607→                        //  - More reliable (no socket.io payload size issues)
+  1608→                        //  - Reusable for both WhatsApp AND chat admin
+  1609→                        //  - Persisted as clickable links in the chat DB
+  1610→
+  1611→                        // Upload ad image (if it's a data URL)
+  1612→                        let adImageUrl: string = adImage;
+  1613→                        if (adImage.startsWith("data:image/")) {
+  1614→                          try {
+  1615→                            const adUp = await fetch("/api/upload-proof", {
+  1616→                              method: "POST",
+  1617→                              headers: { "Content-Type": "application/json" },
+  1618→                              body: JSON.stringify({ image: adImage }),
+  1619→                            });
+  1620→                            if (adUp.ok) {
+  1621→                              const adData = await adUp.json();
+  1622→                              if (adData?.url) adImageUrl = adData.url;
+  1623→                            }
+  1624→                          } catch { /* keep data URL fallback */ }
+  1625→                        }
+  1626→
+  1627→                        // Upload proof image → get public URL
+  1628→                        let proofUrl: string = proofImage;
+  1629→                        try {
+  1630→                          const proofUp = await fetch("/api/upload-proof", {
+  1631→                            method: "POST",
+  1632→                            headers: { "Content-Type": "application/json" },
+  1633→                            body: JSON.stringify({ image: proofImage }),
+  1634→                          });
+  1635→                          if (proofUp.ok) {
+  1636→                            const proofData = await proofUp.json();
+  1637→                            if (proofData?.url) proofUrl = proofData.url;
+  1638→                          }
+  1639→                        } catch { /* keep data URL fallback */ }
+  1640→
+  1641→                        // === STEP 2: Chat admin via socket (REALTIME) — MUST run BEFORE WhatsApp ===
+  1642→                        // CRITICAL: openWhatsAppWithUrl() navigates the page away (window.location.href)
+  1643→                        // on mobile and as a desktop fallback. Any code AFTER it is aborted.
+  1644→                        // So we MUST send the chat messages FIRST, then open WhatsApp.
+  1645→                        if (user?.id) {
+  1646→                          try {
+  1647→                            const adminRes = await fetch("/api/admin/info");
+  1648→                            if (adminRes.ok) {
+  1649→                              const { admin } = (await adminRes.json()) as { admin: { id: string; name: string } | null };
+  1650→                              const methodLabel = paymentMethod === "bca" ? "Transfer Blu BCA" : "QRIS";
+  1651→                              const adCaption =
+  1652→                                `*Gambar Iklan*\n\n` +
+  1653→                                `Judul: ${title}\n` +
+  1654→                                `Paket: ${pkgName}\n` +
+  1655→                                `User: ${user.name || "-"} (${user.email || "-"})`;
+  1656→                              const proofCaption =
+  1657→                                `*Bukti Pembayaran Iklan*\n\n` +
+  1658→                                `Judul Iklan: ${title}\n` +
+  1659→                                `Paket: ${pkgName}\n` +
+  1660→                                `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+  1661→                                `Kode Unik: ${uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
+  1662→                                `Metode: ${methodLabel}\n` +
+  1663→                                `User: ${user.name || "-"} (${user.email || "-"})\n\n` +
+  1664→                                `Bukti pembayaran terlampir. Mohon diverifikasi agar iklan segera aktif.`;
+  1665→
+  1666→                              if (admin?.id) {
+  1667→                                // Message 1: ad image (sent as URL for smaller payload)
+  1668→                                const ack1 = await sendMessage({
+  1669→                                  senderId: user.id,
+  1670→                                  receiverId: admin.id,
+  1671→                                  content: adCaption,
+  1672→                                  image: adImageUrl,
+  1673→                                  listingTitle: `Gambar Iklan — ${title}`,
+  1674→                                });
+  1675→                                if (!ack1?.ok) {
+  1676→                                  await fetch("/api/messages", {
+  1677→                                    method: "POST",
+  1678→                                    headers: { "Content-Type": "application/json" },
+  1679→                                    body: JSON.stringify({
+  1680→                                      senderId: user.id,
+  1681→                                      receiverId: admin.id,
+  1682→                                      content: adCaption,
+  1683→                                      image: adImageUrl,
+  1684→                                      listingTitle: `Gambar Iklan — ${title}`,
+  1685→                                    }),
+  1686→                                  });
+  1687→                                }
+  1688→                                // Message 2: payment proof image (sent as URL)
+  1689→                                const ack2 = await sendMessage({
+  1690→                                  senderId: user.id,
+  1691→                                  receiverId: admin.id,
+  1692→                                  content: proofCaption,
+  1693→                                  image: proofUrl,
+  1694→                                  listingTitle: `Bukti Pembayaran — ${title}`,
+  1695→                                });
+  1696→                                if (!ack2?.ok) {
+  1697→                                  await fetch("/api/messages", {
+  1698→                                    method: "POST",
+  1699→                                    headers: { "Content-Type": "application/json" },
+  1700→                                    body: JSON.stringify({
+  1701→                                      senderId: user.id,
+  1702→                                      receiverId: admin.id,
+  1703→                                      content: proofCaption,
+  1704→                                      image: proofUrl,
+  1705→                                      listingTitle: `Bukti Pembayaran — ${title}`,
+  1706→                                    }),
+  1707→                                  });
+  1708→                                }
+  1709→                                toast.success("Bukti pembayaran dikirim ke chat admin (realtime)");
+  1710→                              }
+  1711→                            }
+  1712→                          } catch (chatErr) {
+  1713→                            console.error("Gagal kirim bukti ke chat admin:", chatErr);
+  1714→                            toast.error("Gagal mengirim bukti ke chat admin");
+  1715→                          }
+  1716→                        }
+  1717→
+  1718→                        // === STEP 3: WhatsApp — open wa.me with caption + proof URL ===
+  1719→                        // This is LAST because it may navigate the page away (mobile / popup blocked).
+  1720→                        // The chat messages are already sent above, so even if navigation aborts
+  1721→                        // the remaining JS, the proof is delivered to admin chat.
+  1722→                        const caption =
+  1723→                          `*Bukti Pembayaran Iklan mesinKU*\n\n` +
+  1724→                          `Paket: ${pkgName}\n` +
+  1725→                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+  1726→                          `Kode Unik: ${uniqueCode > 0 ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
+  1727→                          `User: ${user?.name || "-"}\n` +
+  1728→                          `Email: ${user?.email || "-"}\n` +
+  1729→                          `Judul Iklan: ${title}\n\n` +
+  1730→                          `Gambar Iklan:\n${adImageUrl}`;
+  1731→
+  1732→                        const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
+  1733→                        if (result.status === "opened") {
+  1734→                          toast.success("Bukti pembayaran terkirim ke WhatsApp admin!");
+  1735→                        } else if (showWhatsAppFallbackToast(result)) {
+  1736→                          // Fallback toast shown (popup was blocked in iframe).
+  1737→                          // Proof was already sent to admin chat above.
+  1738→                        } else if (result.status === "error") {
+  1739→                          toast.error("Gagal membuka WhatsApp");
+  1740→                        }
+  1741→
+  1742→                        // === STEP 4: Create the listing LAST ===
+  1743→                        // doSubmit() fires mutation.mutate() → POST /api/listings.
+  1744→                        // On success, mutation.onSuccess navigates to "Iklan Saya".
+  1745→                        // This is intentionally LAST so that proof delivery (chat +
+  1746→                        // WhatsApp) has already completed before the page navigates.
+  1747→                        // WhatsApp opens via anchor-click (new tab), so the current
+  1748→                        // page is NOT navigated away — doSubmit() still executes.
+  1749→                        doSubmit();
+  1750→                      } catch {
+  1751→                        toast.error("Gagal mengirim bukti");
+  1752→                      } finally {
+  1753→                        setUploadingProof(false);
+  1754→                      }
+  1755→                      // NOTE: do NOT close the QRIS modal here.
+  1756→                      // doSubmit() → mutation.onSuccess → goToProfilePanel navigates
+  1757→                      // away (which implicitly hides the modal). If the listing
+  1758→                      // creation fails, the modal stays open so the user can retry.
+  1759→                    }}
+  1760→                  >
+  1761→                    {uploadingProof ? <Loader2 className="size-4 animate-spin" /> : mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+  1762→                    {uploadingProof ? "Mengirim bukti..." : mutation.isPending ? "Memproses..." : "Kirim & Pasang Iklan"}
+  1763→                  </Button>
+  1764→                </div>
+  1765→                {!proofImage && (
+  1766→                  <p className="text-center text-[11px] text-amber-600">Upload bukti pembayaran dulu untuk melanjutkan</p>
+  1767→                )}
+  1768→              </div>
+  1769→
+  1770→              {/* RIGHT — total + QR code / BCA info */}
+  1771→              <div className="order-1 flex flex-col items-center justify-start pb-6 md:order-2 md:pb-0">
+  1772→                {/* Total */}
+  1773→                <div className="mb-4 text-center">
+  1774→                  <p className="text-xs text-muted-foreground">Total Pembayaran</p>
+  1775→                  <p className="text-3xl font-extrabold text-primary sm:text-4xl">{formatRupiahFull(qrisAmount)}</p>
+  1776→                  {uniqueCode > 0 && (
+  1777→                    <p className="mt-2 text-[11px] text-muted-foreground">
+  1778→                      Harga paket <span className="font-semibold text-foreground">{formatRupiahFull(qrisAmount - uniqueCode)}</span> +
+  1779→                      Kode unik <span className="font-bold text-primary">{String(uniqueCode).padStart(3, "0")}</span>
+  1780→                    </p>
+  1781→                  )}
+  1782→                  <p className="mt-1 text-[11px] text-muted-foreground">
+  1783→                    Kode unik 3 digit untuk identifikasi pembayar
+  1784→                  </p>
+  1785→                </div>
+  1786→                {paymentMethod === "bca" ? (
+  1787→                  <>
+  1788→                    <div className="rounded-2xl border-2 border-blue-500 bg-white p-8 shadow-lg text-center">
+  1789→                      <p className="text-sm font-bold text-blue-600">Blu BCA</p>
+  1790→                      <p className="mt-2 text-3xl font-extrabold font-bold tracking-wider text-black">0011 2208 8800</p>
+  1791→                      <p className="mt-2 text-sm font-bold text-black">a.n. Lina Listiawati</p>
+  1792→                    </div>
+  1793→                    <p className="mt-3 text-center text-sm font-semibold text-muted-foreground">Transfer ke rekening di atas</p>
+  1794→                  </>
+  1795→                ) : (
+  1796→                  <>
+  1797→                    <div className="rounded-2xl border-2 border-border bg-white p-4 shadow-lg sm:p-6">
+  1798→                      <img
+  1799→                        src={qrisImageUrl}
+  1800→                        alt="QRIS mesinKU"
+  1801→                        className="h-auto w-full max-w-[250px] object-contain"
+  1802→                      />
+  1803→                    </div>
+  1804→                    <p className="mt-3 text-center text-sm font-semibold text-muted-foreground">Scan QRIS untuk membayar</p>
+  1805→                  </>
+  1806→                )}
+  1807→              </div>
+  1808→            </div>
+  1809→          </div>
+  1810→        </div>
+  1811→      )}
+  1812→    </div>
+  1813→  );
+  1814→}
+  1815→

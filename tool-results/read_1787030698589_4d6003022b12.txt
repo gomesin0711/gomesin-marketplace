@@ -1,0 +1,731 @@
+     1→import { NextRequest, NextResponse } from "next/server";
+     2→import { db, isDbAvailable } from "@/lib/db";
+     3→import { parseListing } from "@/lib/types";
+     4→import { getPaketMap } from "@/lib/paket";
+     5→import { saveImagesToLocal } from "@/lib/save-image";
+     6→import { getFallbackListings } from "@/lib/fallback-data";
+     7→import type { ListingFilters } from "@/lib/fallback-data";
+     8→import { broadcastListingPending } from "@/lib/broadcast";
+     9→import { normalizeSupabaseDate } from "@/lib/supabase-helpers";
+    10→import { getSessionUser } from "@/lib/session";
+    11→
+    12→// ---------------------------------------------------------------------------
+    13→// Supabase helper — used on Vercel where Prisma (sqlite provider) cannot
+    14→// connect to PostgreSQL. Locally we use Prisma + SQLite.
+    15→// Mirrors /api/admin/listings/route.ts.
+    16→// ---------------------------------------------------------------------------
+    17→const SUPABASE_URL =
+    18→  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://yzxeinqoryvprhuibtzn.supabase.co";
+    19→const SUPABASE_ANON_KEY =
+    20→  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    21→  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl6eGVpbnFvcnl2cHJodWlidHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4NjA5NTcsImV4cCI6MjEwMjQzNjk1N30.gmDvyEmNGP2PbL_3a8k18pTggRE9zQ3yBrBPQNJjWTI";
+    22→
+    23→async function getSupabase() {
+    24→  const { createClient } = await import("@supabase/supabase-js");
+    25→  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    26→}
+    27→
+    28→function safeJsonParse(s: string, fallback: any) {
+    29→  try { return JSON.parse(s); } catch { return fallback; }
+    30→}
+    31→
+    32→// Parse a raw Supabase row into the same shape as parseListing(Prisma row).
+    33→function parseSupabaseListing(row: any) {
+    34→  if (!row) return row;
+    35→  const seller = row.seller
+    36→    ? { ...row.seller, joinedAt: normalizeSupabaseDate(row.seller.joinedAt) }
+    37→    : null;
+    38→  return {
+    39→    ...row,
+    40→    price: typeof row.price === "string" ? Number(row.price) : row.price ?? 0,
+    41→    images: row.images ? (typeof row.images === "string" ? safeJsonParse(row.images, []) : row.images) : [],
+    42→    specs: row.specs ? (typeof row.specs === "string" ? safeJsonParse(row.specs, {}) : row.specs) : {},
+    43→    createdAt: normalizeSupabaseDate(row.createdAt),
+    44→    paymentExpiry: normalizeSupabaseDate(row.paymentExpiry),
+    45→    // Mirror Prisma's parseListing: expose seller.joinedAt at the top level too.
+    46→    joinedAt: seller?.joinedAt ?? null,
+    47→    category: row.category ?? null,
+    48→    seller,
+    49→    user: row.user ?? null,
+    50→  };
+    51→}
+    52→
+    53→export async function GET(req: NextRequest) {
+    54→  const { searchParams } = new URL(req.url);
+    55→  const q = searchParams.get("q")?.trim() || "";
+    56→  const category = searchParams.get("category") || "";
+    57→  const condition = searchParams.get("condition") || "";
+    58→  const minPrice = searchParams.get("minPrice");
+    59→  const maxPrice = searchParams.get("maxPrice");
+    60→  const province = searchParams.get("province") || "";
+    61→  const packageType = searchParams.get("packageType") || "";
+    62→  const city = searchParams.get("city")?.trim() || "";
+    63→  const sellerName = searchParams.get("seller")?.trim() || "";
+    64→  const sort = searchParams.get("sort") || "newest";
+    65→  const featuredOnly = searchParams.get("featured") === "1";
+    66→  const idsParam = searchParams.get("ids");
+    67→  const ids = idsParam ? idsParam.split(",").filter(Boolean) : null;
+    68→  const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
+    69→  const limit = Math.min(48, Math.max(1, parseInt(searchParams.get("limit") || "24", 10)));
+    70→  const weekOnly = searchParams.get("week") === "1";
+    71→
+    72→  try {
+    73→    const where: Record<string, any> = { status: "active", paymentStatus: "paid", violationFlag: false };
+    74→    if (ids && ids.length) {
+    75→      where.id = { in: ids };
+    76→    }
+    77→
+    78→    if (q) {
+    79→      where.OR = [
+    80→        { title: { contains: q } },
+    81→        { description: { contains: q } },
+    82→        { brand: { contains: q } },
+    83→        { seller: { name: { contains: q } } },
+    84→        { city: { contains: q } },
+    85→      ];
+    86→    }
+    87→    if (category) {
+    88→      // Kategori "Jasa Teknisi" (jasa-teknisi) → tampilkan semua iklan jasa
+    89→      // (iklan jasa pakai condition="jasa", bukan categoryId jasa-teknisi).
+    90→      if (category === "jasa-teknisi") {
+    91→        where.condition = "jasa";
+    92→      } else {
+    93→        where.category = { slug: category };
+    94→      }
+    95→    }
+    96→    if (condition) where.condition = condition;
+    97→    if (province) where.province = province;
+    98→    if (city) where.city = { contains: city };
+    99→    if (sellerName) where.seller = { name: { contains: sellerName } };
+   100→    if (minPrice || maxPrice) {
+   101→      where.price = {};
+   102→      if (minPrice) where.price.gte = Math.floor(Number(minPrice));
+   103→      if (maxPrice) where.price.lte = Math.floor(Number(maxPrice));
+   104→    }
+   105→    if (featuredOnly) where.featured = true;
+   106→    // Week filter: only listings from the last 7 days
+   107→    if (weekOnly) {
+   108→      const weekAgo = new Date();
+   109→      weekAgo.setDate(weekAgo.getDate() - 7);
+   110→      where.createdAt = { gte: weekAgo };
+   111→    }
+   112→    if (packageType) {
+   113→      const pkgList = packageType.split(",").map((p) => p.trim()).filter(Boolean);
+   114→      if (pkgList.length === 1) where.packageType = pkgList[0];
+   115→      else if (pkgList.length > 1) where.packageType = { in: pkgList };
+   116→    }
+   117→
+   118→    const orderBy: Record<string, any> =
+   119→      sort === "price-asc"
+   120→        ? { price: "asc" }
+   121→        : sort === "price-desc"
+   122→        ? { price: "desc" }
+   123→        : sort === "popular"
+   124→        ? { views: "desc" }
+   125→        : { createdAt: "desc" };
+   126→
+   127→    const [total, rows] = await Promise.all([
+   128→      db.listing.count({ where }),
+   129→      db.listing.findMany({
+   130→        where,
+   131→        orderBy,
+   132→        skip: (page - 1) * limit,
+   133→        take: limit,
+   134→        include: { category: true, seller: true, user: { select: { id: true, name: true, phone: true, email: true, city: true, logoImage: true, bannerImage: true } } },
+   135→      }),
+   136→    ]);
+   137→
+   138→    // Newest ads first — no promo-rank grouping, pure createdAt desc order.
+   139→    const listings = rows.map(parseListing);
+   140→
+   141→    return NextResponse.json({
+   142→      listings,
+   143→      total,
+   144→      page,
+   145→      limit,
+   146→      totalPages: Math.ceil(total / limit),
+   147→    }, {
+   148→      headers: {
+   149→        // CDN cache 30s, serve stale up to 60s while revalidating.
+   150→        // Reduces Supabase egress: cache hit = no DB query at all.
+   151→        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',
+   152→      },
+   153→    });
+   154→  } catch (error) {
+   155→    console.error("GET /api/listings Prisma error, trying Supabase:", error);
+   156→    // DO NOT return getFallbackListings here anymore — fall through to Supabase
+   157→  }
+   158→
+   159→  // --- Path B: Vercel (raw Supabase) ---
+   160→  // NOTE: Supabase tables in this project have NO foreign-key relationships
+   161→  // declared, so the nested .select("*, category(*)") pattern that PostgREST
+   162→  // requires FKs for would FAIL and silently return []. We select only "*" and
+   163→  // batch-fetch the related Category/Seller/User rows manually (same pattern
+   164→  // as /api/admin/listings/route.ts).
+   165→  try {
+   166→    const supabase = await getSupabase();
+   167→
+   168→    // Resolve category filter once: either condition="jasa" (for "jasa-teknisi"
+   169→    // slug) or categoryId=<resolved id> (looked up by slug). Hoisted so we can
+   170→    // re-use the resolved values for the count query below.
+   171→    let categoryCondition: string | null = null; // e.g. "jasa"
+   172→    let categoryIdFilter: string | null = null;
+   173→    if (category) {
+   174→      if (category === "jasa-teknisi") {
+   175→        categoryCondition = "jasa";
+   176→      } else {
+   177→        const { data: cat } = await supabase
+   178→          .from("Category")
+   179→          .select("id")
+   180→          .eq("slug", category)
+   181→          .limit(1)
+   182→          .single();
+   183→        if (cat) categoryIdFilter = cat.id;
+   184→      }
+   185→    }
+   186→
+   187→    // Build Supabase query with the SAME filters as the Prisma where clause:
+   188→    // - status = "active"
+   189→    // - paymentStatus = "paid"
+   190→    // - violationFlag = false
+   191→    let query = supabase
+   192→      .from("Listing")
+   193→      .select("*")
+   194→      .eq("status", "active")
+   195→      .eq("paymentStatus", "paid")
+   196→      .eq("violationFlag", false);
+   197→
+   198→    // Apply filters (mirror the Prisma where clause):
+   199→    if (ids && ids.length) query = query.in("id", ids);
+   200→    if (q) {
+   201→      // Supabase text search: use .or() with ilike for each searchable field.
+   202→      // Cannot do cross-table search on seller.name without a join — just
+   203→      // search title/description/brand/city (minor edge case skipped).
+   204→      query = query.or(
+   205→        `title.ilike.%${q}%,description.ilike.%${q}%,brand.ilike.%${q}%,city.ilike.%${q}%`
+   206→      );
+   207→    }
+   208→    if (categoryCondition) query = query.eq("condition", categoryCondition);
+   209→    if (categoryIdFilter) query = query.eq("categoryId", categoryIdFilter);
+   210→    if (condition && !categoryCondition) query = query.eq("condition", condition);
+   211→    if (province) query = query.eq("province", province);
+   212→    if (city) query = query.ilike("city", `%${city}%`);
+   213→    if (minPrice) query = query.gte("price", Math.floor(Number(minPrice)));
+   214→    if (maxPrice) query = query.lte("price", Math.floor(Number(maxPrice)));
+   215→    if (featuredOnly) query = query.eq("featured", true);
+   216→    if (weekOnly) {
+   217→      const weekAgo = new Date();
+   218→      weekAgo.setDate(weekAgo.getDate() - 7);
+   219→      query = query.gte("createdAt", weekAgo.toISOString());
+   220→    }
+   221→    if (packageType) {
+   222→      const pkgList = packageType.split(",").map((p) => p.trim()).filter(Boolean);
+   223→      if (pkgList.length === 1) query = query.eq("packageType", pkgList[0]);
+   224→      else if (pkgList.length > 1) query = query.in("packageType", pkgList);
+   225→    }
+   226→
+   227→    // Apply sort (mirror Prisma orderBy)
+   228→    if (sort === "price-asc") query = query.order("price", { ascending: true });
+   229→    else if (sort === "price-desc") query = query.order("price", { ascending: false });
+   230→    else if (sort === "popular") query = query.order("views", { ascending: false });
+   231→    else query = query.order("createdAt", { ascending: false });
+   232→
+   233→    // Apply pagination
+   234→    query = query.range((page - 1) * limit, (page - 1) * limit + limit - 1);
+   235→
+   236→    const { data: rows, error } = await query;
+   237→    if (error) {
+   238→      console.error("[listings] Supabase GET error:", error);
+   239→      const filters: ListingFilters = {
+   240→        q: q || undefined,
+   241→        category: category || undefined,
+   242→        condition: condition || undefined,
+   243→        province: province || undefined,
+   244→        packageType: packageType || undefined,
+   245→        sort: sort || undefined,
+   246→        page,
+   247→        limit,
+   248→        ids,
+   249→        featured: featuredOnly || undefined,
+   250→      };
+   251→      return NextResponse.json(getFallbackListings(filters));
+   252→    }
+   253→
+   254→    const finalRows: any[] = rows || [];
+   255→
+   256→    // Batch-fetch related rows by their IDs (single round-trip per table).
+   257→    const categoryIds = [...new Set(finalRows.map((r: any) => r.categoryId).filter(Boolean))];
+   258→    const sellerIds = [...new Set(finalRows.map((r: any) => r.sellerId).filter(Boolean))];
+   259→    const userIds = [...new Set(finalRows.map((r: any) => r.userId).filter(Boolean))];
+   260→
+   261→    const [categoriesRes, sellersRes, usersRes] = await Promise.all([
+   262→      categoryIds.length
+   263→        ? supabase.from("Category").select("*").in("id", categoryIds)
+   264→        : Promise.resolve({ data: [], error: null }),
+   265→      sellerIds.length
+   266→        ? supabase.from("Seller").select("*").in("id", sellerIds)
+   267→        : Promise.resolve({ data: [], error: null }),
+   268→      userIds.length
+   269→        ? supabase
+   270→            .from("User")
+   271→            .select("id, name, phone, email, city, logoImage, bannerImage")
+   272→            .in("id", userIds)
+   273→        : Promise.resolve({ data: [], error: null }),
+   274→    ]);
+   275→
+   276→    const categoryMap = new Map((categoriesRes.data || []).map((c: any) => [c.id, c]));
+   277→    const sellerMap = new Map((sellersRes.data || []).map((s: any) => [s.id, s]));
+   278→    const userMap = new Map((usersRes.data || []).map((u: any) => [u.id, u]));
+   279→
+   280→    const listings = finalRows.map((row: any) => {
+   281→      const withRelations = {
+   282→        ...row,
+   283→        category: categoryMap.get(row.categoryId) ?? null,
+   284→        seller: sellerMap.get(row.sellerId) ?? null,
+   285→        user: userMap.get(row.userId) ?? null,
+   286→      };
+   287→      return parseSupabaseListing(withRelations);
+   288→    });
+   289→
+   290→    // Get total count via a separate count query (re-apply same filters).
+   291→    // Supabase's .range() with .select("*") does not return total count;
+   292→    // we use { count: "exact", head: true } to get the count without data.
+   293→    let countQuery = supabase
+   294→      .from("Listing")
+   295→      .select("id", { count: "exact", head: true })
+   296→      .eq("status", "active")
+   297→      .eq("paymentStatus", "paid")
+   298→      .eq("violationFlag", false);
+   299→    if (ids && ids.length) countQuery = countQuery.in("id", ids);
+   300→    if (categoryCondition) countQuery = countQuery.eq("condition", categoryCondition);
+   301→    if (categoryIdFilter) countQuery = countQuery.eq("categoryId", categoryIdFilter);
+   302→    if (condition && !categoryCondition) countQuery = countQuery.eq("condition", condition);
+   303→    if (province) countQuery = countQuery.eq("province", province);
+   304→    if (city) countQuery = countQuery.ilike("city", `%${city}%`);
+   305→    if (minPrice) countQuery = countQuery.gte("price", Math.floor(Number(minPrice)));
+   306→    if (maxPrice) countQuery = countQuery.lte("price", Math.floor(Number(maxPrice)));
+   307→    if (featuredOnly) countQuery = countQuery.eq("featured", true);
+   308→    if (weekOnly) {
+   309→      const weekAgo = new Date();
+   310→      weekAgo.setDate(weekAgo.getDate() - 7);
+   311→      countQuery = countQuery.gte("createdAt", weekAgo.toISOString());
+   312→    }
+   313→    if (packageType) {
+   314→      const pkgList = packageType.split(",").map((p) => p.trim()).filter(Boolean);
+   315→      if (pkgList.length === 1) countQuery = countQuery.eq("packageType", pkgList[0]);
+   316→      else if (pkgList.length > 1) countQuery = countQuery.in("packageType", pkgList);
+   317→    }
+   318→    if (q)
+   319→      countQuery = countQuery.or(
+   320→        `title.ilike.%${q}%,description.ilike.%${q}%,brand.ilike.%${q}%,city.ilike.%${q}%`
+   321→      );
+   322→
+   323→    const { count: totalCount } = await countQuery;
+   324→    const total = totalCount || listings.length;
+   325→
+   326→    return NextResponse.json({
+   327→      listings,
+   328→      total,
+   329→      page,
+   330→      limit,
+   331→      totalPages: Math.ceil(total / limit),
+   332→    }, {
+   333→      headers: {
+   334→        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',
+   335→      },
+   336→    });
+   337→  } catch (error) {
+   338→    console.error("GET /api/listings Supabase error, falling back to seed data:", error);
+   339→    const filters: ListingFilters = {
+   340→      q: q || undefined,
+   341→      category: category || undefined,
+   342→      condition: condition || undefined,
+   343→      province: province || undefined,
+   344→      packageType: packageType || undefined,
+   345→      sort: sort || undefined,
+   346→      page,
+   347→      limit,
+   348→      ids,
+   349→      featured: featuredOnly || undefined,
+   350→    };
+   351→    return NextResponse.json(getFallbackListings(filters));
+   352→  }
+   353→}
+   354→
+   355→export async function POST(req: NextRequest) {
+   356→  try {
+   357→    // SECURITY: A listing can only be created by an authenticated user.
+   358→    // The userId is resolved from the verified session cookie; the body's
+   359→    // `userId` field is IGNORED for non-admins. This prevents account A from
+   360→    // posting listings "as" account B.
+   361→    const session = getSessionUser(req);
+   362→    if (!session) {
+   363→      return NextResponse.json(
+   364→        { error: "Anda harus masuk untuk pasang iklan." },
+   365→        { status: 401 }
+   366→      );
+   367→    }
+   368→
+   369→    const body = await req.json();
+   370→    const { title, description, price, priceType, condition, brand, yearProduced, city, province, categoryId, images, specs, featured, package: pkg, paymentMethod, uniqueCode, userName, userPhone, saveAsDraft } = body;
+   371→
+   372→    // The listing's userId is ALWAYS the session user's id (ignore any client-
+   373→    // supplied userId to prevent impersonation). Admins are also locked to
+   374→    // their own session id when posting listings (no impersonation).
+   375→    const userId = session.id;
+   376→
+   377→    // Draft mode ("Simpan Dulu"): only title is required, skip payment verification.
+   378→    const isDraft = saveAsDraft === true;
+   379→    if (!isDraft && (!title || !description || !price || !categoryId || !city || !province)) {
+   380→      return NextResponse.json({ error: "Data tidak lengkap. Mohon lengkapi semua field wajib." }, { status: 400 });
+   381→    }
+   382→    if (isDraft && !title) {
+   383→      return NextResponse.json({ error: "Judul wajib diisi untuk menyimpan dulu." }, { status: 400 });
+   384→    }
+   385→
+   386→    // --- Path A: local dev (Prisma + SQLite) ---
+   387→    if (isDbAvailable()) {
+   388→      try {
+   389→        // Fetch the actual user from DB to get their latest name + phone
+   390→        // (more reliable than client-sent values which may be stale).
+   391→        let dbUser = null;
+   392→        if (userId) {
+   393→          dbUser = await db.user.findUnique({ where: { id: userId } });
+   394→        }
+   395→        // CRITICAL: if the userId from the client doesn't exist in the local DB
+   396→        // (e.g. a Supabase session userId that's not in SQLite), the listing.create
+   397→        // below would throw P2003 FK violation. Guard by nulling out the userId.
+   398→        // The listing will still be created, just without a user link.
+   399→        const safeUserId = dbUser ? userId : null;
+   400→        const finalName = dbUser?.name || userName || "Anda (Pengguna mesinKU)";
+   401→        const finalPhone = dbUser?.phone || userPhone || "0812-0000-0000";
+   402→
+   403→        // Find or create a seller record tied to this user.
+   404→        // Each user gets their own seller profile so their ads are isolated.
+   405→        // Try to find existing seller by matching listings with this userId.
+   406→        let seller = null;
+   407→        if (safeUserId) {
+   408→          const userListings = await db.listing.findFirst({
+   409→            where: { userId: safeUserId },
+   410→            include: { seller: true },
+   411→          });
+   412→          if (userListings) {
+   413→            seller = userListings.seller;
+   414→          }
+   415→        }
+   416→        if (!seller) {
+   417→          seller = await db.seller.create({
+   418→            data: {
+   419→              name: finalName,
+   420→              phone: finalPhone,
+   421→              city: city,
+   422→              province: province,
+   423→              verified: false,
+   424→              rating: 5.0,
+   425→              reviewCount: 0,
+   426→            },
+   427→          });
+   428→        } else {
+   429→          // Update existing seller with latest user info (in case profile changed)
+   430→          seller = await db.seller.update({
+   431→            where: { id: seller.id },
+   432→            data: { name: finalName, phone: finalPhone },
+   433→          });
+   434→        }
+   435→
+   436→        const slugBase = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+   437→        const slug = slugBase + "-" + Math.random().toString(36).slice(2, 7);
+   438→
+   439→        // Package pricing from DB (admin can edit via Paket tab)
+   440→        const paketMap = await getPaketMap();
+   441→        const pkgKey = pkg || "colek";
+   442→        const pkgPrice = paketMap[pkgKey]?.price ?? 0;
+   443→        const pkgDays = paketMap[pkgKey]?.duration ?? 30;
+   444→
+   445→        // For draft ("Simpan Dulu"), categoryId may be empty — fallback to first category.
+   446→        // Also validate that the provided categoryId actually EXISTS in the DB.
+   447→        // This guards against stale localStorage drafts that reference category IDs
+   448→        // from a previous database seed (which would cause an FK constraint violation).
+   449→        let finalCategoryId = categoryId;
+   450→        if (finalCategoryId) {
+   451→          const catExists = await db.category.findUnique({ where: { id: finalCategoryId }, select: { id: true } });
+   452→          if (!catExists) {
+   453→            // Stale/invalid categoryId — discard it so we fall back to the first category.
+   454→            finalCategoryId = null;
+   455→          }
+   456→        }
+   457→        if (!finalCategoryId) {
+   458→          if (!isDraft) {
+   459→            return NextResponse.json(
+   460→              { error: "Kategori tidak valid. Silakan pilih kategori kembali di form." },
+   461→              { status: 400 }
+   462→            );
+   463→          }
+   464→          const firstCat = await db.category.findFirst({ orderBy: { sortOrder: "asc" } });
+   465→          finalCategoryId = firstCat?.id;
+   466→        }
+   467→
+   468→        // If payment method provided, mark as pending. Otherwise pending.
+   469→        const isPaid = !!paymentMethod;
+   470→        const expiryDate = new Date();
+   471→        expiryDate.setDate(expiryDate.getDate() + pkgDays);
+   472→
+   473→        // Save all images to local filesystem (base64 → file, external URL → download)
+   474→        // This ensures images NEVER disappear as long as the listing exists.
+   475→        const rawImages: string[] = images || [];
+   476→        const localImages = await saveImagesToLocal(rawImages);
+   477→
+   478→        const created = await db.listing.create({
+   479→          data: {
+   480→            title,
+   481→            slug,
+   482→            description,
+   483→            price: Math.floor(Number(price) || 0),
+   484→            priceType: priceType || "fixed",
+   485→            condition: condition || "bekas",
+   486→            brand: brand || null,
+   487→            yearProduced: yearProduced ? parseInt(yearProduced, 10) : null,
+   488→            city,
+   489→            province,
+   490→            images: JSON.stringify(localImages),
+   491→            specs: JSON.stringify(specs || {}),
+   492→            packageType: pkgKey,
+   493→            featured: pkgKey === "spotlight" || pkgKey === "highlight",
+   494→            // "Simpan Dulu" → status "draft" (Belum Aktif, tidak tayang, belum perlu bayar).
+   495→            // Iklan normal → "pending" (menunggu verifikasi admin sebelum tayang).
+   496→            // Admin menyetujui via /api/admin/listings (PATCH status=active) yang juga
+   497→            // mengeset paymentStatus=paid agar langsung muncul di beranda.
+   498→            status: isDraft ? "draft" : "pending",
+   499→            paymentStatus: isDraft ? "unpaid" : (isPaid ? "paid" : "unpaid"),
+   500→            paymentExpiry: isPaid ? expiryDate : null,
+   501→            // Save the unique 3-digit payment code so that Riwayat Pembayaran can
+   502→            // display the total amount the user was asked to pay (pkgPrice + uniqueCode).
+   503→            uniqueCode: typeof uniqueCode === "number" && uniqueCode > 0 ? uniqueCode : null,
+   504→            categoryId: finalCategoryId,
+   505→            sellerId: seller.id,
+   506→            userId: safeUserId,
+   507→          },
+   508→          include: { category: true, seller: true, user: { select: { id: true, name: true, phone: true, email: true, city: true, logoImage: true, bannerImage: true } } },
+   509→        });
+   510→
+   511→        // ── Realtime broadcast ────────────────────────────────────────────
+   512→        // Notify the admin's "Iklan Baru" tab that a new pending listing just
+   513→        // landed (so they can review it instantly, no need to wait for the
+   514→        // 3-second poll). Drafts are skipped — they're invisible to admin
+   515→        // until the user actually submits/pays.
+   516→        if (!isDraft) {
+   517→          try {
+   518→            broadcastListingPending(parseListing(created));
+   519→          } catch (bcErr: any) {
+   520→            console.warn("[listings] POST broadcast error:", bcErr?.message);
+   521→          }
+   522→        }
+   523→
+   524→        return NextResponse.json({ listing: parseListing(created) }, { status: 201 });
+   525→      } catch (prismaErr) {
+   526→        console.error("[listings] POST Prisma error, falling back to Supabase:", prismaErr);
+   527→        // fall through to Supabase
+   528→      }
+   529→    }
+   530→
+   531→    // --- Path B: Vercel (raw Supabase) ---
+   532→    const supabase = await getSupabase();
+   533→
+   534→    // ── Ensure the User row exists in Supabase ───────────────────────────
+   535→    // The Supabase `Listing` table has a FK constraint (Listing_userId_fkey)
+   536→    // that requires `userId` to reference an existing row in `User`.
+   537→    // If a user logged in via a different mechanism (or their session predates
+   538→    // the Supabase migration), their userId may not exist in Supabase yet,
+   539→    // causing the Listing INSERT to fail with a FK violation.
+   540→    // Fix: find-or-create a minimal User row using the provided userId/name/phone.
+   541→    let effectiveUserId: string | null = userId || null;
+   542→    if (effectiveUserId) {
+   543→      const { data: existingUser } = await supabase
+   544→        .from("User")
+   545→        .select("id")
+   546→        .eq("id", effectiveUserId)
+   547→        .limit(1);
+   548→      if (!existingUser || existingUser.length === 0) {
+   549→        // User not in Supabase → create a minimal placeholder row to satisfy FK.
+   550→        // Email must be unique; generate a deterministic placeholder.
+   551→        const placeholderEmail = `user-${effectiveUserId}@mesinku.local`;
+   552→        const nowIso = new Date().toISOString();
+   553→        const { error: userInsertErr } = await supabase
+   554→          .from("User")
+   555→          .insert({
+   556→            id: effectiveUserId,
+   557→            name: userName || "Pengguna mesinKU",
+   558→            email: placeholderEmail,
+   559→            password: "", // placeholder — user cannot log in with this row
+   560→            phone: userPhone || null,
+   561→            city: city || null,
+   562→            company: null,
+   563→            address: null,
+   564→            bannerImage: null,
+   565→            logoImage: null,
+   566→            role: "user",
+   567→            createdAt: nowIso,
+   568→            updatedAt: nowIso,
+   569→          });
+   570→        if (userInsertErr) {
+   571→          // If two concurrent requests race to create the same user, the second
+   572→          // will get a 23505 unique_violation — that's fine, the row now exists.
+   573→          if (!String(userInsertErr.code || "").includes("23505")) {
+   574→            console.error("[listings] Supabase User ensure-create error:", userInsertErr);
+   575→            // As a last resort, decouple the listing from the user so the ad
+   576→            // can still be posted (better UX than blocking the post entirely).
+   577→            effectiveUserId = null;
+   578→          }
+   579→        }
+   580→      }
+   581→    }
+   582→
+   583→    // Find-or-create the Seller: query by userId (via existing listings) first,
+   584→    // then by name+phone, else insert a new row.
+   585→    let sellerId: string | null = null;
+   586→    if (userId) {
+   587→      const { data: existingByUser } = await supabase
+   588→        .from("Listing")
+   589→        .select("sellerId")
+   590→        .eq("userId", userId)
+   591→        .limit(1);
+   592→      if (existingByUser && existingByUser.length > 0) {
+   593→        sellerId = existingByUser[0].sellerId;
+   594→      }
+   595→    }
+   596→    const finalName = userName || "Anda (Pengguna mesinKU)";
+   597→    const finalPhone = userPhone || "0812-0000-0000";
+   598→    if (!sellerId) {
+   599→      const { data: existingByName } = await supabase
+   600→        .from("Seller")
+   601→        .select("id")
+   602→        .eq("name", finalName)
+   603→        .eq("phone", finalPhone)
+   604→        .limit(1);
+   605→      if (existingByName && existingByName.length > 0) {
+   606→        sellerId = existingByName[0].id;
+   607→      }
+   608→    }
+   609→    if (!sellerId) {
+   610→      const { data: newSeller, error: sellerErr } = await supabase
+   611→        .from("Seller")
+   612→        .insert({
+   613→          // Supabase Seller.id has no default — generate a cuid-compatible id.
+   614→          id: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10),
+   615→          name: finalName,
+   616→          phone: finalPhone,
+   617→          city: city || "",
+   618→          province: province || "",
+   619→          verified: false,
+   620→          rating: 5.0,
+   621→          reviewCount: 0,
+   622→        })
+   623→        .select("id")
+   624→        .single();
+   625→      if (sellerErr || !newSeller) {
+   626→        console.error("[listings] Supabase Seller insert error:", sellerErr);
+   627→        return NextResponse.json({ error: "Gagal membuat seller: " + (sellerErr?.message || "unknown") }, { status: 500 });
+   628→      }
+   629→      sellerId = newSeller.id;
+   630→    } else {
+   631→      // Update existing seller with latest user info
+   632→      await supabase
+   633→        .from("Seller")
+   634→        .update({ name: finalName, phone: finalPhone })
+   635→        .eq("id", sellerId);
+   636→    }
+   637→
+   638→    // Find-or-create Category: if categoryId provided, validate it exists;
+   639→    // else grab the first. Guards against stale localStorage category IDs.
+   640→    let finalCategoryId = categoryId;
+   641→    if (finalCategoryId) {
+   642→      const { data: catExists } = await supabase
+   643→        .from("Category")
+   644→        .select("id")
+   645→        .eq("id", finalCategoryId)
+   646→        .limit(1);
+   647→      if (!catExists || catExists.length === 0) {
+   648→        finalCategoryId = null;
+   649→      }
+   650→    }
+   651→    if (!finalCategoryId) {
+   652→      if (!isDraft) {
+   653→        return NextResponse.json(
+   654→          { error: "Kategori tidak valid. Silakan pilih kategori kembali di form." },
+   655→          { status: 400 }
+   656→        );
+   657→      }
+   658→      const { data: firstCat } = await supabase
+   659→        .from("Category")
+   660→        .select("id")
+   661→        .order("sortOrder", { ascending: true })
+   662→        .limit(1)
+   663→        .single();
+   664→      finalCategoryId = firstCat?.id || null;
+   665→    }
+   666→    if (!finalCategoryId) {
+   667→      return NextResponse.json({ error: "Kategori tidak ditemukan." }, { status: 400 });
+   668→    }
+   669→
+   670→    const slugBase = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+   671→    const slug = slugBase + "-" + Math.random().toString(36).slice(2, 7);
+   672→
+   673→    const paketMap = await getPaketMap();
+   674→    const pkgKey = pkg || "colek";
+   675→    const pkgPrice = paketMap[pkgKey]?.price ?? 0;
+   676→    const pkgDays = paketMap[pkgKey]?.duration ?? 30;
+   677→
+   678→    const isPaid = !!paymentMethod;
+   679→    const expiryDate = new Date();
+   680→    expiryDate.setDate(expiryDate.getDate() + pkgDays);
+   681→
+   682→    // On Vercel we cannot save images to the local filesystem — store the
+   683→    // raw images array (already URLs or base64) directly as a JSON string.
+   684→    const rawImages: string[] = images || [];
+   685→
+   686→    const insertPayload: Record<string, any> = {
+   687→      // Supabase Listing.id has no default — generate a cuid-compatible id.
+   688→      id: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10),
+   689→      title,
+   690→      slug,
+   691→      description: description || "",
+   692→      price: Math.floor(Number(price) || 0),
+   693→      priceType: priceType || "fixed",
+   694→      condition: condition || "bekas",
+   695→      brand: brand || null,
+   696→      yearProduced: yearProduced ? parseInt(yearProduced, 10) : null,
+   697→      city: city || "",
+   698→      province: province || "",
+   699→      images: JSON.stringify(rawImages),
+   700→      specs: JSON.stringify(specs || {}),
+   701→      packageType: pkgKey,
+   702→      featured: pkgKey === "spotlight" || pkgKey === "highlight",
+   703→      status: isDraft ? "draft" : "pending",
+   704→      paymentStatus: isDraft ? "unpaid" : (isPaid ? "paid" : "unpaid"),
+   705→      paymentExpiry: isPaid ? expiryDate.toISOString() : null,
+   706→      // Save the unique 3-digit payment code so Riwayat Pembayaran can show pkgPrice + uniqueCode.
+   707→      uniqueCode: typeof uniqueCode === "number" && uniqueCode > 0 ? uniqueCode : null,
+   708→      categoryId: finalCategoryId,
+   709→      sellerId,
+   710→      userId: effectiveUserId,
+   711→      views: 0,
+   712→      violationFlag: false,
+   713→    };
+   714→
+   715→    const { data: newRow, error: insertErr } = await supabase
+   716→      .from("Listing")
+   717→      .insert(insertPayload)
+   718→      .select("*")
+   719→      .single();
+   720→
+   721→    if (insertErr || !newRow) {
+   722→      console.error("[listings] Supabase Listing insert error:", insertErr);
+   723→      return NextResponse.json({ error: "Gagal membuat iklan: " + (insertErr?.message || "unknown") }, { status: 500 });
+   724→    }
+   725→
+   726→    return NextResponse.json({ listing: parseSupabaseListing(newRow) }, { status: 201 });
+   727→  } catch (e: any) {
+   728→    return NextResponse.json({ error: "Gagal membuat iklan: " + (e?.message || "unknown") }, { status: 500 });
+   729→  }
+   730→}
+   731→
