@@ -1,0 +1,611 @@
+     1→"use client";
+     2→
+     3→import { useState, useEffect, useRef, useCallback } from "react";
+     4→import { Search, MapPin, Plus, User, ChevronDown, Home, MessageSquare, Tag, Store, X, Sun, Moon } from "lucide-react";
+     5→import { useStore } from "@/lib/store";
+     6→import { useLang } from "@/lib/i18n";
+     7→import { translations as i18nTranslations } from "@/lib/i18n";
+     8→import { useMounted } from "@/lib/use-mounted";
+     9→import { useQuery, useQueryClient } from "@tanstack/react-query";
+    10→import { Button } from "@/components/ui/button";
+    11→import { Input } from "@/components/ui/input";
+    12→import {
+    13→  Popover,
+    14→  PopoverContent,
+    15→  PopoverTrigger,
+    16→} from "@/components/ui/popover";
+    17→import { Badge } from "@/components/ui/badge";
+    18→import { PROVINCES } from "@/lib/types";
+    19→import { playNotificationSound, playDingSound, setupNotificationSoundUnlock, isChatOpen } from "@/lib/notification-sound";
+    20→import { cn } from "@/lib/utils";
+    21→import { CategoryNav } from "./category-nav";
+    22→import { NotificationBell } from "./notification-bell";
+    23→import { useChatSocket } from "@/lib/use-chat-socket";
+    24→import { useTheme } from "next-themes";
+    25→
+    26→function Logo() {
+    27→  return (
+    28→    <div className="flex shrink-0 items-center gap-1.5">
+    29→      <button
+    30→        onClick={() => useStore.getState().goHome()}
+    31→        className="flex items-center gap-2"
+    32→        aria-label="mesinKU Beranda"
+    33→      >
+    34→        <img
+    35→          src="/logo-sm.jpeg"
+    36→          alt="mesinKU"
+    37→          width={36}
+    38→          height={36}
+    39→          className="size-9 rounded-lg object-cover shadow-sm"
+    40→        />
+    41→        <span className="tracking-tight text-xl font-bold" style={{ fontFamily: 'var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif' }}>
+    42→          <span className="text-primary">mesin</span>KU
+    43→        </span>
+    44→      </button>
+    45→      <button
+    46→        onClick={() => useStore.getState().goHome()}
+    47→        className="hidden md:flex h-9 items-center gap-1 rounded-lg px-1.5 text-foreground hover:bg-accent"
+    48→        aria-label="Home"
+    49→      >
+    50→        <Home className="size-4" />
+    51→        <span className="text-xs font-medium">Home</span>
+    52→      </button>
+    53→    </div>
+    54→  );
+    55→}
+    56→
+    57→export function Header() {
+    58→  const goToListings = useStore((s) => s.goToListings);
+    59→  const goHome = useStore((s) => s.goHome);
+    60→  const goToPost = useStore((s) => s.goToPost);
+    61→  const goToFavorites = useStore((s) => s.goToFavorites);
+    62→  const goToProfile = useStore((s) => s.goToProfile);
+    63→  const goToProfilePanel = useStore((s) => s.goToProfilePanel);
+    64→  const goToLogin = useStore((s) => s.goToLogin);
+    65→  // Badge = unseen favorites (added since last visit to favorites page)
+    66→  const favCount = Math.max(0, useStore((s) => s.favorites.length - s.favoritesSeenCount));
+    67→  const user = useStore((s) => s.user);
+    68→  const filters = useStore((s) => s.filters);
+    69→  const currentView = useStore((s) => s.view);
+    70→  const { lang, setLang, t } = useLang();
+    71→  const mounted = useMounted();
+    72→  const { theme, setTheme } = useTheme();
+    73→  const [langOpenMobile, setLangOpenMobile] = useState(false);
+    74→
+    75→  // Fetch unread messages for badge — NO polling, socket invalidates on change.
+    76→  const queryClient = useQueryClient();
+    77→  const { subscribe } = useChatSocket();
+    78→
+    79→  // Unlock notification sound on first user interaction (autoplay policy).
+    80→  useEffect(() => {
+    81→    setupNotificationSoundUnlock();
+    82→  }, []);
+    83→  const { data: messagesData } = useQuery({
+    84→    queryKey: ["messages", user?.id],
+    85→    queryFn: async () => {
+    86→      const res = await fetch(`/api/messages?userId=${user!.id}`);
+    87→      if (!res.ok) throw new Error("fail");
+    88→      return res.json();
+    89→    },
+    90→    enabled: !!user?.id,
+    91→    // Poll every 3 seconds so new messages are detected even WITHOUT
+    92→    // socket.io (e.g. on Vercel production where there is no WebSocket
+    93→    // server). The socket invalidation (when available) provides instant
+    94→    // updates; polling is the universal fallback.
+    95→    refetchInterval: 3000,
+    96→    refetchIntervalInBackground: false,
+    97→  });
+    98→  const unreadCount = messagesData?.conversations?.reduce((a: number, c: any) => a + (c.unread || 0), 0) ?? 0;
+    99→
+   100→  // ===== Polling-based notification sound =====
+   101→  // The socket "message:new" handler (below) only fires when socket.io is
+   102→  // connected. In production (Vercel, no socket server) OR when the socket
+   103→  // is temporarily down, messages arrive only via the 3s polling above.
+   104→  // This effect watches the polled messagesData and plays the notification
+   105→  // sound when a NEW incoming message (sent=false) appears that wasn't in
+   106→  // the previous fetch. This guarantees the ringtone plays in ALL
+   107→  // environments.
+   108→  const seenMsgIdsRef = useRef<Set<string>>(new Set());
+   109→  // Track whether we've done the initial load (so we don't sound off for
+   110→  // pre-existing messages on first render).
+   111→  const initialLoadDoneRef = useRef(false);
+   112→  useEffect(() => {
+   113→    if (!user || !messagesData?.conversations) return;
+   114→    const convs = messagesData.conversations as any[];
+   115→    // Collect ALL incoming (received) message ids currently visible.
+   116→    const currentIncomingIds: string[] = [];
+   117→    for (const c of convs) {
+   118→      for (const m of c.messages || []) {
+   119→        if (m.sent === false) currentIncomingIds.push(m.id);
+   120→      }
+   121→    }
+   122→    if (!initialLoadDoneRef.current) {
+   123→      // First load: seed the seen set with all existing incoming ids so we
+   124→      // don't play sound for messages that were already there.
+   125→      currentIncomingIds.forEach((id) => seenMsgIdsRef.current.add(id));
+   126→      initialLoadDoneRef.current = true;
+   127→      return;
+   128→    }
+   129→    // Subsequent loads: find incoming ids that are NOT in the seen set.
+   130→    const newIncoming = currentIncomingIds.filter((id) => !seenMsgIdsRef.current.has(id));
+   131→    if (newIncoming.length === 0) return;
+   132→    // Add them to the seen set.
+   133→    newIncoming.forEach((id) => seenMsgIdsRef.current.add(id));
+   134→    // Play the notification sound. If the user is currently viewing an open
+   135→    // chat, play a soft ding; otherwise play the full "mesinKU!" ringtone.
+   136→    if (isChatOpen()) {
+   137→      playDingSound();
+   138→    } else {
+   139→      playNotificationSound();
+   140→    }
+   141→  }, [messagesData, user]);
+   142→
+   143→  // Realtime: refresh unread count instantly when a new message arrives or a read receipt comes in.
+   144→  useEffect(() => {
+   145→    if (!user) return;
+   146→    const offNew = subscribe("message:new", (msg: any) => {
+   147→      queryClient.invalidateQueries({ queryKey: ["messages"] });
+   148→      // Play notification sound for incoming messages (not from self).
+   149→      // When a chat conversation is currently open & visible, play only a soft
+   150→      // "ding" (less intrusive). When chat is closed, play the full "mesinKU!"
+   151→      // ringtone so the user is alerted.
+   152→      if (msg && msg.senderId !== user.id) {
+   153→        // Mark this message id as seen immediately so the polling-based sound
+   154→        // effect (above) doesn't double-play the same message after the
+   155→        // refetch lands.
+   156→        if (msg.id) seenMsgIdsRef.current.add(msg.id);
+   157→        if (isChatOpen()) {
+   158→          playDingSound();
+   159→        } else {
+   160→          playNotificationSound();
+   161→        }
+   162→      }
+   163→    });
+   164→    const offRead = subscribe("message:read-update", () => {
+   165→      queryClient.invalidateQueries({ queryKey: ["messages"] });
+   166→    });
+   167→    return () => {
+   168→      offNew();
+   169→      offRead();
+   170→    };
+   171→  }, [user, subscribe, queryClient]);
+   172→
+   173→  const [langOpenDesktop, setLangOpenDesktop] = useState(false);
+   174→
+   175→  const changeLang = (l: "id" | "en" | "zh") => {
+   176→    setLang(l);
+   177→    setLangOpenMobile(false);
+   178→    setLangOpenDesktop(false);
+   179→  };
+   180→  const langFlag = (l: Lang) => (l === "id" ? "🇮🇩" : l === "zh" ? "🇨🇳" : "🇬🇧");
+   181→  // Before mounted: always use Indonesian to match SSR. After: use actual lang.
+   182→  const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
+   183→  const hideCategoryNav = ["admin", "admin-sellers", "admin-categories", "admin-listings", "admin-new-listings", "admin-expired-listings", "admin-rejected-listings", "admin-transactions", "admin-reports", "admin-users", "admin-paket", "post", "edit", "login", "profile", "dashboard", "favorites", "detail", "seller", "home"].includes(currentView);
+   184→
+   185→  const [q, setQ] = useState(filters.q ?? "");
+   186→  const [prevQ, setPrevQ] = useState(filters.q);
+   187→  const [province, setProvince] = useState(filters.province ?? "Indonesia");
+   188→
+   189→  // Universal search dropdown
+   190→  const [searchOpen, setSearchOpen] = useState(false);
+   191→  const [searchResults, setSearchResults] = useState<{ listings: any[]; categories: any[]; sellers: any[] } | null>(null);
+   192→  const [searchLoading, setSearchLoading] = useState(false);
+   193→  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+   194→  const searchRef = useRef<HTMLDivElement>(null);
+   195→
+   196→  const goToDetail = useStore((s) => s.goToDetail);
+   197→  const goToSeller = useStore((s) => s.goToSeller);
+   198→
+   199→  // Debounced universal search
+   200→  const doSearch = useCallback(async (keyword: string) => {
+   201→    if (!keyword.trim()) {
+   202→      setSearchResults(null);
+   203→      setSearchOpen(false);
+   204→      return;
+   205→    }
+   206→    setSearchLoading(true);
+   207→    try {
+   208→      const res = await fetch(`/api/search?q=${encodeURIComponent(keyword.trim())}`);
+   209→      if (res.ok) {
+   210→        const data = await res.json();
+   211→        setSearchResults(data);
+   212→        setSearchOpen(true);
+   213→      }
+   214→    } catch {}
+   215→    setSearchLoading(false);
+   216→  }, []);
+   217→
+   218→  const handleSearchChange = (val: string) => {
+   219→    setQ(val);
+   220→    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+   221→    searchTimerRef.current = setTimeout(() => doSearch(val), 300);
+   222→  };
+   223→
+   224→  const handleSearchFocus = () => {
+   225→    if (q.trim() && searchResults) setSearchOpen(true);
+   226→  };
+   227→
+   228→  // Close search dropdown on outside click
+   229→  useEffect(() => {
+   230→    if (!searchOpen) return;
+   231→    const close = (e: MouseEvent) => {
+   232→      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+   233→        setSearchOpen(false);
+   234→      }
+   235→    };
+   236→    document.addEventListener("mousedown", close);
+   237→    return () => document.removeEventListener("mousedown", close);
+   238→  }, [searchOpen]);
+   239→
+   240→  // Sync local search input when the store query changes externally (render-time adjustment)
+   241→  if (filters.q !== prevQ) {
+   242→    setPrevQ(filters.q);
+   243→    setQ(filters.q ?? "");
+   244→  }
+   245→
+   246→  const submitSearch = (e: React.FormEvent) => {
+   247→    e.preventDefault();
+   248→    setSearchOpen(false);
+   249→    goToListings({
+   250→      q,
+   251→      province: province === "Indonesia" ? undefined : province,
+   252→    });
+   253→  };
+   254→
+   255→  const hasSearchResults = searchResults && (searchResults.listings.length > 0 || searchResults.categories.length > 0 || searchResults.sellers.length > 0);
+   256→
+   257→  const renderSearchDropdown = () => {
+   258→    if (!searchOpen) return null;
+   259→    return (
+   260→      <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-border bg-card shadow-xl animate-fade-up">
+   261→        {searchLoading && (
+   262→          <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
+   263→            <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+   264→            Mencari...
+   265→          </div>
+   266→        )}
+   267→        {!searchLoading && hasSearchResults && searchResults && (
+   268→          <div className="max-h-80 overflow-y-auto mesinku-scroll">
+   269→            {/* Listings */}
+   270→            {searchResults.listings.length > 0 && (
+   271→              <div>
+   272→                <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Iklan</p>
+   273→                {searchResults.listings.map((l: any) => (
+   274→                  <button
+   275→                    key={l.id}
+   276→                    onClick={() => { setSearchOpen(false); goToDetail(l.slug); }}
+   277→                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition hover:bg-accent"
+   278→                  >
+   279→                    <div className="size-10 shrink-0 overflow-hidden rounded-lg bg-muted">
+   280→                      {l.image ? <img src={l.image} alt="" className="size-full object-cover" /> : <Tag className="m-auto size-4 text-muted-foreground" />}
+   281→                    </div>
+   282→                    <div className="min-w-0 flex-1">
+   283→                      <p className="truncate text-sm font-medium text-foreground">{l.title}</p>
+   284→                      <p className="text-xs text-muted-foreground">{l.sellerCompany ? l.sellerCompany + " · " : ""}{l.categoryName} · {l.city}</p>
+   285→                    </div>
+   286→                    <span className="shrink-0 text-xs font-bold text-primary">Rp {l.price.toLocaleString("id-ID")}</span>
+   287→                  </button>
+   288→                ))}
+   289→              </div>
+   290→            )}
+   291→            {/* Categories */}
+   292→            {searchResults.categories.length > 0 && (
+   293→              <div>
+   294→                <p className="border-t border-border px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Kategori</p>
+   295→                {searchResults.categories.map((c: any) => (
+   296→                  <button
+   297→                    key={c.id}
+   298→                    onClick={() => { setSearchOpen(false); goToListings({ category: c.slug }); }}
+   299→                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition hover:bg-accent"
+   300→                  >
+   301→                    <span className="text-lg">{c.icon}</span>
+   302→                    <span className="text-sm font-medium text-foreground">{c.name}</span>
+   303→                  </button>
+   304→                ))}
+   305→              </div>
+   306→            )}
+   307→            {/* Sellers */}
+   308→            {searchResults.sellers.length > 0 && (
+   309→              <div>
+   310→                <p className="border-t border-border px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Penjual</p>
+   311→                {searchResults.sellers.map((s: any) => (
+   312→                  <button
+   313→                    key={s.id}
+   314→                    onClick={() => { setSearchOpen(false); goToSeller(s.id); }}
+   315→                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition hover:bg-accent"
+   316→                  >
+   317→                    <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-primary/10">
+   318→                      {s.logoImage ? <img src={s.logoImage} alt="" className="size-full object-cover" /> : <Store className="size-4 text-primary" />}
+   319→                    </div>
+   320→                    <div className="min-w-0 flex-1">
+   321→                      <p className="truncate text-sm font-medium text-foreground">{s.name}</p>
+   322→                      <p className="text-xs text-muted-foreground">{s.company || s.city || ""}</p>
+   323→                    </div>
+   324→                  </button>
+   325→                ))}
+   326→              </div>
+   327→            )}
+   328→            {/* View all results link */}
+   329→            <div className="border-t border-border">
+   330→              <button
+   331→                onClick={() => { setSearchOpen(false); goToListings({ q }); }}
+   332→                className="flex w-full items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium text-primary hover:bg-accent"
+   333→              >
+   334→                <Search className="size-3.5" /> Lihat semua hasil untuk &quot;{q}&quot;
+   335→              </button>
+   336→            </div>
+   337→          </div>
+   338→        )}
+   339→        {!searchLoading && !hasSearchResults && q.trim() && (
+   340→          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+   341→            Tidak ditemukan hasil untuk &quot;{q}&quot;
+   342→          </div>
+   343→        )}
+   344→      </div>
+   345→    );
+   346→  };
+   347→
+   348→  const renderLocations = () => (
+   349→    <div className="max-h-80 overflow-y-auto mesinku-scroll py-1">
+   350→      <button
+   351→        onClick={() => setProvince("Indonesia")}
+   352→        className={cn(
+   353→          "flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent",
+   354→          province === "Indonesia" && "font-semibold text-primary"
+   355→        )}
+   356→      >
+   357→        <MapPin className="size-4" /> {tr("allIndonesia")}
+   358→      </button>
+   359→      <div className="my-1 border-t border-border" />
+   360→      {PROVINCES.map((p) => (
+   361→        <button
+   362→          key={p}
+   363→          onClick={() => setProvince(p)}
+   364→          className={cn(
+   365→            "flex w-full items-center px-3 py-2 text-left text-sm hover:bg-accent",
+   366→            province === p && "font-semibold text-primary"
+   367→          )}
+   368→        >
+   369→          {p}
+   370→        </button>
+   371→      ))}
+   372→    </div>
+   373→  );
+   374→
+   375→  return (
+   376→    <header className="sticky top-0 z-40 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+   377→      {/* ===== MOBILE (below md) ===== */}
+   378→      <div className="md:hidden">
+   379→        {/* Row 1: Logo (left) + Favorit & Location (top-right, aligned with logo) */}
+   380→        <div className="flex h-14 items-center gap-1 overflow-hidden px-3">
+   381→          <Logo />
+   382→          <div className="ml-auto flex items-center gap-0.5">
+   383→            <Popover open={langOpenMobile} onOpenChange={setLangOpenMobile}>
+   384→              <PopoverTrigger asChild>
+   385→                <button
+   386→                  className="flex items-center gap-0.5 rounded-lg px-1.5 py-1.5 text-xs font-bold text-foreground hover:bg-accent"
+   387→                  aria-label="Bahasa"
+   388→                  suppressHydrationWarning
+   389→                >
+   390→                  <span className="text-base leading-none">{langFlag(lang)}</span>
+   391→                </button>
+   392→              </PopoverTrigger>
+   393→              <PopoverContent className="w-36 p-1" align="end">
+   394→                <button
+   395→                  onClick={() => changeLang("id")}
+   396→                  className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent", lang === "id" && "font-bold text-primary")}
+   397→                >
+   398→                  🇮🇩 Indonesia
+   399→                </button>
+   400→                <button
+   401→                  onClick={() => changeLang("en")}
+   402→                  className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent", lang === "en" && "font-bold text-primary")}
+   403→                >
+   404→                  🇬🇧 English
+   405→                </button>
+   406→                <button
+   407→                  onClick={() => changeLang("zh")}
+   408→                  className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent", lang === "zh" && "font-bold text-primary")}
+   409→                >
+   410→                  🇨🇳 中文
+   411→                </button>
+   412→              </PopoverContent>
+   413→            </Popover>
+   414→            {mounted && (
+   415→              <button
+   416→                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+   417→                className="grid size-9 place-items-center rounded-lg text-foreground hover:bg-accent"
+   418→                aria-label="Toggle theme"
+   419→              >
+   420→                {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
+   421→              </button>
+   422→            )}
+   423→            <NotificationBell align="end" />
+   424→            {/* Seller logo / avatar — top-right corner on mobile (matches desktop behavior) */}
+   425→            {mounted && user ? (
+   426→              <button
+   427→                onClick={goToProfile}
+   428→                className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full bg-primary/10 ring-1 ring-border hover:ring-primary/40"
+   429→                aria-label="Akun Saya"
+   430→              >
+   431→                {user.logoImage ? (
+   432→                  <img
+   433→                    src={user.logoImage}
+   434→                    alt=""
+   435→                    className="size-full object-cover"
+   436→                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+   437→                  />
+   438→                ) : (
+   439→                  <span className="text-[10px] font-bold text-primary">
+   440→                    {user.name.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase()}
+   441→                  </span>
+   442→                )}
+   443→              </button>
+   444→            ) : (
+   445→              <button
+   446→                onClick={goToLogin}
+   447→                className="grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary ring-1 ring-border hover:ring-primary/40"
+   448→                aria-label="Masuk atau Daftar"
+   449→              >
+   450→                <User className="size-4" />
+   451→              </button>
+   452→            )}
+   453→          </div>
+   454→        </div>
+   455→
+   456→        {/* Row 2: Search (below logo, full width) — hidden on Akun Saya (profile) */}
+   457→        {currentView !== "profile" && (
+   458→        <div className="px-3 pb-2">
+   459→          <form onSubmit={submitSearch} className="relative">
+   460→            <Input
+   461→              value={q}
+   462→              onChange={(e) => handleSearchChange(e.target.value)}
+   463→              onFocus={handleSearchFocus}
+   464→              placeholder={tr("searchPlaceholder")}
+   465→              className="h-10 rounded-full border-border bg-card pr-10 pl-4 text-sm"
+   466→            />
+   467→            <button
+   468→              type="submit"
+   469→              aria-label="Cari"
+   470→              className="absolute right-1 top-1 grid size-8 place-items-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+   471→            >
+   472→              <Search className="size-4" />
+   473→            </button>
+   474→            {renderSearchDropdown()}
+   475→          </form>
+   476→        </div>
+   477→        )}
+   478→      </div>
+   479→
+   480→      {/* ===== DESKTOP (md and up) ===== */}
+   481→      <div className="hidden md:flex mx-auto h-16 max-w-7xl items-center gap-3 px-4">
+   482→        <Logo />
+   483→
+   484→        {/* search */}
+   485→        <form onSubmit={submitSearch} className="relative flex-1">
+   486→          <Input
+   487→            value={q}
+   488→            onChange={(e) => handleSearchChange(e.target.value)}
+   489→            onFocus={handleSearchFocus}
+   490→            placeholder={tr("searchPlaceholder")}
+   491→            className="h-10 rounded-full border-border bg-card pr-10 pl-4 text-sm"
+   492→          />
+   493→          <button
+   494→            type="submit"
+   495→            aria-label="Cari"
+   496→            className="absolute right-1 top-1 grid size-8 place-items-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+   497→          >
+   498→            <Search className="size-4" />
+   499→          </button>
+   500→          {renderSearchDropdown()}
+   501→        </form>
+   502→
+   503→        {/* actions */}
+   504→        <div className="flex items-center gap-1">
+   505→          {mounted && user && (
+   506→            <button
+   507→              onClick={() => goToProfilePanel("pesan")}
+   508→              className="relative flex h-10 flex-col items-center justify-center gap-0.5 rounded-lg px-2 text-foreground hover:bg-accent"
+   509→              aria-label={tr("chat")}
+   510→            >
+   511→              <div className="relative">
+   512→                <MessageSquare className="size-5" />
+   513→                {unreadCount > 0 && (
+   514→                  <span className="absolute -right-2 -top-2 grid min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white">
+   515→                    {unreadCount > 99 ? "99+" : unreadCount}
+   516→                  </span>
+   517→                )}
+   518→              </div>
+   519→              <span className="text-[10px] font-medium leading-none">{tr("chat")}</span>
+   520→            </button>
+   521→          )}
+   522→          <Popover open={langOpenDesktop} onOpenChange={setLangOpenDesktop}>
+   523→            <PopoverTrigger asChild>
+   524→              <button
+   525→                className="flex h-10 items-center gap-1 rounded-lg px-2 text-sm font-bold text-foreground hover:bg-accent"
+   526→                aria-label="Language"
+   527→                suppressHydrationWarning
+   528→              >
+   529→                <span className="text-base leading-none">{langFlag(lang)}</span>
+   530→                
+   531→              </button>
+   532→            </PopoverTrigger>
+   533→            <PopoverContent className="w-36 p-1" align="end">
+   534→              <button
+   535→                onClick={() => changeLang("id")}
+   536→                className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent", lang === "id" && "font-bold text-primary")}
+   537→              >
+   538→                🇮🇩 Indonesia
+   539→              </button>
+   540→              <button
+   541→                onClick={() => changeLang("en")}
+   542→                className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent", lang === "en" && "font-bold text-primary")}
+   543→              >
+   544→                🇬🇧 English
+   545→              </button>
+   546→              <button
+   547→                onClick={() => changeLang("zh")}
+   548→                className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent", lang === "zh" && "font-bold text-primary")}
+   549→              >
+   550→                🇨🇳 中文
+   551→              </button>
+   552→            </PopoverContent>
+   553→          </Popover>
+   554→          {mounted && (
+   555→            <button
+   556→              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+   557→              className="flex h-10 items-center justify-center rounded-lg px-2 text-foreground hover:bg-accent"
+   558→              aria-label="Toggle theme"
+   559→            >
+   560→              {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
+   561→            </button>
+   562→          )}
+   563→          {/* Notification bell: shows count of new listings since last viewed */}
+   564→          <NotificationBell align="end" />
+   565→
+   566→          {mounted && user ? (
+   567→            <button
+   568→              onClick={goToProfile}
+   569→              className="flex h-10 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-foreground hover:bg-accent"
+   570→              aria-label="Akun"
+   571→            >
+   572→              <span className="grid size-7 shrink-0 place-items-center overflow-hidden rounded-full bg-primary/10">
+   573→                {user.logoImage ? (
+   574→                  <img src={user.logoImage} alt="" className="size-full object-cover" onError={(e)=>{(e.target as HTMLImageElement).style.display='none';}} />
+   575→                ) : (
+   576→                  <span className="text-xs font-bold text-primary">{user.name.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase()}</span>
+   577→                )}
+   578→              </span>
+   579→              <span className="hidden max-w-[100px] truncate lg:inline">{user.name.split(" ")[0]}</span>
+   580→            </button>
+   581→          ) : (
+   582→            <button
+   583→              onClick={goToLogin}
+   584→              className="flex h-10 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-foreground hover:bg-accent"
+   585→              aria-label="Masuk atau Daftar"
+   586→            >
+   587→              <User className="size-5" />
+   588→              <span className="hidden lg:inline">{tr("login")}</span>
+   589→            </button>
+   590→          )}
+   591→
+   592→          <Button
+   593→            onClick={goToPost}
+   594→            className="h-10 gap-1.5 rounded-full bg-primary px-4 font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"
+   595→          >
+   596→            <Plus className="size-4" />
+   597→            <span>{tr("sell")}</span>
+   598→          </Button>
+   599→        </div>
+   600→      </div>
+   601→
+   602→      {/* Category nav (hidden on admin/post/login views) */}
+   603→      {!hideCategoryNav && (
+   604→        <div className="border-t border-border">
+   605→          <CategoryNav />
+   606→        </div>
+   607→      )}
+   608→    </header>
+   609→  );
+   610→}
+   611→

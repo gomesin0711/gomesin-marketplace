@@ -1,0 +1,617 @@
+     1→"use client";
+     2→
+     3→import { useState, useEffect, useRef } from "react";
+     4→import { useStore } from "@/lib/store";
+     5→import { Button } from "@/components/ui/button";
+     6→import { Input } from "@/components/ui/input";
+     7→import { Label } from "@/components/ui/label";
+     8→import {
+     9→  InputOTP,
+    10→  InputOTPGroup,
+    11→  InputOTPSlot,
+    12→} from "@/components/ui/input-otp";
+    13→import {
+    14→  Tabs,
+    15→  TabsContent,
+    16→  TabsList,
+    17→  TabsTrigger,
+    18→} from "@/components/ui/tabs";
+    19→import {
+    20→  Cog,
+    21→  ChevronLeft,
+    22→  Mail,
+    23→  Lock,
+    24→  User,
+    25→  Phone,
+    26→  MapPin,
+    27→  Eye,
+    28→  EyeOff,
+    29→  Loader2,
+    30→  ShieldCheck,
+    31→  CheckCircle2,
+    32→  KeyRound,
+    33→} from "lucide-react";
+    34→import { toast } from "sonner";
+    35→import { cn } from "@/lib/utils";
+    36→import { useLang, translations as i18nTranslations, formatT } from "@/lib/i18n";
+    37→import { useMounted } from "@/lib/use-mounted";
+    38→import { ForgotPasswordDialog } from "@/components/gomesin/forgot-password-dialog";
+    39→
+    40→export function LoginView() {
+    41→  const goBack = useStore((s) => s.goBack);
+    42→
+    43→  const { t } = useLang();
+    44→  const mounted = useMounted();
+    45→  const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
+    46→
+    47→  const [showPass, setShowPass] = useState(false);
+    48→  const [loading, setLoading] = useState(false);
+    49→  const [success, setSuccess] = useState(false);
+    50→
+    51→  const [lEmail, setLEmail] = useState("");
+    52→  const [lPass, setLPass] = useState("");
+    53→
+    54→  const [rName, setRName] = useState("");
+    55→  const [rEmail, setREmail] = useState("");
+    56→  const [rPhone, setRPhone] = useState("");
+    57→  const [rPass, setRPass] = useState("");
+    58→  const [rPass2, setRPass2] = useState("");
+    59→  const [agree, setAgree] = useState(false);
+    60→  const [tab, setTab] = useState<"login" | "register">("login");
+    61→  const [forgotOpen, setForgotOpen] = useState(false);
+    62→
+    63→  // --- Register OTP state ---
+    64→  const [rOtp, setROtp] = useState("");
+    65→  const [rOtpSending, setROtpSending] = useState(false);
+    66→  const [rOtpVerifying, setROtpVerifying] = useState(false);
+    67→  const [rOtpVerified, setROtpVerified] = useState(false);
+    68→  const [rOtpDevCode, setROtpDevCode] = useState<string | null>(null);
+    69→  const [rOtpCooldown, setROtpCooldown] = useState(0);
+    70→
+    71→  useEffect(() => {
+    72→    if (rOtpCooldown <= 0) return;
+    73→    const id = setTimeout(() => setROtpCooldown((c) => c - 1), 1000);
+    74→    return () => clearTimeout(id);
+    75→  }, [rOtpCooldown]);
+    76→
+    77→  const doLogin = async (e: React.FormEvent) => {
+    78→    e.preventDefault();
+    79→    if (!lEmail.trim() || !lPass) {
+    80→      toast.error(tr("errEmailPass"));
+    81→      return;
+    82→    }
+    83→    setLoading(true);
+    84→    try {
+    85→      const res = await fetch("/api/auth/login", {
+    86→        method: "POST",
+    87→        headers: { "Content-Type": "application/json" },
+    88→        body: JSON.stringify({ email: lEmail, password: lPass }),
+    89→      });
+    90→      const data = await res.json();
+    91→      if (!res.ok) {
+    92→        toast.error(data.error || tr("errLogin"));
+    93→        return;
+    94→      }
+    95→      const setUser = useStore.getState().setUser;
+    96→      const goHome = useStore.getState().goHome;
+    97→      const goToAdmin = useStore.getState().goToAdmin;
+    98→      setUser(data.user);
+    99→      setSuccess(true);
+   100→      toast.success(formatT(tr("welcomeBack"), { name: data.user.name }));
+   101→      const isAdmin = data.user.role === "admin" || data.user.role === "superadmin";
+   102→      setTimeout(() => isAdmin ? goToAdmin() : goHome(), 900);
+   103→    } catch {
+   104→      toast.error(tr("errConnection"));
+   105→    } finally {
+   106→      setLoading(false);
+   107→    }
+   108→  };
+   109→
+   110→  const sendRegOtp = async () => {
+   111→    if (!rPhone.trim()) {
+   112→      toast.error(tr("regOtpPhoneFirst"));
+   113→      return;
+   114→    }
+   115→    setROtpSending(true);
+   116→    setROtpDevCode(null);
+   117→    try {
+   118→      const res = await fetch("/api/auth/register-otp", {
+   119→        method: "POST",
+   120→        headers: { "Content-Type": "application/json" },
+   121→        body: JSON.stringify({ action: "send", phone: rPhone }),
+   122→      });
+   123→      const data = await res.json();
+   124→      if (!res.ok) {
+   125→        toast.error(data.error || tr("errConnection"));
+   126→        return;
+   127→      }
+   128→      toast.success(data.message || tr("regOtpSent"));
+   129→      if (data._devCode) {
+   130→        setROtpDevCode(data._devCode);
+   131→      }
+   132→      setROtpCooldown(60);
+   133→    } catch {
+   134→      toast.error(tr("errConnection"));
+   135→    } finally {
+   136→      setROtpSending(false);
+   137→    }
+   138→  };
+   139→
+   140→  const verifyRegOtp = async () => {
+   141→    if (rOtp.length < 6) {
+   142→      toast.error(tr("regOtpRequired"));
+   143→      return;
+   144→    }
+   145→    setROtpVerifying(true);
+   146→    try {
+   147→      const res = await fetch("/api/auth/register-otp", {
+   148→        method: "POST",
+   149→        headers: { "Content-Type": "application/json" },
+   150→        body: JSON.stringify({ action: "verify", phone: rPhone, code: rOtp }),
+   151→      });
+   152→      const data = await res.json();
+   153→      if (!res.ok) {
+   154→        toast.error(data.error || tr("regOtpInvalid"));
+   155→        return;
+   156→      }
+   157→      toast.success(tr("otpVerified"));
+   158→      setROtpVerified(true);
+   159→    } catch {
+   160→      toast.error(tr("errConnection"));
+   161→    } finally {
+   162→      setROtpVerifying(false);
+   163→    }
+   164→  };
+   165→
+   166→  // When phone changes after verification, reset verified state so user must re-verify.
+   167→  const prevPhoneRef = useRef<string>("");
+   168→  useEffect(() => {
+   169→    if (prevPhoneRef.current !== rPhone) {
+   170→      prevPhoneRef.current = rPhone;
+   171→      if (rOtpVerified) setROtpVerified(false);
+   172→    }
+   173→  }, [rPhone, rOtpVerified]);
+   174→
+   175→  const doRegister = async (e: React.FormEvent) => {
+   176→    e.preventDefault();
+   177→    if (!rName.trim() || !rEmail.trim() || !rPass) {
+   178→      toast.error(tr("errRequired"));
+   179→      return;
+   180→    }
+   181→    if (!rOtpVerified) {
+   182→      toast.error(tr("errPhoneNotVerified"));
+   183→      return;
+   184→    }
+   185→    if (rPass.length < 6) {
+   186→      toast.error(tr("errPassLength"));
+   187→      return;
+   188→    }
+   189→    if (rPass !== rPass2) {
+   190→      toast.error(tr("errPassMatch"));
+   191→      return;
+   192→    }
+   193→    if (!agree) {
+   194→      toast.error(tr("errAgree"));
+   195→      return;
+   196→    }
+   197→    setLoading(true);
+   198→    try {
+   199→      const res = await fetch("/api/auth/register", {
+   200→        method: "POST",
+   201→        headers: { "Content-Type": "application/json" },
+   202→        body: JSON.stringify({
+   203→          name: rName,
+   204→          email: rEmail,
+   205→          password: rPass,
+   206→          phone: rPhone,
+   207→        }),
+   208→      });
+   209→      const data = await res.json();
+   210→      if (!res.ok) {
+   211→        toast.error(data.error || tr("errRegister"));
+   212→        return;
+   213→      }
+   214→      const setUser = useStore.getState().setUser;
+   215→      const goToPost = useStore.getState().goToPost;
+   216→      const goToAdmin = useStore.getState().goToAdmin;
+   217→      setUser(data.user);
+   218→      setSuccess(true);
+   219→      toast.success(tr("registerSuccess"));
+   220→      const isAdmin = data.user.role === "admin" || data.user.role === "superadmin";
+   221→      setTimeout(() => isAdmin ? goToAdmin() : goToPost(), 1100);
+   222→    } catch {
+   223→      toast.error(tr("errConnection"));
+   224→    } finally {
+   225→      setLoading(false);
+   226→    }
+   227→  };
+   228→
+   229→  if (success) {
+   230→    return (
+   231→      <div className="mx-auto flex max-w-md flex-col items-center px-4 py-20 text-center animate-fade-up">
+   232→        <div className="grid size-20 place-items-center rounded-full bg-primary/10">
+   233→          <CheckCircle2 className="size-12 text-primary" />
+   234→        </div>
+   235→        <h2 className="mt-4 text-2xl font-bold">{tr("loginSuccess")}</h2>
+   236→        <p className="mt-2 text-sm text-muted-foreground">
+   237→          {tr("loginRedirect")}
+   238→        </p>
+   239→        <Loader2 className="mt-4 size-5 animate-spin text-primary" />
+   240→      </div>
+   241→    );
+   242→  }
+   243→
+   244→  return (
+   245→    <div className="animate-fade-up">
+   246→      {/* ===== MOBILE: compact single column ===== */}
+   247→      <div className="flex min-h-[calc(100vh-4rem)] flex-col px-4 py-6 md:hidden">
+   248→        <button
+   249→          onClick={goBack}
+   250→          className="mb-4 inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-primary"
+   251→        >
+   252→          <ChevronLeft className="size-4" /> {tr("back")}
+   253→        </button>
+   254→        <div className="flex flex-col items-center text-center">
+   255→          {/* eslint-disable-next-line @next/next/no-img-element */}
+   256→          <img src="/logo.jpeg" alt="mesinKU" className="size-16 rounded-2xl shadow-lg object-cover" />
+   257→          <h1 className="mt-3 text-2xl font-extrabold tracking-tight">
+   258→            <span className="text-primary">mesin</span>KU
+   259→          </h1>
+   260→          <p className="mt-1 text-sm text-muted-foreground">{tr("loginTitle")}</p>
+   261→        </div>
+   262→        <div className="mt-6 w-full max-w-md mx-auto">
+   263→          <FormSection
+   264→            tab={tab} setTab={setTab}
+   265→            showPass={showPass} setShowPass={setShowPass}
+   266→            loading={loading}
+   267→            lEmail={lEmail} setLEmail={setLEmail}
+   268→            lPass={lPass} setLPass={setLPass}
+   269→            rName={rName} setRName={setRName}
+   270→            rEmail={rEmail} setREmail={setREmail}
+   271→            rPhone={rPhone} setRPhone={setRPhone}
+   272→            rPass={rPass} setRPass={setRPass}
+   273→            rPass2={rPass2} setRPass2={setRPass2}
+   274→            agree={agree} setAgree={setAgree}
+   275→            rOtp={rOtp} setROtp={setROtp}
+   276→            rOtpSending={rOtpSending}
+   277→            rOtpVerifying={rOtpVerifying}
+   278→            rOtpVerified={rOtpVerified}
+   279→            rOtpDevCode={rOtpDevCode}
+   280→            rOtpCooldown={rOtpCooldown}
+   281→            sendRegOtp={sendRegOtp}
+   282→            verifyRegOtp={verifyRegOtp}
+   283→            doLogin={doLogin} doRegister={doRegister}
+   284→            onForgotPassword={() => setForgotOpen(true)}
+   285→            tr={tr}
+   286→          />
+   287→        </div>
+   288→      </div>
+   289→
+   290→      {/* ===== DESKTOP: 1/2 orange block + 1/2 centered form ===== */}
+   291→      <div className="hidden md:grid md:grid-cols-2 md:min-h-[calc(100vh-4rem)]">
+   292→        {/* LEFT: Orange block with logo + marketing text */}
+   293→        <div className="relative flex flex-col items-center justify-center bg-primary px-12 py-16 overflow-hidden">
+   294→          {/* Decorative circles */}
+   295→          <div className="absolute inset-0 opacity-10">
+   296→            <div className="absolute -top-24 -left-24 size-72 rounded-full bg-white/20" />
+   297→            <div className="absolute -bottom-32 -right-32 size-96 rounded-full bg-white/10" />
+   298→            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-[600px] rounded-full bg-white/5" />
+   299→          </div>
+   300→          <div className="relative z-10 flex flex-col items-center text-center max-w-sm">
+   301→            {/* eslint-disable-next-line @next/next/no-img-element */}
+   302→            <img
+   303→              src="/logo.jpeg"
+   304→              alt="mesinKU"
+   305→              className="size-24 rounded-3xl shadow-2xl object-cover ring-4 ring-white/20"
+   306→            />
+   307→            <h1 className="mt-6 text-3xl font-extrabold tracking-tight text-primary-foreground">
+   308→              <span className="text-white">mesin</span>KU
+   309→            </h1>
+   310→            <h2 className="mt-5 text-2xl font-black leading-tight text-white">
+   311→              Jual &amp; beli mesin industri, lebih cepat, lebih aman.
+   312→            </h2>
+   313→            <p className="mt-4 text-base leading-relaxed text-primary-foreground/80">
+   314→              Ribuan listing MESIN CETAK, CNC, Laser, kompresor, alat berat &amp; sparepart — baru dan bekas dari seller terverifikasi se-Indonesia.
+   315→            </p>
+   316→            <p className="mt-2 text-lg font-black tracking-wider text-white">TANPA KOMISI !</p>
+   317→            <div className="mt-8 flex flex-wrap justify-center gap-3">
+   318→              {[
+   319→                { icon: ShieldCheck, label: "Seller Terverifikasi" },
+   320→                { icon: MapPin, label: "Se-Indonesia" },
+   321→                { icon: Cog, label: "Mesin Berkualitas" },
+   322→              ].map(({ icon: Icon, label }) => (
+   323→                <span
+   324→                  key={label}
+   325→                  className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-xs font-medium text-white backdrop-blur"
+   326→                >
+   327→                  <Icon className="size-3.5" />
+   328→                  {label}
+   329→                </span>
+   330→              ))}
+   331→            </div>
+   332→          </div>
+   333→        </div>
+   334→
+   335→        {/* RIGHT: Centered login/register form */}
+   336→        <div className="flex flex-col items-center justify-center px-8 py-12">
+   337→          <div className="w-full max-w-md">
+   338→            <button
+   339→              onClick={goBack}
+   340→              className="mb-6 inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-primary"
+   341→            >
+   342→              <ChevronLeft className="size-4" /> {tr("back")}
+   343→            </button>
+   344→            <div className="mb-6 flex items-center gap-2.5">
+   345→              {/* eslint-disable-next-line @next/next/no-img-element */}
+   346→              <img src="/logo.jpeg" alt="mesinKU" className="size-10 rounded-xl object-cover shadow-sm" />
+   347→              <h1 className="text-xl font-extrabold tracking-tight">
+   348→                <span className="text-primary">mesin</span>KU
+   349→              </h1>
+   350→            </div>
+   351→            <FormSection
+   352→              tab={tab} setTab={setTab}
+   353→              showPass={showPass} setShowPass={setShowPass}
+   354→              loading={loading}
+   355→              lEmail={lEmail} setLEmail={setLEmail}
+   356→              lPass={lPass} setLPass={setLPass}
+   357→              rName={rName} setRName={setRName}
+   358→              rEmail={rEmail} setREmail={setREmail}
+   359→              rPhone={rPhone} setRPhone={setRPhone}
+   360→              rPass={rPass} setRPass={setRPass}
+   361→              rPass2={rPass2} setRPass2={setRPass2}
+   362→              agree={agree} setAgree={setAgree}
+   363→              rOtp={rOtp} setROtp={setROtp}
+   364→              rOtpSending={rOtpSending}
+   365→              rOtpVerifying={rOtpVerifying}
+   366→              rOtpVerified={rOtpVerified}
+   367→              rOtpDevCode={rOtpDevCode}
+   368→              rOtpCooldown={rOtpCooldown}
+   369→              sendRegOtp={sendRegOtp}
+   370→              verifyRegOtp={verifyRegOtp}
+   371→              doLogin={doLogin} doRegister={doRegister}
+   372→              onForgotPassword={() => setForgotOpen(true)}
+   373→              tr={tr}
+   374→            />
+   375→            <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+   376→              <ShieldCheck className={cn("size-3.5 text-primary")} />
+   377→              {tr("dataSecure")}
+   378→            </div>
+   379→          </div>
+   380→        </div>
+   381→      </div>
+   382→
+   383→      <ForgotPasswordDialog open={forgotOpen} onOpenChange={setForgotOpen} />
+   384→    </div>
+   385→  );
+   386→}
+   387→
+   388→/* ===== Reusable form section (used in both mobile & desktop) ===== */
+   389→function FormSection({
+   390→  tab, setTab, showPass, setShowPass, loading,
+   391→  lEmail, setLEmail, lPass, setLPass,
+   392→  rName, setRName, rEmail, setREmail, rPhone, setRPhone,
+   393→  rPass, setRPass, rPass2, setRPass2, agree, setAgree,
+   394→  rOtp, setROtp, rOtpSending, rOtpVerifying, rOtpVerified, rOtpDevCode, rOtpCooldown,
+   395→  sendRegOtp, verifyRegOtp,
+   396→  doLogin, doRegister, onForgotPassword, tr,
+   397→}: {
+   398→  tab: string; setTab: (v: "login" | "register") => void;
+   399→  showPass: boolean; setShowPass: (v: boolean | ((p: boolean) => boolean)) => void;
+   400→  loading: boolean;
+   401→  lEmail: string; setLEmail: (v: string) => void;
+   402→  lPass: string; setLPass: (v: string) => void;
+   403→  rName: string; setRName: (v: string) => void;
+   404→  rEmail: string; setREmail: (v: string) => void;
+   405→  rPhone: string; setRPhone: (v: string) => void;
+   406→  rPass: string; setRPass: (v: string) => void;
+   407→  rPass2: string; setRPass2: (v: string) => void;
+   408→  agree: boolean; setAgree: (v: boolean) => void;
+   409→  rOtp: string; setROtp: (v: string) => void;
+   410→  rOtpSending: boolean;
+   411→  rOtpVerifying: boolean;
+   412→  rOtpVerified: boolean;
+   413→  rOtpDevCode: string | null;
+   414→  rOtpCooldown: number;
+   415→  sendRegOtp: () => void;
+   416→  verifyRegOtp: () => void;
+   417→  doLogin: (e: React.FormEvent) => void;
+   418→  doRegister: (e: React.FormEvent) => void;
+   419→  onForgotPassword: () => void;
+   420→  tr: (key: any) => any;
+   421→}) {
+   422→  return (
+   423→    <Tabs value={tab} onValueChange={(v) => setTab(v as "login" | "register")}>
+   424→      <TabsList className="grid w-full grid-cols-2">
+   425→        <TabsTrigger value="login">{tr("tabLogin")}</TabsTrigger>
+   426→        <TabsTrigger value="register">{tr("tabRegister")}</TabsTrigger>
+   427→      </TabsList>
+   428→
+   429→      <TabsContent value="login">
+   430→        <form onSubmit={doLogin} className="space-y-4 rounded-xl border border-border bg-card p-5">
+   431→          <div className="space-y-1.5">
+   432→            <Label htmlFor="l-email">{tr("email")}</Label>
+   433→            <div className="relative">
+   434→              <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+   435→              <Input id="l-email" type="email" autoComplete="email" value={lEmail} onChange={(e) => setLEmail(e.target.value)} placeholder="nama@email.com" className="pl-9" />
+   436→            </div>
+   437→          </div>
+   438→          <div className="space-y-1.5">
+   439→            <Label htmlFor="l-pass">{tr("password")}</Label>
+   440→            <div className="relative">
+   441→              <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+   442→              <Input id="l-pass" type={showPass ? "text" : "password"} autoComplete="current-password" value={lPass} onChange={(e) => setLPass(e.target.value)} placeholder="••••••••" className="px-9" />
+   443→              <button type="button" onClick={() => setShowPass((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label={showPass ? tr("hidePass") : tr("showPass")}>
+   444→                {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+   445→              </button>
+   446→            </div>
+   447→          </div>
+   448→          <div className="flex items-center justify-between text-xs">
+   449→            <label className="flex items-center gap-1.5 text-muted-foreground">
+   450→              <input type="checkbox" className="accent-primary" /> {tr("rememberMe")}
+   451→            </label>
+   452→            <button type="button" onClick={onForgotPassword} className="font-medium text-primary hover:underline">
+   453→              {tr("forgotPassword")}
+   454→            </button>
+   455→          </div>
+   456→          <Button type="submit" disabled={loading} className="w-full gap-2 bg-primary font-semibold" size="lg">
+   457→            {loading ? <Loader2 className="size-4 animate-spin" /> : null}
+   458→            {loading ? tr("processing") : tr("tabLogin")}
+   459→          </Button>
+   460→          <p className="text-center text-xs text-muted-foreground">
+   461→            {tr("noAccount")}{" "}
+   462→            <button type="button" onClick={() => setTab("register")} className="font-semibold text-primary hover:underline">
+   463→              {tr("registerNow")}
+   464→            </button>
+   465→          </p>
+   466→        </form>
+   467→      </TabsContent>
+   468→
+   469→      <TabsContent value="register">
+   470→        <form onSubmit={doRegister} className="space-y-4 rounded-xl border border-border bg-card p-5">
+   471→          <div className="space-y-1.5">
+   472→            <Label htmlFor="r-name">{`${tr("fullName")} *`}</Label>
+   473→            <div className="relative">
+   474→              <User className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+   475→              <Input id="r-name" value={rName} onChange={(e) => setRName(e.target.value)} placeholder={tr("fullNamePlaceholder")} className="pl-9" />
+   476→            </div>
+   477→          </div>
+   478→          <div className="space-y-1.5">
+   479→            <Label htmlFor="r-email">{`${tr("email")} *`}</Label>
+   480→            <div className="relative">
+   481→              <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+   482→              <Input id="r-email" type="email" autoComplete="email" value={rEmail} onChange={(e) => setREmail(e.target.value)} placeholder="nama@email.com" className="pl-9" />
+   483→            </div>
+   484→          </div>
+   485→          <div className="space-y-1.5">
+   486→            <Label htmlFor="r-phone">{tr("whatsapp")}</Label>
+   487→            <div className="relative">
+   488→              <Phone className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+   489→              <Input id="r-phone" value={rPhone} onChange={(e) => setRPhone(e.target.value)} placeholder={tr("whatsappPlaceholder")} className="pl-9" />
+   490→            </div>
+   491→          </div>
+   492→
+   493→          {/* ===== Register OTP step ===== */}
+   494→          <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+   495→            <div className="flex items-center justify-between gap-2">
+   496→              <Label htmlFor="r-otp" className="text-xs font-medium">
+   497→                {tr("regOtpLabel")}
+   498→              </Label>
+   499→              {rOtpVerified && (
+   500→                <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-600 dark:text-green-400">
+   501→                  <CheckCircle2 className="size-3.5" /> {tr("regOtpVerified")}
+   502→                </span>
+   503→              )}
+   504→            </div>
+   505→
+   506→            {/* OTP input + verify button */}
+   507→            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+   508→              <InputOTP
+   509→                maxLength={6}
+   510→                value={rOtp}
+   511→                onChange={(v) => setROtp(v)}
+   512→                disabled={rOtpVerified}
+   513→              >
+   514→                <InputOTPGroup>
+   515→                  <InputOTPSlot index={0} className="size-9 text-sm" />
+   516→                  <InputOTPSlot index={1} className="size-9 text-sm" />
+   517→                  <InputOTPSlot index={2} className="size-9 text-sm" />
+   518→                  <InputOTPSlot index={3} className="size-9 text-sm" />
+   519→                  <InputOTPSlot index={4} className="size-9 text-sm" />
+   520→                  <InputOTPSlot index={5} className="size-9 text-sm" />
+   521→                </InputOTPGroup>
+   522→              </InputOTP>
+   523→
+   524→              {!rOtpVerified && (
+   525→                <Button
+   526→                  type="button"
+   527→                  onClick={verifyRegOtp}
+   528→                  disabled={rOtpVerifying || rOtp.length < 6}
+   529→                  size="sm"
+   530→                  className="gap-1.5 bg-primary font-semibold sm:ml-auto"
+   531→                >
+   532→                  {rOtpVerifying ? <Loader2 className="size-3.5 animate-spin" /> : <ShieldCheck className="size-3.5" />}
+   533→                  {rOtpVerifying ? tr("regOtpVerifying") : tr("regOtpVerify")}
+   534→                </Button>
+   535→              )}
+   536→            </div>
+   537→
+   538→            {/* Dev-mode code box */}
+   539→            {rOtpDevCode && !rOtpVerified && (
+   540→              <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 text-center dark:border-amber-700 dark:bg-amber-950/40">
+   541→                <p className="text-[10px] text-amber-700 dark:text-amber-300">
+   542→                  {tr("regOtpDevCode")}
+   543→                </p>
+   544→                <p className="mt-0.5 text-xl font-black tracking-widest text-amber-900 dark:text-amber-100">
+   545→                  {rOtpDevCode}
+   546→                </p>
+   547→              </div>
+   548→            )}
+   549→
+   550→            {/* Send / resend button + cooldown */}
+   551→            {!rOtpVerified && (
+   552→              <div className="flex items-center justify-between text-xs">
+   553→                {rOtpCooldown > 0 ? (
+   554→                  <span className="text-muted-foreground">
+   555→                    {formatT(tr("regOtpResendIn"), { sec: String(rOtpCooldown) })}
+   556→                  </span>
+   557→                ) : (
+   558→                  <button
+   559→                    type="button"
+   560→                    onClick={sendRegOtp}
+   561→                    disabled={rOtpSending}
+   562→                    className="inline-flex items-center gap-1 font-medium text-primary hover:underline disabled:opacity-50"
+   563→                  >
+   564→                    {rOtpSending ? <Loader2 className="size-3 animate-spin" /> : <KeyRound className="size-3" />}
+   565→                    {rOtpSending ? tr("regOtpSending") : tr("regOtpSend")}
+   566→                  </button>
+   567→                )}
+   568→              </div>
+   569→            )}
+   570→
+   571→            {!rOtpVerified && (
+   572→              <p className="text-[10px] text-muted-foreground">
+   573→                {tr("regOtpSendFirst")}
+   574→              </p>
+   575→            )}
+   576→          </div>
+   577→
+   578→          <div className="space-y-1.5">
+   579→            <Label htmlFor="r-pass">{`${tr("password")} *`}</Label>
+   580→            <div className="relative">
+   581→              <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+   582→              <Input id="r-pass" type={showPass ? "text" : "password"} autoComplete="new-password" value={rPass} onChange={(e) => setRPass(e.target.value)} placeholder={rOtpVerified ? tr("passwordPlaceholder") : tr("regOtpLocked")} className="px-9" disabled={!rOtpVerified} />
+   583→              <button type="button" onClick={() => setShowPass((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label={showPass ? tr("hidePass") : tr("showPass")} disabled={!rOtpVerified}>
+   584→                {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+   585→              </button>
+   586→            </div>
+   587→          </div>
+   588→          <div className="space-y-1.5">
+   589→            <Label htmlFor="r-pass2">{`${tr("passwordConfirm")} *`}</Label>
+   590→            <div className="relative">
+   591→              <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+   592→              <Input id="r-pass2" type={showPass ? "text" : "password"} autoComplete="new-password" value={rPass2} onChange={(e) => setRPass2(e.target.value)} placeholder={tr("passwordConfirmPlaceholder")} className="pl-9" disabled={!rOtpVerified} />
+   593→            </div>
+   594→            {rPass2 && rPass !== rPass2 && (
+   595→              <p className="text-xs text-destructive">{tr("passwordMismatch")}</p>
+   596→            )}
+   597→          </div>
+   598→          <label className="flex items-start gap-2 text-xs text-muted-foreground">
+   599→            <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 accent-primary" />
+   600→            <span>{tr("agreeTerms")}</span>
+   601→          </label>
+   602→          <Button type="submit" disabled={loading || !rOtpVerified} className="w-full gap-2 bg-primary font-semibold" size="lg">
+   603→            {loading ? <Loader2 className="size-4 animate-spin" /> : null}
+   604→            {loading ? tr("processing") : tr("registerBtn")}
+   605→          </Button>
+   606→          <p className="text-center text-xs text-muted-foreground">
+   607→            {tr("haveAccount")}{" "}
+   608→            <button type="button" onClick={() => setTab("login")} className="font-semibold text-primary hover:underline">
+   609→              {tr("loginHere")}
+   610→            </button>
+   611→          </p>
+   612→        </form>
+   613→      </TabsContent>
+   614→    </Tabs>
+   615→  );
+   616→}
+   617→

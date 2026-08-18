@@ -1,0 +1,1113 @@
+     1→"use client";
+     2→
+     3→import { useState, useEffect } from "react";
+     4→import { useQueryClient, useQuery } from "@tanstack/react-query";
+     5→import Image from "next/image";
+     6→import { Button } from "@/components/ui/button";
+     7→import { Badge } from "@/components/ui/badge";
+     8→import { Edit, Loader2, CheckCircle2, Sparkles, Zap, TrendingUp, Star, ImageIcon, Clock, AlertTriangle, XCircle, X, Upload } from "lucide-react";
+     9→import { cn } from "@/lib/utils";
+    10→import { toast } from "sonner";
+    11→import { formatRupiahFull, type Listing } from "@/lib/types";
+    12→import { useLang, translations as i18nTranslations, listingTitle } from "@/lib/i18n";
+    13→import { useMounted } from "@/lib/use-mounted";
+    14→import { compressImage } from "@/lib/image";
+    15→import { openWhatsAppWithUrl } from "@/lib/share-image";
+    16→import { useChatSocket } from "@/lib/use-chat-socket";
+    17→import { useStore } from "@/lib/store";
+    18→
+    19→type PackageKey = "simpan" | "colek" | "sundul" | "highlight" | "spotlight";
+    20→
+    21→type PaymentMethod = "bca" | "qris";
+    22→
+    23→const PACKAGES: Array<{
+    24→  key: PackageKey;
+    25→  name: string;
+    26→  price: number;
+    27→  originalPrice: number;
+    28→  duration: string;
+    29→  badge?: string;
+    30→  color: string;
+    31→  ring: string;
+    32→  icon: typeof Star;
+    33→  description: string;
+    34→}> = [
+    35→  {
+    36→    key: "colek",
+    37→    name: "Gold",
+    38→    price: 60000,
+    39→    originalPrice: 75000,
+    40→    duration: "30 hari",
+    41→    color: "border-blue-400 bg-blue-50",
+    42→    ring: "ring-blue-400",
+    43→    icon: CheckCircle2,
+    44→    description: "Tampil di bagian Premium, Badge Gold, Prioritas pencarian.",
+    45→  },
+    46→  {
+    47→    key: "sundul",
+    48→    name: "Colek",
+    49→    price: 30000,
+    50→    originalPrice: 50000,
+    51→    duration: "10 hari",
+    52→    color: "border-purple-400 bg-purple-50",
+    53→    ring: "ring-purple-400",
+    54→    icon: TrendingUp,
+    55→    description: "Iklan didorong ke posisi teratas.",
+    56→  },
+    57→  {
+    58→    key: "highlight",
+    59→    name: "Platinum",
+    60→    price: 68000,
+    61→    originalPrice: 120000,
+    62→    duration: "30 hari",
+    63→    badge: "Populer",
+    64→    color: "border-orange-400 bg-orange-50",
+    65→    ring: "ring-orange-400",
+    66→    icon: Zap,
+    67→    description: "Iklan ditandai border orange + muncul di atas.",
+    68→  },
+    69→  {
+    70→    key: "spotlight",
+    71→    name: "Titanium",
+    72→    price: 99000,
+    73→    originalPrice: 180000,
+    74→    duration: "30 hari",
+    75→    color: "border-amber-400 bg-amber-50",
+    76→    ring: "ring-amber-400",
+    77→    icon: Sparkles,
+    78→    description: "Tampilan terluas: 3 foto + latar amber + di puncak.",
+    79→  },
+    80→];
+    81→
+    82→const PAYMENT_METHODS: Array<{
+    83→  key: PaymentMethod;
+    84→  name: string;
+    85→  desc: string;
+    86→  color: string;
+    87→}> = [
+    88→  { key: "bca", name: "Transfer ke BCA", desc: "Transfer manual ke rekening BCA", color: "border-blue-500" },
+    89→  { key: "qris", name: "QRIS GoPay", desc: "Scan QR dari GoPay / e-wallet", color: "border-purple-500" },
+    90→];
+    91→
+    92→export function PackageActivateDialog({
+    93→  listing,
+    94→  open,
+    95→  onOpenChange,
+    96→  onEdit,
+    97→  onSuccess,
+    98→}: {
+    99→  listing: Listing;
+   100→  open: boolean;
+   101→  onOpenChange: (o: boolean) => void;
+   102→  onEdit: (slug: string) => void;
+   103→  onSuccess?: () => void;
+   104→}) {
+   105→  const { t, lang } = useLang();
+   106→  const mounted = useMounted();
+   107→  const tr = mounted ? t : (key: any) => (i18nTranslations.id as any)[key] ?? key;
+   108→  const queryClient = useQueryClient();
+   109→  const user = useStore((s) => s.user);
+   110→  const { sendMessage } = useChatSocket();
+   111→
+   112→  // Fetch paket pricing from DB (admin can edit)
+   113→  const { data: paketData } = useQuery({
+   114→    queryKey: ["admin-paket"],
+   115→    queryFn: async () => {
+   116→      const res = await fetch("/api/admin/paket");
+   117→      if (!res.ok) return null;
+   118→      return res.json() as Promise<{ pakets: any[] }>;
+   119→    },
+   120→    staleTime: 0,
+   121→  });
+   122→  const paketMap: Record<string, { price: number; originalPrice: number; duration: number; name: string }> = {};
+   123→  (paketData?.pakets || []).forEach((p: any) => {
+   124→    paketMap[p.key] = { price: p.price, originalPrice: p.originalPrice ?? 0, duration: p.duration, name: p.name };
+   125→  });
+   126→
+   127→  // Initialize selectedPackage from listing.packageType (or "colek" for simpan)
+   128→  const [selectedPackage, setSelectedPackage] = useState<PackageKey>(() => {
+   129→    const p = (listing.packageType as PackageKey) || "colek";
+   130→    return p === "simpan" ? "colek" : p;
+   131→  });
+   132→  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("bca");
+   133→  const [submitting, setSubmitting] = useState(false);
+   134→  const [qrisModal, setQrisModal] = useState(false);
+   135→  const [bcaModal, setBcaModal] = useState(false);
+   136→  const [proofImage, setProofImage] = useState<string>("");
+   137→  const [uploadingProof, setUploadingProof] = useState(false);
+   138→
+   139→  // Lock body scroll saat QRIS/BCA page terbuka (hilangkan scrollbar browser).
+   140→  useEffect(() => {
+   141→    const lock = qrisModal || bcaModal;
+   142→    document.body.style.overflow = lock ? "hidden" : "";
+   143→    document.documentElement.style.overflow = lock ? "hidden" : "";
+   144→    return () => {
+   145→      document.body.style.overflow = "";
+   146→      document.documentElement.style.overflow = "";
+   147→    };
+   148→  }, [qrisModal, bcaModal]);
+   149→
+   150→  const isPending = listing.status === "pending";
+   151→  const isSundulDisabled = isPending;
+   152→
+   153→  // Boost/upgrade HANYA untuk iklan yang sudah aktif.
+   154→  // Jika iklan belum aktif (draft, pending, rejected, expired, sold, atau dilanggar),
+   155→  // maka paket boost dinonaktifkan — boost hanya untuk upgrade iklan yang sudah terbit.
+   156→  const isExpired = listing.status === "active" && !!listing.paymentExpiry && new Date(listing.paymentExpiry) < new Date();
+   157→  const isViolation = !!(listing as any).violationFlag;
+   158→  const isBoostDisabled = listing.status !== "active" || isViolation || isExpired;
+   159→
+   160→  // Merge DB paket data into PACKAGES (override price/duration/name/originalPrice)
+   161→  const packages = PACKAGES.map((p) => {
+   162→    const db = paketMap[p.key];
+   163→    return db ? { ...p, price: db.price, originalPrice: db.originalPrice, duration: `${db.duration} hari`, name: db.name } : p;
+   164→  });
+   165→  const selectedPkg = packages.find((p) => p.key === selectedPackage) || packages[0];
+   166→  // needsPayment = selectedPackage !== "simpan" && price > 0
+   167→  // (all packages including Gold require payment — only "simpan" is free)
+   168→  const needsPayment = selectedPackage !== "simpan" && selectedPkg.price > 0;
+   169→
+   170→  // Status info for listing summary
+   171→  const statusInfo =
+   172→    listing.status === "pending"
+   173→      ? { color: "bg-amber-500", text: tr("pendingVerification"), icon: Clock }
+   174→      : listing.status === "rejected" || isViolation
+   175→      ? {
+   176→          color: "bg-red-500",
+   177→          text: isViolation ? tr("violation") : tr("rejected"),
+   178→          icon: isViolation ? AlertTriangle : XCircle,
+   179→        }
+   180→      : listing.status === "draft"
+   181→      ? { color: "bg-slate-400", text: "Belum Aktif", icon: Clock }
+   182→      : listing.status === "sold"
+   183→      ? { color: "bg-emerald-600", text: "Terjual", icon: CheckCircle2 }
+   184→      : isExpired
+   185→      ? { color: "bg-red-500", text: "Non Aktif", icon: AlertTriangle }
+   186→      : { color: "bg-green-500", text: "Aktif", icon: CheckCircle2 };
+   187→  const StatusIcon = statusInfo.icon;
+   188→
+   189→  // Pesan alasan kenapa boost dinonaktifkan
+   190→  const boostDisabledReason = isBoostDisabled
+   191→    ? listing.status === "draft"
+   192→      ? "Iklan belum aktif. Aktifkan iklan terlebih dahulu sebelum mengupgrade paket."
+   193→      : listing.status === "pending"
+   194→      ? "Iklan masih menunggu verifikasi. Boost hanya tersedia untuk iklan yang sudah aktif."
+   195→      : listing.status === "rejected"
+   196→      ? "Iklan ditolak. Boost hanya tersedia untuk iklan yang sudah aktif."
+   197→      : listing.status === "sold"
+   198→      ? "Iklan sudah terjual. Boost tidak tersedia untuk iklan terjual."
+   199→      : isViolation
+   200→      ? "Iklan ditandai melanggar. Boost tidak tersedia untuk iklan yang dilanggar."
+   201→      : isExpired
+   202→      ? "Masa aktif iklan sudah berakhir. Perpanjang/aktifkan kembali sebelum mengupgrade paket."
+   203→      : "Boost hanya tersedia untuk iklan yang sudah aktif."
+   204→    : null;
+   205→
+   206→  // Current package label for listing summary
+   207→  const currentPkgLabel =
+   208→    listing.packageType === "spotlight"
+   209→      ? "Titanium"
+   210→      : listing.packageType === "highlight"
+   211→      ? "Platinum"
+   212→      : listing.packageType === "sundul"
+   213→      ? "Colek"
+   214→      : listing.packageType === "simpan"
+   215→      ? "Simpan (Draft)"
+   216→      : "Gold";
+   217→
+   218→  // Button label: selalu "Upgrade" (dialog hanya dibuka untuk iklan aktif).
+   219→  const buttonLabel = "Upgrade";
+   220→  // Kode unik: fetch dari API (stored in DB, unik per user, tidak berubah).
+   221→  const [uniqueCode, setUniqueCode] = useState<number | null>(null);
+   222→  const currentUserId = useStore((s) => s.user?.id);
+   223→
+   224→  useEffect(() => {
+   225→    if (!open || !listing.id || selectedPkg.price <= 0 || !currentUserId) return;
+   226→    let cancelled = false;
+   227→    (async () => {
+   228→      try {
+   229→        const res = await fetch("/api/listings/unique-code", {
+   230→          method: "POST",
+   231→          headers: { "Content-Type": "application/json" },
+   232→          // Never cache — every open / refresh must get a NEW random code.
+   233→          cache: "no-store",
+   234→          body: JSON.stringify({ listingId: listing.id, userId: currentUserId, packageType: selectedPackage }),
+   235→        });
+   236→        if (res.ok && !cancelled) {
+   237→          const data = await res.json();
+   238→          setUniqueCode(data.uniqueCode);
+   239→        }
+   240→      } catch { /* ignore */ }
+   241→    })();
+   242→    return () => { cancelled = true; };
+   243→  }, [open, listing.id, currentUserId, selectedPackage, selectedPkg.price]);
+   244→
+   245→  const qrisAmount = selectedPkg.price > 0 && uniqueCode !== null
+   246→    ? selectedPkg.price + uniqueCode
+   247→    : selectedPkg.price;
+   248→
+   249→  const handleSubmit = async () => {
+   250→    if (needsPayment && !paymentMethod) {
+   251→      toast.error("Pilih metode pembayaran terlebih dahulu.");
+   252→      return;
+   253→    }
+   254→    // QRIS → tampilkan halaman QRIS dulu (upload bukti), baru submit.
+   255→    // BCA → tampilkan halaman transfer BCA dulu (upload bukti), baru submit.
+   256→    if (needsPayment && paymentMethod === "qris") {
+   257→      setQrisModal(true);
+   258→      return;
+   259→    }
+   260→    if (needsPayment && paymentMethod === "bca") {
+   261→      setBcaModal(true);
+   262→      return;
+   263→    }
+   264→    await doSubmit();
+   265→  };
+   266→
+   267→  // Submit sebenarnya ke API (dipanggil setelah QRIS selesai atau langsung untuk BCA/GoPay).
+   268→  const doSubmit = async () => {
+   269→    setSubmitting(true);
+   270→    try {
+   271→      const res = await fetch(`/api/listings/${listing.slug}`, {
+   272→        method: "PATCH",
+   273→        headers: { "Content-Type": "application/json" },
+   274→        body: JSON.stringify({
+   275→          package: selectedPackage,
+   276→          paymentMethod: needsPayment ? paymentMethod : undefined,
+   277→          uniqueCode: uniqueCode !== null ? uniqueCode : undefined,
+   278→        }),
+   279→      });
+   280→      const data = await res.json();
+   281→      if (!res.ok) throw new Error(data.error || "Gagal mengaktifkan paket");
+   282→      toast.success(`Paket ${selectedPkg.name} berhasil diaktifkan!`);
+   283→      // Refresh dashboard + listings queries
+   284→      queryClient.invalidateQueries({ queryKey: ["dashboard-listings"] });
+   285→      queryClient.invalidateQueries({ queryKey: ["listings"] });
+   286→      queryClient.invalidateQueries({ queryKey: ["listing"] });
+   287→      if (onSuccess) {
+   288→        onSuccess();
+   289→      } else {
+   290→        onOpenChange(false);
+   291→      }
+   292→    } catch (e: any) {
+   293→      toast.error(e.message || "Gagal mengaktifkan paket");
+   294→    } finally {
+   295→      setSubmitting(false);
+   296→    }
+   297→  };
+   298→
+   299→  return (
+   300→    <>
+   301→    {/* ===== UPGRADE PAKET PAGE (fullscreen, 2 kolom di desktop) ===== */}
+   302→    {open && !qrisModal && !bcaModal && (
+   303→      <div className="fixed inset-0 z-[60] flex h-screen flex-col overflow-hidden bg-background">
+   304→        <div className="mx-auto flex h-full w-full max-w-6xl flex-col overflow-y-auto px-4 py-4 sm:py-6 md:overflow-hidden">
+   305→          {/* Header */}
+   306→          <div className="mb-4 flex shrink-0 items-center justify-between">
+   307→            <div>
+   308→              <h1 className="text-xl font-bold sm:text-2xl">Upgrade Paket Iklan</h1>
+   309→              <p className="text-sm text-muted-foreground">Pilih paket untuk meningkatkan visibilitas iklan Anda.</p>
+   310→            </div>
+   311→            <button
+   312→              type="button"
+   313→              onClick={() => onOpenChange(false)}
+   314→              className="grid size-10 shrink-0 place-items-center rounded-full border border-border bg-card hover:bg-accent"
+   315→              aria-label="Tutup"
+   316→            >
+   317→              <X className="size-5" />
+   318→            </button>
+   319→          </div>
+   320→
+   321→          {/* Content 2 kolom (desktop) / 1 kolom (mobile) */}
+   322→          <div className="grid flex-1 gap-6 md:grid-cols-2 md:overflow-hidden">
+   323→
+   324→            {/* LEFT — gambar iklan + detail */}
+   325→            <div className="space-y-3 md:overflow-y-auto md:pr-2">
+   326→              <div className="overflow-hidden rounded-xl border border-border bg-card">
+   327→                {/* Gambar utama iklan (besar) */}
+   328→                <div className="relative aspect-video w-full overflow-hidden bg-muted">
+   329→                  {listing.images?.[0] ? (
+   330→                    <Image
+   331→                      src={listing.images[0]}
+   332→                      alt={listingTitle(listing, mounted ? lang : "id")}
+   333→                      fill
+   334→                      className="object-cover"
+   335→                      unoptimized
+   336→                      sizes="(max-width: 768px) 100vw, 50vw"
+   337→                    />
+   338→                  ) : (
+   339→                    <div className="flex h-full items-center justify-center text-muted-foreground">
+   340→                      <ImageIcon className="size-12" />
+   341→                    </div>
+   342→                  )}
+   343→                </div>
+   344→                {/* Detail iklan */}
+   345→                <div className="space-y-2 p-4">
+   346→                  <p className="line-clamp-2 text-base font-semibold text-foreground">
+   347→                    {listingTitle(listing, mounted ? lang : "id")}
+   348→                  </p>
+   349→                  <p className="text-xl font-bold text-primary">
+   350→                    {formatRupiahFull(listing.price)}
+   351→                    {listing.priceType === "negotiable" && (
+   352→                      <span className="ml-2 text-xs font-medium text-muted-foreground">Nego</span>
+   353→                    )}
+   354→                  </p>
+   355→                  <div className="flex flex-wrap items-center gap-1.5">
+   356→                    <span
+   357→                      className={cn(
+   358→                        "inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white",
+   359→                        statusInfo.color
+   360→                      )}
+   361→                    >
+   362→                      <StatusIcon className="size-3" />
+   363→                      {statusInfo.text}
+   364→                    </span>
+   365→                    <span className="inline-flex items-center rounded bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+   366→                      Paket saat ini: {currentPkgLabel}
+   367→                    </span>
+   368→                  </div>
+   369→                  {/* Info tambahan */}
+   370→                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 pt-2 text-xs">
+   371→                    <div className="flex justify-between border-b border-border/50 pb-1">
+   372→                      <span className="text-muted-foreground">Kondisi</span>
+   373→                      <span className="font-medium">{listing.condition === "baru" ? "Baru" : "Bekas"}</span>
+   374→                    </div>
+   375→                    {listing.brand && (
+   376→                      <div className="flex justify-between border-b border-border/50 pb-1">
+   377→                        <span className="text-muted-foreground">Brand</span>
+   378→                        <span className="font-medium">{listing.brand}</span>
+   379→                      </div>
+   380→                    )}
+   381→                    {listing.yearProduced && (
+   382→                      <div className="flex justify-between border-b border-border/50 pb-1">
+   383→                        <span className="text-muted-foreground">Tahun</span>
+   384→                        <span className="font-medium">{listing.yearProduced}</span>
+   385→                      </div>
+   386→                    )}
+   387→                    <div className="flex justify-between border-b border-border/50 pb-1">
+   388→                      <span className="text-muted-foreground">Lokasi</span>
+   389→                      <span className="font-medium">{listing.city}</span>
+   390→                    </div>
+   391→                  </div>
+   392→                  {/* Thumbnail galeri */}
+   393→                  {listing.images && listing.images.length > 1 && (
+   394→                    <div className="flex gap-1.5 pt-2">
+   395→                      {listing.images.slice(0, 5).map((img, i) => (
+   396→                        <div key={i} className="relative size-12 shrink-0 overflow-hidden rounded-md border border-border">
+   397→                          {/* eslint-disable-next-line @next/next/no-img-element */}
+   398→                          <img src={img} alt="" className="size-full object-cover" />
+   399→                        </div>
+   400→                      ))}
+   401→                    </div>
+   402→                  )}
+   403→                </div>
+   404→              </div>
+   405→            </div>
+   406→
+   407→            {/* RIGHT — paket + metode pembayaran + total + footer */}
+   408→            <div className="flex flex-col space-y-3 md:overflow-y-auto md:pl-2">
+   409→
+   410→        {/* Warning banner: boost dinonaktifkan jika iklan belum aktif */}
+   411→        {isBoostDisabled && boostDisabledReason && (
+   412→          <div className="flex items-start gap-2.5 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800">
+   413→            <AlertTriangle className="size-5 shrink-0 text-amber-500" />
+   414→            <div>
+   415→              <p className="text-sm font-bold">Boost Tidak Tersedia</p>
+   416→              <p className="mt-0.5 text-xs leading-relaxed">{boostDisabledReason}</p>
+   417→            </div>
+   418→          </div>
+   419→        )}
+   420→
+   421→        {/* Package cards */}
+   422→        <div className={cn("grid grid-cols-2 gap-2 lg:grid-cols-4", isBoostDisabled && "pointer-events-none opacity-50")}>
+   423→          {packages.map((p) => {
+   424→            const isSel = selectedPackage === p.key;
+   425→            const PkgIcon = p.icon;
+   426→            const isDisabled = (p.key === "sundul" && isSundulDisabled) || isBoostDisabled;
+   427→            return (
+   428→              <button
+   429→                key={p.key}
+   430→                type="button"
+   431→                disabled={isDisabled}
+   432→                onClick={() => {
+   433→                  setSelectedPackage(p.key);
+   434→                  // Reset unique-code so the total briefly shows just the new
+   435→                  // package price while the useEffect fetches a fresh, DIFFERENT
+   436→                  // code for the newly-selected package.
+   437→                  setUniqueCode(null);
+   438→                }}
+   439→                className={cn(
+   440→                  "relative rounded-lg border-2 p-3 text-left transition",
+   441→                  p.color,
+   442→                  isSel ? cn("ring-2", p.ring) : "opacity-90 hover:opacity-100",
+   443→                  isDisabled && "cursor-not-allowed opacity-40"
+   444→                )}
+   445→              >
+   446→                <div className="flex items-start justify-between gap-2">
+   447→                  <div className="flex items-center gap-1.5">
+   448→                    <PkgIcon
+   449→                      className={cn(
+   450→                        "size-4",
+   451→                        p.key === "spotlight"
+   452→                          ? "text-amber-600"
+   453→                          : p.key === "highlight"
+   454→                          ? "text-orange-600"
+   455→                          : p.key === "sundul"
+   456→                          ? "text-purple-600"
+   457→                          : "text-blue-600"
+   458→                      )}
+   459→                    />
+   460→                    <span className="text-sm font-bold text-foreground">{p.name}</span>
+   461→                  </div>
+   462→                  {p.badge && <Badge className="bg-primary text-[9px] text-white">{p.badge}</Badge>}
+   463→                  {p.originalPrice > 0 && p.originalPrice > p.price && (
+   464→                    <span className="rounded bg-red-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
+   465→                      -{Math.round((1 - p.price / p.originalPrice) * 100)}%
+   466→                    </span>
+   467→                  )}
+   468→                </div>
+   469→                <p className="mt-1 text-lg font-extrabold text-foreground">
+   470→                  Rp {p.price.toLocaleString("id-ID")}
+   471→                  {p.originalPrice > 0 && p.originalPrice > p.price && (
+   472→                    <span className="ml-1.5 text-xs font-medium text-muted-foreground line-through">
+   473→                      Rp {p.originalPrice.toLocaleString("id-ID")}
+   474→                    </span>
+   475→                  )}
+   476→                  <span className="ml-1 text-xs font-medium text-muted-foreground">/ {p.duration}</span>
+   477→                </p>
+   478→                <p className="mt-0.5 text-[11px] text-muted-foreground">{p.description}</p>
+   479→                {isDisabled && (
+   480→                  <p className="mt-1 text-[10px] font-semibold text-red-600">
+   481→                    Tidak tersedia untuk iklan pending.
+   482→                  </p>
+   483→                )}
+   484→                {isSel && (
+   485→                  <span className="absolute right-2 top-2 grid size-5 place-items-center rounded-full bg-primary text-white">
+   486→                    <CheckCircle2 className="size-3.5" />
+   487→                  </span>
+   488→                )}
+   489→              </button>
+   490→            );
+   491→          })}
+   492→        </div>
+   493→
+   494→        {/* Payment method section (only for paid packages) */}
+   495→        {needsPayment && (
+   496→          <div className="rounded-lg border border-border p-3">
+   497→            <p className="mb-2 text-sm font-bold text-foreground">Metode Pembayaran</p>
+   498→            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+   499→              {PAYMENT_METHODS.map((m) => {
+   500→                const isSel = paymentMethod === m.key;
+   501→                return (
+   502→                  <button
+   503→                    key={m.key}
+   504→                    type="button"
+   505→                    onClick={() => setPaymentMethod(m.key)}
+   506→                    className={cn(
+   507→                      "rounded-lg border-2 p-2 text-left transition",
+   508→                      isSel ? cn("bg-secondary", m.color) : "border-border bg-background hover:bg-accent"
+   509→                    )}
+   510→                  >
+   511→                    <p className="text-xs font-bold text-foreground">{m.name}</p>
+   512→                    <p className="mt-0.5 text-[10px] text-muted-foreground">{m.desc}</p>
+   513→                  </button>
+   514→                );
+   515→              })}
+   516→            </div>
+   517→          </div>
+   518→        )}
+   519→
+   520→        {/* Total */}
+   521→        {needsPayment && (
+   522→          <div className="rounded-lg bg-secondary/60 px-3 py-2">
+   523→            <div className="flex items-center justify-between">
+   524→              <span className="text-sm font-medium text-muted-foreground">Harga Paket</span>
+   525→              <span className="text-lg font-extrabold text-primary">
+   526→                {formatRupiahFull(selectedPkg.price)}
+   527→              </span>
+   528→            </div>
+   529→            {uniqueCode !== null && (
+   530→              <div className="mt-1 flex items-center justify-between">
+   531→                <span className="text-xs text-muted-foreground">Kode Unik (3 digit)</span>
+   532→                <span className="text-sm font-bold text-amber-600">+{String(uniqueCode).padStart(3, '0')}</span>
+   533→              </div>
+   534→            )}
+   535→            <div className="mt-1 flex items-center justify-between border-t border-border pt-1.5">
+   536→              <span className="text-sm font-bold text-foreground">Total Transfer</span>
+   537→              <span className="text-xl font-extrabold text-primary">
+   538→                {formatRupiahFull(qrisAmount)}
+   539→              </span>
+   540→            </div>
+   541→          </div>
+   542→        )}
+   543→
+   544→        {/* Footer buttons */}
+   545→        <div className="flex flex-col gap-2 pb-6 sm:flex-row sm:justify-between">
+   546→          <Button
+   547→            type="button"
+   548→            variant="outline"
+   549→            onClick={() => {
+   550→              onOpenChange(false);
+   551→              onEdit(listing.slug);
+   552→            }}
+   553→            className="w-full gap-1.5 sm:w-auto"
+   554→          >
+   555→            <Edit className="size-4" /> Edit Iklan
+   556→          </Button>
+   557→          <Button
+   558→            type="button"
+   559→            onClick={handleSubmit}
+   560→            disabled={submitting || (needsPayment && !paymentMethod) || isBoostDisabled}
+   561→            className="w-full gap-1.5 bg-primary sm:w-auto"
+   562→          >
+   563→            {submitting ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+   564→            {submitting ? "Memproses..." : isBoostDisabled ? "Boost Dinonaktifkan" : buttonLabel}
+   565→          </Button>
+   566→        </div>
+   567→            </div>
+   568→          </div>
+   569→        </div>
+   570→      </div>
+   571→    )}
+   572→
+   573→      {/* ===== QRIS PAYMENT PAGE (overlay fullscreen, sama persis seperti post-ad) ===== */}
+   574→      {qrisModal && (
+   575→        <div className="no-scrollbar fixed inset-0 z-[70] overflow-y-auto bg-background md:overflow-hidden">
+   576→          <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 py-4 sm:py-6 md:h-screen">
+   577→            {/* Header */}
+   578→            <div className="mb-4 flex shrink-0 items-center justify-between">
+   579→              <h2 className="text-xl font-bold sm:text-2xl">Pembayaran QRIS</h2>
+   580→              <button
+   581→                type="button"
+   582→                onClick={() => { setQrisModal(false); setProofImage(""); }}
+   583→                className="grid size-10 place-items-center rounded-full border border-border bg-card hover:bg-accent"
+   584→              >
+   585→                <X className="size-5" />
+   586→              </button>
+   587→            </div>
+   588→
+   589→            {/* Content — scrollable on mobile, fit on desktop.
+   590→                Urutan: QR+Total (kanan) di-render PERTAMA di DOM supaya di mobile
+   591→                tampil di atas (order-first), instruksi+upload di bawah. Di desktop
+   592→                pakai md:order-2/1 untuk kembalikan layout 2 kolom (kiri instr, kanan QR). */}
+   593→            <div className="grid flex-1 gap-6 md:grid-cols-2 md:overflow-hidden">
+   594→              {/* LEFT — instructions + upload proof (di mobile tampil di BAWAH QR) */}
+   595→              <div className="order-2 space-y-3 md:order-1 md:overflow-hidden">
+   596→                {/* Instructions */}
+   597→                <div className="rounded-xl border border-border bg-card p-4">
+   598→                  <p className="text-sm font-bold">Cara Pembayaran:</p>
+   599→                  <ol className="mt-2 list-inside list-decimal space-y-1 text-xs text-muted-foreground">
+   600→                    <li>Buka aplikasi e-wallet / m-banking</li>
+   601→                    <li>Pilih menu Scan / Bayar QRIS</li>
+   602→                    <li>Arahkan kamera ke QR code di sebelah kanan</li>
+   603→                    <li>Pastikan jumlah sesuai: <strong className="text-foreground">{formatRupiahFull(qrisAmount)}</strong></li>
+   604→                    <li>Konfirmasi & selesaikan pembayaran</li>
+   605→                    <li>Upload foto / screenshot bukti pembayaran di bawah</li>
+   606→                  </ol>
+   607→                </div>
+   608→
+   609→                {/* Upload proof of payment */}
+   610→                <div className="rounded-xl border border-border bg-card p-4">
+   611→                  <p className="mb-2 text-sm font-bold">Kirim Bukti Pembayaran</p>
+   612→                  {proofImage ? (
+   613→                    <div className="relative">
+   614→                      <img src={proofImage} alt="Bukti Pembayaran" className="max-h-40 w-full rounded-lg border border-border object-contain" />
+   615→                      <button
+   616→                        type="button"
+   617→                        onClick={() => setProofImage("")}
+   618→                        className="absolute right-1 top-1 grid size-7 place-items-center rounded-full bg-red-500 text-white shadow"
+   619→                      >
+   620→                        <X className="size-4" />
+   621→                      </button>
+   622→                    </div>
+   623→                  ) : (
+   624→                    <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border p-6 text-center transition hover:border-primary hover:bg-accent">
+   625→                      <Upload className="size-8 text-muted-foreground" />
+   626→                      <span className="text-xs text-muted-foreground">Klik untuk upload bukti pembayaran</span>
+   627→                      <span className="text-[10px] text-muted-foreground/70">JPG, PNG (maks 200KB)</span>
+   628→                      <input
+   629→                        type="file"
+   630→                        accept="image/*"
+   631→                        className="hidden"
+   632→                        onChange={async (e) => {
+   633→                          const file = e.target.files?.[0];
+   634→                          if (!file) return;
+   635→                          try {
+   636→                            const compressed = await compressImage(file);
+   637→                            setProofImage(compressed);
+   638→                            toast.success("Bukti pembayaran diunggah");
+   639→                          } catch (err: any) {
+   640→                            toast.error("Gagal upload: " + (err?.message || ""));
+   641→                          }
+   642→                          e.target.value = "";
+   643→                        }}
+   644→                      />
+   645→                    </label>
+   646→                  )}
+   647→                </div>
+   648→
+   649→                {/* Action buttons */}
+   650→                <div className="flex gap-2">
+   651→                  <Button
+   652→                    variant="outline"
+   653→                    className="flex-1"
+   654→                    onClick={() => { setQrisModal(false); setProofImage(""); toast.info("Pembayaran dibatalkan"); }}
+   655→                  >
+   656→                    Batal
+   657→                  </Button>
+   658→                  <Button
+   659→                    className="flex-1 gap-1.5"
+   660→                    disabled={submitting || uploadingProof || !proofImage}
+   661→                    onClick={async () => {
+   662→                      setUploadingProof(true);
+   663→                      try {
+   664→                        // === Ad image (gambar iklan) ===
+   665→                        const adImage = listing.images?.[0] || "";
+   666→
+   667→                        // === Proof image (gambar bukti transfer) ===
+   668→                        const dataUrlPrefix = proofImage.substring(0, proofImage.indexOf(','));
+   669→                        const base64Data = proofImage.substring(proofImage.indexOf(',') + 1);
+   670→                        if (!dataUrlPrefix || !base64Data) { toast.error("Format gambar tidak valid"); return; }
+   671→
+   672→                        // === STEP 1: Upload BOTH images to server first ===
+   673→                        // Gives public URLs that are smaller to send via socket,
+   674→                        // more reliable, and reusable for WhatsApp + chat admin.
+   675→                        let adImageUrl: string = adImage;
+   676→                        if (adImage.startsWith("data:image/")) {
+   677→                          try {
+   678→                            const adUp = await fetch("/api/upload-proof", {
+   679→                              method: "POST",
+   680→                              headers: { "Content-Type": "application/json" },
+   681→                              body: JSON.stringify({ image: adImage }),
+   682→                            });
+   683→                            if (adUp.ok) {
+   684→                              const adData = await adUp.json();
+   685→                              if (adData?.url) adImageUrl = adData.url;
+   686→                            }
+   687→                          } catch { /* keep data URL fallback */ }
+   688→                        }
+   689→
+   690→                        // Upload proof image → get public URL
+   691→                        let proofUrl: string = proofImage;
+   692→                        try {
+   693→                          const proofUp = await fetch("/api/upload-proof", {
+   694→                            method: "POST",
+   695→                            headers: { "Content-Type": "application/json" },
+   696→                            body: JSON.stringify({ image: proofImage }),
+   697→                          });
+   698→                          if (proofUp.ok) {
+   699→                            const proofData = await proofUp.json();
+   700→                            if (proofData?.url) proofUrl = proofData.url;
+   701→                          }
+   702→                        } catch { /* keep data URL fallback */ }
+   703→
+   704→                        // 2) Chat admin via socket (REALTIME) — MUST run BEFORE WhatsApp.
+   705→                        //    CRITICAL: openWhatsAppWithUrl() navigates the page away
+   706→                        //    (window.location.href) on mobile / popup-blocked desktop.
+   707→                        //    Any code AFTER it is aborted, so chat must be sent FIRST.
+   708→                        if (user?.id) {
+   709→                          try {
+   710→                            const adminRes = await fetch("/api/admin/info");
+   711→                            if (adminRes.ok) {
+   712→                              const { admin } = (await adminRes.json()) as { admin: { id: string; name: string } | null };
+   713→                              const adCaption =
+   714→                                `*Gambar Iklan (Upgrade)*\n\n` +
+   715→                                `Judul: ${listingTitle(listing, mounted ? lang : "id")}\n` +
+   716→                                `Paket: ${selectedPkg.name}\n` +
+   717→                                `User: ${user.name || "-"} (${user.email || "-"})`;
+   718→                              const proofCaption =
+   719→                                `*Bukti Pembayaran Upgrade Iklan*\n\n` +
+   720→                                `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}\n` +
+   721→                                `Paket: ${selectedPkg.name}\n` +
+   722→                                `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+   723→                                `Kode Unik: ${uniqueCode !== null ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
+   724→                                `Metode: QRIS\n` +
+   725→                                `User: ${user.name || "-"} (${user.email || "-"})\n\n` +
+   726→                                `Bukti pembayaran terlampir. Mohon diverifikasi.`;
+   727→                              if (admin?.id) {
+   728→                                if (adImageUrl) {
+   729→                                  const ack1 = await sendMessage({
+   730→                                    senderId: user.id,
+   731→                                    receiverId: admin.id,
+   732→                                    content: adCaption,
+   733→                                    image: adImageUrl,
+   734→                                    listingTitle: `Gambar Iklan — ${listingTitle(listing, mounted ? lang : "id")}`,
+   735→                                  });
+   736→                                  if (!ack1?.ok) {
+   737→                                    await fetch("/api/messages", {
+   738→                                      method: "POST",
+   739→                                      headers: { "Content-Type": "application/json" },
+   740→                                      body: JSON.stringify({
+   741→                                        senderId: user.id,
+   742→                                        receiverId: admin.id,
+   743→                                        content: adCaption,
+   744→                                        image: adImageUrl,
+   745→                                        listingTitle: `Gambar Iklan — ${listingTitle(listing, mounted ? lang : "id")}`,
+   746→                                      }),
+   747→                                    });
+   748→                                  }
+   749→                                }
+   750→                                const ack2 = await sendMessage({
+   751→                                  senderId: user.id,
+   752→                                  receiverId: admin.id,
+   753→                                  content: proofCaption,
+   754→                                  image: proofUrl,
+   755→                                  listingTitle: `Bukti Pembayaran — ${listingTitle(listing, mounted ? lang : "id")}`,
+   756→                                });
+   757→                                if (!ack2?.ok) {
+   758→                                  await fetch("/api/messages", {
+   759→                                    method: "POST",
+   760→                                    headers: { "Content-Type": "application/json" },
+   761→                                    body: JSON.stringify({
+   762→                                      senderId: user.id,
+   763→                                      receiverId: admin.id,
+   764→                                      content: proofCaption,
+   765→                                      image: proofUrl,
+   766→                                      listingTitle: `Bukti Pembayaran — ${listingTitle(listing, mounted ? lang : "id")}`,
+   767→                                    }),
+   768→                                  });
+   769→                                }
+   770→                                toast.success("Bukti pembayaran dikirim ke chat admin (realtime)");
+   771→                              }
+   772→                            }
+   773→                          } catch (chatErr) {
+   774→                            console.error("Gagal kirim bukti ke chat admin:", chatErr);
+   775→                          }
+   776→                        }
+   777→
+   778→                        // 3) WhatsApp — open wa.me LAST (may navigate page away).
+   779→                        //    Chat messages already sent above, so proof is delivered
+   780→                        //    even if this navigation aborts the remaining JS.
+   781→                        const caption =
+   782→                          `*Bukti Pembayaran Upgrade Iklan mesinKU*\n\n` +
+   783→                          `Paket: ${selectedPkg.name}\n` +
+   784→                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+   785→                          `Kode Unik: ${uniqueCode !== null ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
+   786→                          `Metode: QRIS\n` +
+   787→                          `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}\n\n` +
+   788→                          `Gambar Iklan:\n${adImageUrl}`;
+   789→
+   790→                        const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
+   791→                        if (result.status === "opened") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
+   792→                        else if (result.status === "error") toast.error("Gagal membuka WhatsApp");
+   793→                      } catch {
+   794→                        toast.error("Gagal mengirim bukti");
+   795→                      } finally {
+   796→                        setUploadingProof(false);
+   797→                      }
+   798→                      // Submit upgrade + tutup semua.
+   799→                      setTimeout(async () => {
+   800→                        await doSubmit();
+   801→                        setQrisModal(false);
+   802→                        setProofImage("");
+   803→                      }, 500);
+   804→                    }}
+   805→                  >
+   806→                    {uploadingProof ? <Loader2 className="size-4 animate-spin" /> : submitting ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+   807→                    {uploadingProof ? "Mengirim bukti..." : submitting ? "Memproses..." : "Kirim & Pasang Iklan"}
+   808→                  </Button>
+   809→                </div>
+   810→                {!proofImage && (
+   811→                  <p className="text-center text-[11px] text-amber-600">Upload bukti pembayaran dulu untuk melanjutkan</p>
+   812→                )}
+   813→              </div>
+   814→
+   815→              {/* RIGHT — total pembayaran + QR code (di mobile tampil di ATAS) */}
+   816→              <div className="order-1 flex flex-col items-center justify-start pb-6 md:order-2 md:pb-0">
+   817→                {/* Total pembayaran above QR */}
+   818→                <div className="mb-4 text-center">
+   819→                  <p className="text-xs text-muted-foreground">Total Pembayaran</p>
+   820→                  <p className="text-3xl font-extrabold text-primary sm:text-4xl">{formatRupiahFull(qrisAmount)}</p>
+   821→                  <p className="mt-1 text-[11px] text-muted-foreground">
+   822→                    Harga paket + kode unik untuk identifikasi pembayar
+   823→                  </p>
+   824→                </div>
+   825→                {/* QR code */}
+   826→                <div className="rounded-2xl border-2 border-border bg-white p-4 shadow-lg sm:p-6">
+   827→                  <img
+   828→                    src="/qris-mesinKU.jpeg"
+   829→                    alt="QRIS mesinKU"
+   830→                    className="h-auto w-full max-w-[250px] object-contain"
+   831→                  />
+   832→                </div>
+   833→                <p className="mt-3 text-center text-sm font-semibold text-muted-foreground">Scan QRIS untuk membayar</p>
+   834→              </div>
+   835→            </div>
+   836→          </div>
+   837→        </div>
+   838→      )}
+   839→
+   840→      {/* ===== BCA TRANSFER PAGE (fullscreen, mirip QRIS page) ===== */}
+   841→      {bcaModal && (
+   842→        <div className="no-scrollbar fixed inset-0 z-[70] overflow-y-auto bg-background md:overflow-hidden">
+   843→          <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 py-4 sm:py-6 md:h-screen">
+   844→            {/* Header */}
+   845→            <div className="mb-4 flex shrink-0 items-center justify-between">
+   846→              <h2 className="text-xl font-bold sm:text-2xl">Transfer ke BCA</h2>
+   847→              <button
+   848→                type="button"
+   849→                onClick={() => { setBcaModal(false); setProofImage(""); }}
+   850→                className="grid size-10 place-items-center rounded-full border border-border bg-card hover:bg-accent"
+   851→              >
+   852→                <X className="size-5" />
+   853→              </button>
+   854→            </div>
+   855→
+   856→            {/* Content */}
+   857→            <div className="grid flex-1 gap-6 md:grid-cols-2 md:overflow-hidden">
+   858→              {/* LEFT — instructions + upload proof */}
+   859→              <div className="space-y-3 md:overflow-y-auto">
+   860→                {/* Bank details */}
+   861→                <div className="rounded-xl border border-border bg-card p-4">
+   862→                  <p className="text-sm font-bold">Transfer ke Rekening BCA:</p>
+   863→                  <div className="mt-2 space-y-1 text-sm">
+   864→                    <p>Bank: <strong className="text-foreground font-bold">BCA</strong></p>
+   865→                    <p>No. Rekening: <strong className="text-foreground font-bold text-base">8770338221</strong></p>
+   866→                    <p>a.n. <strong className="text-foreground font-bold">Lina Listiawati</strong></p>
+   867→                  </div>
+   868→                  <div className="mt-3 rounded-lg bg-blue-50 p-2 text-center">
+   869→                    <p className="text-xs text-muted-foreground">Jumlah Transfer</p>
+   870→                    <p className="text-2xl font-extrabold text-primary">{formatRupiahFull(qrisAmount)}</p>
+   871→                    <p className="text-[11px] text-muted-foreground">Harga paket + kode unik untuk identifikasi</p>
+   872→                  </div>
+   873→                </div>
+   874→
+   875→                {/* Instructions */}
+   876→                <div className="rounded-xl border border-border bg-card p-4">
+   877→                  <p className="text-sm font-bold">Cara Pembayaran:</p>
+   878→                  <ol className="mt-2 list-inside list-decimal space-y-1 text-xs text-muted-foreground">
+   879→                    <li>Buka aplikasi m-banking / ATM BCA</li>
+   880→                    <li>Transfer ke rekening <strong className="text-foreground">8770338221</strong> a.n. Lina Listiawati</li>
+   881→                    <li>Pastikan jumlah sesuai: <strong className="text-foreground">{formatRupiahFull(qrisAmount)}</strong></li>
+   882→                    <li>Konfirmasi & selesaikan transfer</li>
+   883→                    <li>Upload foto / screenshot bukti transfer di bawah</li>
+   884→                  </ol>
+   885→                </div>
+   886→
+   887→                {/* Upload proof */}
+   888→                <div className="rounded-xl border border-border bg-card p-4">
+   889→                  <p className="mb-2 text-sm font-bold">Kirim Bukti Pembayaran</p>
+   890→                  {proofImage ? (
+   891→                    <div className="relative">
+   892→                      <img src={proofImage} alt="Bukti Pembayaran" className="max-h-40 w-full rounded-lg border border-border object-contain" />
+   893→                      <button
+   894→                        type="button"
+   895→                        onClick={() => setProofImage("")}
+   896→                        className="absolute right-1 top-1 grid size-7 place-items-center rounded-full bg-red-500 text-white shadow"
+   897→                      >
+   898→                        <X className="size-4" />
+   899→                      </button>
+   900→                    </div>
+   901→                  ) : (
+   902→                    <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border p-6 text-center transition hover:border-primary hover:bg-accent">
+   903→                      <Upload className="size-8 text-muted-foreground" />
+   904→                      <span className="text-xs text-muted-foreground">Klik untuk upload bukti pembayaran</span>
+   905→                      <span className="text-[10px] text-muted-foreground/70">JPG, PNG (maks 200KB)</span>
+   906→                      <input
+   907→                        type="file"
+   908→                        accept="image/*"
+   909→                        className="hidden"
+   910→                        onChange={async (e) => {
+   911→                          const file = e.target.files?.[0];
+   912→                          if (!file) return;
+   913→                          try {
+   914→                            const compressed = await compressImage(file);
+   915→                            setProofImage(compressed);
+   916→                            toast.success("Bukti pembayaran diunggah");
+   917→                          } catch (err: any) {
+   918→                            toast.error("Gagal upload: " + (err?.message || ""));
+   919→                          }
+   920→                          e.target.value = "";
+   921→                        }}
+   922→                      />
+   923→                    </label>
+   924→                  )}
+   925→                </div>
+   926→
+   927→                {/* Action buttons */}
+   928→                <div className="flex gap-2">
+   929→                  <Button
+   930→                    variant="outline"
+   931→                    className="flex-1"
+   932→                    onClick={() => { setBcaModal(false); setProofImage(""); toast.info("Pembayaran dibatalkan"); }}
+   933→                  >
+   934→                    Batal
+   935→                  </Button>
+   936→                  <Button
+   937→                    className="flex-1 gap-1.5"
+   938→                    disabled={submitting || uploadingProof || !proofImage}
+   939→                    onClick={async () => {
+   940→                      setUploadingProof(true);
+   941→                      try {
+   942→                        // === Ad image (gambar iklan) ===
+   943→                        const adImage = listing.images?.[0] || "";
+   944→
+   945→                        // === Proof image (gambar bukti transfer) ===
+   946→                        const dataUrlPrefix = proofImage.substring(0, proofImage.indexOf(','));
+   947→                        const base64Data = proofImage.substring(proofImage.indexOf(',') + 1);
+   948→                        if (!dataUrlPrefix || !base64Data) { toast.error("Format gambar tidak valid"); return; }
+   949→
+   950→                        // === STEP 1: Upload BOTH images to server first ===
+   951→                        let adImageUrl: string = adImage;
+   952→                        if (adImage.startsWith("data:image/")) {
+   953→                          try {
+   954→                            const adUp = await fetch("/api/upload-proof", {
+   955→                              method: "POST",
+   956→                              headers: { "Content-Type": "application/json" },
+   957→                              body: JSON.stringify({ image: adImage }),
+   958→                            });
+   959→                            if (adUp.ok) {
+   960→                              const adData = await adUp.json();
+   961→                              if (adData?.url) adImageUrl = adData.url;
+   962→                            }
+   963→                          } catch { /* keep data URL fallback */ }
+   964→                        }
+   965→
+   966→                        // Upload proof image → get public URL
+   967→                        let proofUrl: string = proofImage;
+   968→                        try {
+   969→                          const proofUp = await fetch("/api/upload-proof", {
+   970→                            method: "POST",
+   971→                            headers: { "Content-Type": "application/json" },
+   972→                            body: JSON.stringify({ image: proofImage }),
+   973→                          });
+   974→                          if (proofUp.ok) {
+   975→                            const proofData = await proofUp.json();
+   976→                            if (proofData?.url) proofUrl = proofData.url;
+   977→                          }
+   978→                        } catch { /* keep data URL fallback */ }
+   979→
+   980→                        // 2) Chat admin via socket (REALTIME) — MUST run BEFORE WhatsApp.
+   981→                        //    CRITICAL: openWhatsAppWithUrl() navigates the page away
+   982→                        //    (window.location.href) on mobile / popup-blocked desktop.
+   983→                        //    Any code AFTER it is aborted, so chat must be sent FIRST.
+   984→                        if (user?.id) {
+   985→                          try {
+   986→                            const adminRes = await fetch("/api/admin/info");
+   987→                            if (adminRes.ok) {
+   988→                              const { admin } = (await adminRes.json()) as { admin: { id: string; name: string } | null };
+   989→                              const adCaption =
+   990→                                `*Gambar Iklan (Upgrade)*\n\n` +
+   991→                                `Judul: ${listingTitle(listing, mounted ? lang : "id")}\n` +
+   992→                                `Paket: ${selectedPkg.name}\n` +
+   993→                                `User: ${user.name || "-"} (${user.email || "-"})`;
+   994→                              const proofCaption =
+   995→                                `*Bukti Pembayaran Upgrade Iklan*\n\n` +
+   996→                                `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}\n` +
+   997→                                `Paket: ${selectedPkg.name}\n` +
+   998→                                `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+   999→                                `Kode Unik: ${uniqueCode !== null ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
+  1000→                                `Metode: Transfer BCA\n` +
+  1001→                                `User: ${user.name || "-"} (${user.email || "-"})\n\n` +
+  1002→                                `Bukti pembayaran terlampir. Mohon diverifikasi.`;
+  1003→                              if (admin?.id) {
+  1004→                                if (adImageUrl) {
+  1005→                                  const ack1 = await sendMessage({
+  1006→                                    senderId: user.id,
+  1007→                                    receiverId: admin.id,
+  1008→                                    content: adCaption,
+  1009→                                    image: adImageUrl,
+  1010→                                    listingTitle: `Gambar Iklan — ${listingTitle(listing, mounted ? lang : "id")}`,
+  1011→                                  });
+  1012→                                  if (!ack1?.ok) {
+  1013→                                    await fetch("/api/messages", {
+  1014→                                      method: "POST",
+  1015→                                      headers: { "Content-Type": "application/json" },
+  1016→                                      body: JSON.stringify({
+  1017→                                        senderId: user.id,
+  1018→                                        receiverId: admin.id,
+  1019→                                        content: adCaption,
+  1020→                                        image: adImageUrl,
+  1021→                                        listingTitle: `Gambar Iklan — ${listingTitle(listing, mounted ? lang : "id")}`,
+  1022→                                      }),
+  1023→                                    });
+  1024→                                  }
+  1025→                                }
+  1026→                                const ack2 = await sendMessage({
+  1027→                                  senderId: user.id,
+  1028→                                  receiverId: admin.id,
+  1029→                                  content: proofCaption,
+  1030→                                  image: proofUrl,
+  1031→                                  listingTitle: `Bukti Pembayaran — ${listingTitle(listing, mounted ? lang : "id")}`,
+  1032→                                });
+  1033→                                if (!ack2?.ok) {
+  1034→                                  await fetch("/api/messages", {
+  1035→                                    method: "POST",
+  1036→                                    headers: { "Content-Type": "application/json" },
+  1037→                                    body: JSON.stringify({
+  1038→                                      senderId: user.id,
+  1039→                                      receiverId: admin.id,
+  1040→                                      content: proofCaption,
+  1041→                                      image: proofUrl,
+  1042→                                      listingTitle: `Bukti Pembayaran — ${listingTitle(listing, mounted ? lang : "id")}`,
+  1043→                                    }),
+  1044→                                  });
+  1045→                                }
+  1046→                                toast.success("Bukti pembayaran dikirim ke chat admin (realtime)");
+  1047→                              }
+  1048→                            }
+  1049→                          } catch (chatErr) {
+  1050→                            console.error("Gagal kirim bukti ke chat admin:", chatErr);
+  1051→                          }
+  1052→                        }
+  1053→
+  1054→                        // 3) WhatsApp — open wa.me LAST (may navigate page away).
+  1055→                        //    Chat messages already sent above, so proof is delivered
+  1056→                        //    even if this navigation aborts the remaining JS.
+  1057→                        const caption =
+  1058→                          `*Bukti Pembayaran Upgrade Iklan mesinKU*\n\n` +
+  1059→                          `Paket: ${selectedPkg.name}\n` +
+  1060→                          `Jumlah: ${formatRupiahFull(qrisAmount)}\n` +
+  1061→                          `Kode Unik: ${uniqueCode !== null ? String(uniqueCode).padStart(3, "0") : "-"}\n` +
+  1062→                          `Metode: Transfer BCA\n` +
+  1063→                          `Judul Iklan: ${listingTitle(listing, mounted ? lang : "id")}\n\n` +
+  1064→                          `Gambar Iklan:\n${adImageUrl}`;
+  1065→
+  1066→                        const result = await openWhatsAppWithUrl({ caption, imageUrl: proofUrl, phone: "6285888082208" });
+  1067→                        if (result.status === "opened") toast.success(`Paket ${selectedPkg.name} berhasil dibayar, mohon ditunggu verifikasi, Makasih!`);
+  1068→                        else if (result.status === "error") toast.error("Gagal membuka WhatsApp");
+  1069→                      } catch { toast.error("Gagal mengirim bukti"); }
+  1070→                      finally { setUploadingProof(false); }
+  1071→                      setTimeout(async () => { await doSubmit(); setBcaModal(false); setProofImage(""); }, 500);
+  1072→                    }}
+  1073→                  >
+  1074→                    {uploadingProof ? <Loader2 className="size-4 animate-spin" /> : submitting ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+  1075→                    {uploadingProof ? "Mengirim bukti..." : submitting ? "Memproses..." : "Kirim & Pasang Iklan"}
+  1076→                  </Button>
+  1077→                </div>
+  1078→                {!proofImage && <p className="text-center text-[11px] text-amber-600">Upload bukti pembayaran dulu untuk melanjutkan</p>}
+  1079→              </div>
+  1080→
+  1081→              {/* RIGHT — bank info + QR code (kosong, info bank di kiri) */}
+  1082→              <div className="flex flex-col items-center justify-center gap-4 pb-6 md:pb-0">
+  1083→                <div className="rounded-2xl border-2 border-blue-500 bg-white p-8 shadow-lg text-center">
+  1084→                  <p className="text-sm font-bold text-blue-600">BCA</p>
+  1085→                  <p className="mt-2 text-3xl font-extrabold font-bold tracking-wider text-black">8770338221</p>
+  1086→                  <p className="mt-2 text-sm font-bold text-black">a.n. Lina Listiawati</p>
+  1087→                </div>
+  1088→                <p className="text-center text-sm font-semibold text-muted-foreground">Transfer ke rekening di atas</p>
+  1089→                <p className="text-center text-lg font-bold text-primary">{formatRupiahFull(qrisAmount)}</p>
+  1090→              </div>
+  1091→            </div>
+  1092→          </div>
+  1093→        </div>
+  1094→      )}
+  1095→    </>
+  1096→  );
+  1097→}
+  1098→
+  1099→/**
+  1100→ * Sanitize user name/email to be filesystem-safe.
+  1101→ * "John Doe" → "John_Doe"
+  1102→ * "user@email.com" → "user_email.com"
+  1103→ * Removes special chars that break URLs/filenames.
+  1104→ */
+  1105→function sanitizeFileName(name: string): string {
+  1106→  return name
+  1107→    .trim()
+  1108→    .replace(/\s+/g, "_")           // spaces → underscore
+  1109→    .replace(/[@/\\?%*:|"<>]/g, "_") // special chars → underscore
+  1110→    .replace(/_+/g, "_")              // collapse multiple underscores
+  1111→    .substring(0, 50);               // max 50 chars
+  1112→}
+  1113→
