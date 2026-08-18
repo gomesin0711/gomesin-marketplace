@@ -9428,3 +9428,47 @@ Stage Summary:
 - Returning mobile users will now get fresh SW on next visit, which purges v12 cache and re-fetches all assets
 - Files changed: public/sw.js (cache version bump + strategy improvement)
 - Production verified working on mobile emulation
+
+---
+Task ID: mobile-popup-fix-2
+Agent: Main
+Task: Fix mobile "application error" — redesign PWA install popup to be smaller, appear on refresh, hide if installed; fix missing jasa category icon
+
+Work Log:
+- Read dev.log — found 404 for `/cat-icons/jasa-final.png` (jasa icon missing)
+- Read `src/components/gomesin/category-icon.tsx` — confirmed MAP[HardHat] pointed to non-existent `jasa-final.png`
+- Listed `/public/cat-icons/` — only `jasa.png` and `jasa-v2.png` exist (no `jasa-final.png`)
+- Fixed `category-icon.tsx`: changed `HardHat: "/cat-icons/jasa-final.png"` → `HardHat: "/cat-icons/jasa.png"`
+- Completely rewrote `src/components/pwa-install-prompt.tsx`:
+  - Removed full-screen `fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm` backdrop (was blocking page interactions on mobile → perceived "application error")
+  - New design: compact card (max-w-[340px]) anchored bottom-center on mobile / bottom-right on desktop
+  - Container uses `pointer-events-none` so clicks pass through to page; only the card has `pointer-events-auto`
+  - Single-row header: app icon + title + desc + X close button
+  - Single Install button below with "GRATIS" badge
+  - No more large gradient hero, no features list, no iOS instructions block, no rating stars
+  - Removed FIRST_VISIT_KEY logic (user wants popup on refresh)
+  - SHOW_DELAY_MS reduced from 12000ms → 1500ms (appears on refresh, after page paints)
+  - SOFT_DISMISS_MS reduced from 7 days → 1 day (re-prompts sooner)
+  - Kept INSTALLED_KEY + HARD_DISMISSED_KEY logic (don't show if installed, 6h block on native reject)
+- Committed + pushed to GitHub (commit e6aca0b)
+- Deployed to Vercel production: https://gomesin.vercel.app (Ready in 1m)
+- Verified with agent-browser (iPhone 14 profile):
+  - Page loads without errors, no console errors
+  - PWA SW registered, beforeinstallprompt captured
+  - All cat-icons/*.png return 200 (including jasa.png — 404 fixed)
+  - Compact popup appears at bottom after ~1.5s
+  - Page is scrollable behind the popup (non-blocking)
+  - X button dismisses the popup (soft dismiss = 1 day)
+  - After dismissal, only the floating FAB (PwaInstallButton) remains
+  - Popup does NOT show when `gomesin-pwa-installed=1` is set
+  - After clearing localStorage, popup shows again on refresh
+- VLM verification (glm-5v-turbo):
+  - Confirmed compact popup card visible at bottom (not full-screen)
+  - Confirmed "Jasa (Cetak, Service, Sewa)" category icon with hard hat worker visible
+  - Confirmed no visible errors or broken layout
+
+Stage Summary:
+- Root cause of mobile issue: the old popup used `fixed inset-0 z-[200] bg-black/60` full-screen backdrop which on slow mobile networks could intercept/ block page hydration → perceived "application error"
+- New popup is compact (~340px card), non-blocking (pointer-events-none container), appears on refresh (1.5s delay), hides when installed
+- Jasa category icon 404 fixed (jasa-final.png → jasa.png)
+- Production deploy verified end-to-end on iPhone 14 mobile profile
