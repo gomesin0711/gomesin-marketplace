@@ -1,28 +1,74 @@
 // BUMP THIS VERSION ON EVERY DEPLOY that changes app code.
 // The activate handler deletes ALL caches whose name !== CACHE_NAME,
 // forcing every browser to re-fetch JS/CSS/HTML on the next visit.
-// v13 → v14: enable offline cache for GET /api/ responses so categories
-// and machine ads appear even when the device is offline.
-const CACHE_NAME = 'mesinKU-v14';
+//
+// v14 → v15: PRECACHE critical /api/ endpoints during SW install so the
+// offline cache is populated the moment the new SW activates — no need
+// for the user to browse around first. This fixes "kategori & iklan tidak
+// muncul saat offline" even on the first offline visit after SW update.
+const CACHE_NAME = 'mesinKU-v15';
 
-// Critical URLs to pre-cache for PWA installability
-const PRECACHE_URLS = [
+// Static assets to pre-cache for PWA installability
+const PRECACHE_STATIC = [
   '/manifest.json',
   '/pwa-icon-192.png',
   '/pwa-icon-512.png',
 ];
 
-// Install: pre-cache critical assets
+// Critical API endpoints that the home page fetches on load.
+// Pre-caching these during install guarantees the offline cache is
+// populated immediately when the new SW activates — the user does NOT
+// need to browse around online first before going offline.
+//
+// These URLs MUST match exactly what home.tsx requests (query strings
+// included) because Cache API matches on the full URL.
+const PRECACHE_API = [
+  '/api/categories',
+  '/api/listings?sort=newest&limit=48',
+  '/api/listings?packageType=spotlight&limit=8&sort=newest',
+  '/api/listings?packageType=spotlight&limit=12&sort=popular',
+  '/api/listings?packageType=highlight&limit=8&sort=newest',
+  '/api/listings?condition=baru&sort=newest&limit=24',
+  '/api/listings?condition=jasa&sort=newest&limit=24',
+  '/api/listings/most-searched?limit=12',
+  '/api/admin/hero-banner',
+  '/api/admin/banner',
+  '/api/admin/banner-2',
+  '/api/admin/banner-3',
+];
+
+// Install: pre-cache static assets + critical API endpoints
+// CRITICAL: API precache is best-effort (allSettled) so one failing
+// endpoint (e.g. 401 auth) doesn't block the SW from installing.
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => 
-      cache.addAll(PRECACHE_URLS).catch(() => {})
-    )
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      // Static assets — fail silently if any 404s
+      await cache.addAll(PRECACHE_STATIC).catch(() => {});
+      // Critical API endpoints — best-effort, individual fetches
+      await Promise.allSettled(
+        PRECACHE_API.map(async (url) => {
+          try {
+            const res = await fetch(url);
+            if (
+              res.ok &&
+              (res.headers.get('content-type') || '').includes('application/json')
+            ) {
+              await cache.put(url, res.clone());
+            }
+          } catch {
+            /* network failure during install — ignore, will cache on first fetch */
+          }
+        })
+      );
+    })()
   );
+  // Activate immediately — don't wait for all tabs to close
   self.skipWaiting();
 });
 
-// Activate: clean old caches and claim all clients
+// Activate: clean old caches and claim all clients immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
