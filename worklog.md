@@ -9509,3 +9509,49 @@ Stage Summary:
 - Root cause #1 (offline): SW `return` on /api/ meant no offline cache → fixed with network-first + cache fallback for GET API
 - Root cause #2 (jasa tab): adType state existed but no UI to switch it → added Mesin/Jasa tab selector
 - Both fixes deployed to https://gomesin.vercel.app and verified end-to-end
+
+---
+Task ID: offline-precache-fix
+Agent: Main
+Task: Fix kategori & iklan tidak muncul saat offline (home page)
+
+Work Log:
+- Diagnosed root cause of previous SW v14 fix not working on user's device:
+  1. User's device still had OLD SW v13 (never cached /api/) — new SW only activates after closing ALL tabs
+  2. Even when v14 activated, cache started EMPTY — activate handler deletes old cache
+  3. User needed at least ONE online visit to populate the new cache before offline works
+  4. Cache API matches on full URL (incl. query string), so partial cache missed
+- Rewrote `public/sw.js` (v14 → v15):
+  - Added `PRECACHE_API` array with all 12 critical endpoints home page fetches:
+    /api/categories
+    /api/listings?sort=newest&limit=48
+    /api/listings?packageType=spotlight&limit=8&sort=newest
+    /api/listings?packageType=spotlight&limit=12&sort=popular
+    /api/listings?packageType=highlight&limit=8&sort=newest
+    /api/listings?condition=baru&sort=newest&limit=24
+    /api/listings?condition=jasa&sort=newest&limit=24
+    /api/listings/most-searched?limit=12
+    /api/admin/hero-banner
+    /api/admin/banner
+    /api/admin/banner-2
+    /api/admin/banner-3
+  - During SW `install` event: fetch + cache each endpoint via `Promise.allSettled`
+    (best-effort — one 401/auth failure doesn't block SW install)
+  - `skipWaiting()` + `clients.claim()` ensure immediate activation
+  - Offline now works on the FIRST offline visit after SW update (cache populated
+    during install, not on first browse)
+- Committed (2750fae) + pushed to GitHub + deployed to Vercel production
+- Verified with agent-browser (iPhone 14 profile, worst-case scenario):
+  - Cleared all existing SW + caches to simulate fresh device
+  - Reloaded → SW v15 registered + activated immediately
+  - Cache inspection: 39 entries total, 13 are /api/ responses (all precached during install!)
+  - Went offline IMMEDIATELY (no extra browsing after SW install)
+  - Reloaded offline → page HTML loaded from cache, categories visible (Semua, Jasa, Mesin Cetak, Mesin Digital...), product listings visible (Excavator Komatsu, Mesin Table Saw, Mesin Bubut Logam)
+  - No error messages, no empty states
+- VLM verification confirmed all points
+
+Stage Summary:
+- Root cause: previous v14 fix only cached APIs on-demand (during normal browsing), but the cache started empty after SW update
+- Fix: SW v15 now PRECACHES all 12 critical API endpoints during the install event itself
+- Offline categories + ads now work even on the first offline visit after SW update (no need to browse online first)
+- Production verified end-to-end at https://gomesin.vercel.app
